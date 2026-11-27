@@ -35,11 +35,13 @@ import { pageFactsOf, truncatedResult } from './query-page';
 import type {
   AnyMcpTool,
   McpCaller,
+  McpDoor,
   McpToolAnnotations,
   McpToolResult,
   ToolArgs,
 } from './registry';
 import { jsonResult, structuredResult } from './registry';
+import { withCallAsk } from './url-elicitation';
 import type { JsonSchema } from './wire';
 import { NO_ARGS } from './wire';
 
@@ -49,6 +51,20 @@ import { NO_ARGS } from './wire';
  * (rather than imported as a generic) so the projection is testable with a fake and does
  * not bind to either package's type parameters.
  */
+/** What `runThrough` is handed: `run`'s arguments and the door, `undefined` off a dispatcher. */
+export interface DoorRun {
+  readonly input: unknown;
+  readonly actor: Actor;
+  readonly door: McpDoor | undefined;
+}
+
+/** `run` and `runThrough` from ONE body, so the two cannot differ: `run` is the call through no door. */
+export function throughDoor(
+  body: (args: DoorRun) => Promise<unknown>,
+): Pick<ProjectablePrimitive, 'run'> & { runThrough(args: DoorRun): Promise<unknown> } {
+  return { run: (args) => body({ ...args, door: undefined }), runThrough: body };
+}
+
 export interface ProjectablePrimitive {
   readonly name: string;
   readonly description?: string;
@@ -72,6 +88,11 @@ export interface ProjectablePrimitive {
   readonly outputWrap?: string;
   /** The one server-authoritative entry point. Runs policy, then the handler. */
   run(args: { input: unknown; actor: Actor }): Promise<unknown>;
+  /**
+   * `run`, also handed the `'meta-split'` dispatcher the call came through — for a tool that
+   * reads its envelope fields (`throughDoor`). Absent: the tool is run by `run`.
+   */
+  runThrough?(args: DoorRun): Promise<unknown>;
   /**
    * The policy's actor half, alone: throws the denial `run` would raise for this actor whatever
    * the input, returns otherwise. Becomes the tool's `admit`. Absent: no before-args gate.
@@ -129,14 +150,23 @@ export function toolFrom(listed: ListedPrimitive): AnyMcpTool {
       // ONE authz system, TWO surfaces. This `run` IS `invoke`; the HTTP route reaches the
       // same `invoke` with an actor of kind 'user', MCP arrives with kind 'agent'. Same
       // policy, same decision.
-      const output = await withSignal(signal, () =>
-        primitive.run({ input: args, actor: caller.actor }),
+      const { value: output, ask: urlElicitation } = await withCallAsk(async () =>
+        withSignal(signal, () =>
+          primitive.runThrough === undefined
+            ? primitive.run({ input: args, actor: caller.actor })
+            : primitive.runThrough({ input: args, actor: caller.actor, door: caller.door }),
+        ),
       );
       const result =
         outputSchema === undefined ? jsonResult(output) : structuredResult(output, wrap);
       // A list query's page that was cut says so, and where the next one starts (`query-page.ts`).
       const page = pageFactsOf(output);
-      return page === undefined ? result : truncatedResult(result, page);
+      const answer = page === undefined ? result : truncatedResult(result, page);
+      // A handler that asked the person to open a page (`withUrlElicitation`) says so beside it —
+      // unless its answer could not be rendered: that failure is the answer.
+      return urlElicitation === undefined || answer.isError === true
+        ? answer
+        : { ...answer, urlElicitation };
     },
   };
 }

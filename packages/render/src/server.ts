@@ -99,4 +99,15 @@ export {
 } from './render-stream';
 // ---- the Sass compile cache: where it lives, and how often this process ran Sass instead --------
 export { sassCompilations, setSassCacheDir } from './sass-cache';
+export type { SiteAsset, SiteAssetTable } from './site-assets';
+export {
+  ASSET_CONTENT_TYPES,
+  hashedAssetUrl,
+  parseHashedAssetUrl,
+  SITE_ASSET_BASE_PATH,
+  SITE_ASSETS_SOURCE,
+  siteAssetTable,
+} from './site-assets';
+/** The comment a `stream` page writes after its shell and after each hole: what a reader splits on. */
+export { STREAM_FLUSH_MARK } from './stream-scripts';
 export { serverTsxBuildPlugin } from './tsx-build-plugin';

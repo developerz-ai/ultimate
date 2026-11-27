@@ -9,7 +9,7 @@
  */
 
 import type { ActionPathStyle } from '@ultimat3/core';
-import type { BearerMountRateLimit, BearerResolver } from '@ultimat3/http';
+import type { BearerMountRateLimit, BearerMountTenant, BearerResolver } from '@ultimat3/http';
 import { OpenApiConfigInvalidError } from './errors-http';
 
 /** A second door onto a cut of the API, authenticated by `Authorization: Bearer` alone. */
@@ -32,6 +32,12 @@ export interface ApiMount {
    * `x verify` refuses it stale, exactly as it does `openapi.json`.
    */
   readonly openapi?: string;
+  /**
+   * One token across tenants: the token resolves to a person, every call names its tenant as
+   * `?<arg>=<value>`, and `resolve`'s actor is the caller — the shape `defineAppMcp({ tenant })`
+   * takes, so one declaration serves both doors. Adds `GET <prefix>/tenants`.
+   */
+  readonly tenant?: BearerMountTenant;
 }
 
 export interface ApiHttp {

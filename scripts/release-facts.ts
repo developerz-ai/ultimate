@@ -38,9 +38,10 @@ export const FACT_GLOBS: readonly string[] = [
   // published in lockstep` from `dummy/social-media-clone/packages/i18n/catalogs/en.json` while
   // the tree published 31, and nothing could see it — this rule read markdown only, so a claim a
   // visitor reads on a live page was the one kind of claim it did not check.
-  'packages/i18n/catalogs/*.json',
-  'dummy/*/packages/i18n/catalogs/*.json',
-  'examples/*/packages/i18n/catalogs/*.json',
+  // `**`: a split locale keeps its strings in `catalogs/<locale>/<namespace>.json`.
+  'packages/i18n/catalogs/**/*.json',
+  'dummy/*/packages/i18n/catalogs/**/*.json',
+  'examples/*/packages/i18n/catalogs/**/*.json',
 ];
 
 /**

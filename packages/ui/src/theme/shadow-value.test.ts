@@ -35,6 +35,8 @@ describe('isShadowValue', () => {
       '0 4px 14px red',
       '0 4px 14px #000',
       '0 4px 14px rgb(var(--color-brand) / 0.2)',
+      // An alias role is unset until a brand sets it, and this bare read has no fallback.
+      '0 4px 14px rgb(var(--color-link) / 0.2)',
       '0 4px 14px rgb(256 0 0)',
       '0 4px 14px rgb(0 0 0 / 2)',
       'calc(1px) 0 0 rgb(0 0 0)',

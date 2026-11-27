@@ -308,6 +308,9 @@ export const driverError = (statement: string, sourceError: unknown): DbError =>
   // `X_DB_UNAVAILABLE` said "set DATABASE_URL" to a developer whose database was fine.
   const code = sqlStateCode(sourceError) ?? 'X_DB_STATEMENT_FAILED';
   const constraint = stringField(sourceError, 'constraint');
+  // The relation the constraint belongs to: a constraint name is unique per table, never per
+  // database, so a reader matching one by name must know whose it is.
+  const table = stringField(sourceError, 'table');
   // `08P01` is the protocol's general complaint, so the pooler's own sentence is what decides, and
   // this one reached no statement: it is the connection every statement of the role would use.
   if (
@@ -346,6 +349,7 @@ export const driverError = (statement: string, sourceError: unknown): DbError =>
     meta: {
       sqlState: state,
       ...(constraint === undefined ? {} : { constraint }),
+      ...(table === undefined ? {} : { table }),
     },
     sourceError,
   });

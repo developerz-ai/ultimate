@@ -19,6 +19,7 @@ import type { OutboundSite } from './outbound-errors';
 import { isCallerBound, outboundBodyInvalid, outboundRetryUnsafe } from './outbound-errors';
 import { redactedPath } from './outbound-hops';
 import { instrumentedCall } from './outbound-instrument';
+import { refusalHeaderNames } from './outbound-refusal-headers';
 import type {
   OutboundAnswer,
   OutboundDeps,
@@ -92,6 +93,8 @@ function prepare(request: OutboundRequest, deps: OutboundDeps): AttemptCall {
     idleMs: finiteCount('outbound()', 'idleMs', request.idleMs ?? OUTBOUND_IDLE_MS, 1),
     maxBytes: finiteCount('outbound()', 'maxBytes', request.maxBytes ?? OUTBOUND_MAX_BYTES),
     read: request.read ?? 'bytes',
+    refusal: request.refusal,
+    refusalHeaders: refusalHeaderNames(request.refusal?.headers, site),
     signal: request.signal,
     now,
     timer: deps.timer ?? platformDeadlineTimer,

@@ -119,6 +119,15 @@ export const PARKED_BREAKS: readonly ParkedBreak[] = [
     ],
   },
   {
+    ids: 'X_BOUNDARY_DEV_IMPORT',
+    title: 'a development entry in a role’s module graph is refused',
+    change:
+      'the `boundaries` step is red, not warning, for a module the boot scan imports that reaches `@ultimat3/cli`, `@ultimat3/testing` or `bun:test`',
+    sources: [
+      { path: 'packages/cli/src/app-dev-imports.ts', anchor: 'the refusal lands on `next`' },
+    ],
+  },
+  {
     ids: 'onSettled',
     title: "a job body's return value is stored",
     change: '`onSettled` runs at least once for every completion, a returned value included',

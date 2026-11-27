@@ -43,7 +43,7 @@ export class PostgresAuthAdapter implements AuthAdapter {
   readonly name = 'builtin-postgres';
   readonly #client: DbClient | undefined;
   readonly #clock: Clock;
-  readonly #passkeys: PasskeyStore = postgresPasskeyStore(() => this.#db);
+  readonly #passkeys: Required<PasskeyStore> = postgresPasskeyStore(() => this.#db);
   // The passkey members are `passkey-postgres.ts`'s, bound once: closures over the store, no `this`.
   readonly putPasskey: PasskeyStore['putPasskey'] = this.#passkeys.putPasskey;
   readonly findPasskey: PasskeyStore['findPasskey'] = this.#passkeys.findPasskey;
@@ -51,6 +51,7 @@ export class PostgresAuthAdapter implements AuthAdapter {
   readonly advancePasskeyCounter: PasskeyStore['advancePasskeyCounter'] =
     this.#passkeys.advancePasskeyCounter;
   readonly deletePasskey: PasskeyStore['deletePasskey'] = this.#passkeys.deletePasskey;
+  readonly renamePasskey: Required<PasskeyStore>['renamePasskey'] = this.#passkeys.renamePasskey;
   readonly putPasskeyChallenge: PasskeyStore['putPasskeyChallenge'] =
     this.#passkeys.putPasskeyChallenge;
   readonly takePasskeyChallenge: PasskeyStore['takePasskeyChallenge'] =
@@ -100,10 +101,10 @@ export class PostgresAuthAdapter implements AuthAdapter {
       'createUser',
       sql`
       insert into x_users (id, email, password_hash, org_id, roles, scopes, external_id,
-                           created_at)
+                           email_verified_at, created_at)
       values (${input.id}, ${input.email}, ${input.passwordHash}, ${input.orgId},
               ${[...input.roles]}, ${[...(input.scopes ?? [])]}, ${input.externalId ?? null},
-              ${input.createdAt})
+              ${input.emailVerifiedAt ?? null}, ${input.createdAt})
       returning *`,
     );
     // An empty `returning` means no row landed. A user fabricated from `{}` would travel back

@@ -124,3 +124,9 @@ export const logLevel = 'ui.log.level';
 export const logAll = 'ui.log.all';
 export const logFollow = 'ui.log.follow';
 export const logCapped = 'ui.log.capped';
+/** DataTable/Board selection: the tick-all box, the bar's name and count, "all matching" and clear. `count` and `matching` take `{ count }`. */
+export const selectionPage = 'ui.selection.page';
+export const selectionBar = 'ui.selection.bar';
+export const selectionCount = 'ui.selection.count';
+export const selectionMatching = 'ui.selection.matching';
+export const selectionClear = 'ui.selection.clear';

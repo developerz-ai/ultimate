@@ -123,7 +123,15 @@ export const config = defineRoute({
   // +100 B, an island boots with the props inside its own wrapper, not the first script in the
   // document with its id (a modal's island took the page's). Against 33,848, origin/main built the
   // same way. Raised 33.1kb → 33.2kb.
-  budget: { js: '33.2kb' },
+  // measured: 35942 B (2026-11-24; x build --target static) — why: the client router +1,949 B
+  // (29,955 → 31,904): a soft visit to a `stream` page reads the answer as it arrives, swaps
+  // the shell in at the server's flush mark and fills each hole as its chunk lands, so the page
+  // paints before its slowest hole (65 ms p95 against 2,041 ms). Raised 33.2kb → 35.1kb.
+  // measured: 36776 B (2026-11-24; x build --target static) — why: the client router +834 B
+  // (31,904 → 32,738): a streamed soft visit scrolls to a fragment its hole brings, holds its
+  // recovery while the next visit is on its way, reloads a fragment URL it must load for real,
+  // and drops keep-alive frames as they arrive. Raised 35.1kb → 36kb.
+  budget: { js: '36kb' },
   /**
    * The org the draft is written in, and what the last submission left: `createPost` declares
    * `native`, so a refused draft lands back HERE (`refusal: () => '/posts/new'`) and this read —

@@ -91,8 +91,19 @@ const withoutExpressions = (children: string): string => {
   return out;
 };
 
-/** Pure — the caller does the I/O — so the rule is testable without a filesystem. */
-export function untranslatedStrings(files: readonly SourceFile[]): readonly Finding[] {
+/** Where the default locale's strings are written: the one file, or a split locale's directory. */
+const FLAT_CATALOG = 'packages/i18n/catalogs/en.json';
+const SPLIT_CATALOG =
+  "its namespace's file in packages/i18n/catalogs/en/ (app.billing.title goes in en/app.json)";
+
+/**
+ * Pure — the caller does the I/O — so the rule is testable without a filesystem. \`catalog\` is
+ * where the fix sends the new key: the flat file, unless the app splits its catalogs.
+ */
+export function untranslatedStrings(
+  files: readonly SourceFile[],
+  catalog = FLAT_CATALOG,
+): readonly Finding[] {
   const findings: Finding[] = [];
   for (const file of files) {
     const text = blank(file.source);
@@ -102,7 +113,7 @@ export function untranslatedStrings(files: readonly SourceFile[]): readonly Find
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${lineOf(text, match.index)} renders the typed string "\${typed}" inside <\${match[1] ?? 'element'}> — it is in no catalog, so every locale but the one it was typed in reads it verbatim\`,
-        fix: \`add a key for "\${typed}" to packages/i18n/catalogs/en.json, render it as {t('…')} in \${file.path}, then: x verify --only boundaries\`,
+        fix: \`add a key for "\${typed}" to \${catalog}, render it as {t('…')} in \${file.path}, then: x verify --only boundaries\`,
         at: file.path,
       });
     }
@@ -113,7 +124,7 @@ export function untranslatedStrings(files: readonly SourceFile[]): readonly Find
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${lineOf(text, match.index)} renders the typed string "\${typed}" as its \${name} — it is in no catalog, so every locale but the one it was typed in reads it verbatim\`,
-        fix: \`add a key for "\${typed}" to packages/i18n/catalogs/en.json, write it as \${name}={t('…')} in \${file.path}, then: x verify --only boundaries\`,
+        fix: \`add a key for "\${typed}" to \${catalog}, write it as \${name}={t('…')} in \${file.path}, then: x verify --only boundaries\`,
         at: file.path,
       });
     }
@@ -123,7 +134,7 @@ export function untranslatedStrings(files: readonly SourceFile[]): readonly Find
 
 export const guard: Guard = {
   summary: 'a rendered string comes from t(), never typed into the page',
-  async check(_root, sources) {
+  async check(root, sources) {
     const files: SourceFile[] = [];
     // Every rendered surface: an app's \`site/\` and \`app/\`, and the shared components under
     // \`packages/*/src\` — \`x new\` scaffolds a \`packages/ui\` whose components render to a user, so
@@ -144,7 +155,9 @@ export const guard: Guard = {
         files.push({ path: file.path, source: file.text });
       }
     }
-    return untranslatedStrings(files);
+    // A split app's \`en/\` holds the barrel \`x i18n split\` writes; a flat app has no such file.
+    const split = await Bun.file(\`\${root}/packages/i18n/catalogs/en/index.ts\`).exists();
+    return untranslatedStrings(files, split ? SPLIT_CATALOG : FLAT_CATALOG);
   },
 };
 `;
@@ -205,6 +218,14 @@ unitTest('a typed aria-label is refused, and a t() call in one is not', () => {
 
 unitTest('one word character is a symbol, not a sentence', () => {
   expect(untranslatedStrings(file('<span>&</span>'))).toEqual([]);
+});
+
+unitTest('the fix names the file the key goes in, flat or split', () => {
+  expect(untranslatedStrings(file('<h1>Welcome back</h1>'))[0]?.fix).toContain(
+    'packages/i18n/catalogs/en.json',
+  );
+  const split = untranslatedStrings(file('<h1>Welcome back</h1>'), 'en/app.json');
+  expect(split[0]?.fix).toContain('en/app.json');
 });
 `;
 

@@ -47,7 +47,7 @@ import type { HandlerOverride } from './handler-override';
 import { handlerOverrideOf, setHandlerOverride } from './handler-override';
 import { getIdempotencyStore, withIdempotency } from './idempotency';
 import { idempotencyKeyFor } from './idempotency-key';
-import { drawMeter } from './meter-gate';
+import { drawActionMeter } from './meter-gate';
 import { guardAction, guardActionBeforeInput } from './policy-gate';
 import { spendActionLimit, withCallerAddress, withJobFrame } from './rate-limit-gate';
 import {
@@ -386,7 +386,7 @@ async function perform(
   // it is drawn only for a reservation this call CREATED (`beforeRun`), so a replay — of a success
   // or of a settled failure — draws nothing, and a refusal releases the key for a retry next period.
   const metered = (): Promise<void> =>
-    def.meter === undefined ? Promise.resolve() : drawMeter(name, def.meter, ctx);
+    def.meter === undefined ? Promise.resolve() : drawActionMeter(name, def.meter, ctx);
   // The peek can be stale: a record that lapsed after it leaves this call a FRESH reservation, and
   // the handler must not run on a rule it skipped. `beforeRun` runs only for a created reservation,
   // and a refusal there releases it. Spend first, in the order a first call takes them.

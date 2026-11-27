@@ -148,6 +148,17 @@ export async function consumeVerification(
   runtime: VerificationRuntime,
   input: ConsumeVerificationInput,
 ): Promise<AuthVerification> {
+  return consumeWith(runtime, input);
+}
+
+/**
+ * `consumeVerification` without the mailer: consuming sends nothing, so a caller with no mailer in
+ * hand (`signInWithLink`) needs none. Internal, so the exported signature stays as it shipped.
+ */
+export async function consumeWith(
+  runtime: Pick<VerificationRuntime, 'store' | 'clock'>,
+  input: ConsumeVerificationInput,
+): Promise<AuthVerification> {
   const purpose = verificationPurpose(input.purpose);
   const tokenHash = sha256Hex(input.token);
   // Normalised on the way OUT as well as in, or a link issued for `ada@x.test` is unredeemable by
@@ -179,6 +190,11 @@ export interface DefineVerificationPurposeInput {
   readonly ttlMs: number;
   /** The identifier's one normalisation. Defaults to `normaliseEmail`, the address door's. */
   readonly identifier?: ((raw: string) => string) | undefined;
+  /**
+   * `true`: this purpose's link signs its holder in (`signInWithLink`). Stated, never inferred:
+   * an email-change or account-deletion link proves the same inbox but was mailed to do one job.
+   */
+  readonly signIn?: boolean | undefined;
 }
 
 export interface VerificationPurposeHandle {
@@ -212,6 +228,7 @@ export function defineVerificationPurpose(
     template: input.template,
     ttlMs,
     identifier: input.identifier ?? normaliseEmail,
+    signIn: input.signIn === true,
   });
   const name = input.name;
   return {

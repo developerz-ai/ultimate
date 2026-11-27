@@ -248,7 +248,19 @@ export const config = defineRoute({
   // boots with the props inside its own wrapper, not the first script in the document with its id
   // (a modal's island took the page's). Against 215,968, origin/main built the same way. Raised
   // 211kb → 211.4kb.
-  budget: { js: '211.4kb' },
+  // measured: 218353 B (2026-11-24; x build --target static) — why: the client router +1,949 B
+  // (29,955 → 31,904): a soft visit to a `stream` page reads the answer as it arrives, swaps
+  // the shell in at the server's flush mark and fills each hole as its chunk lands, so the page
+  // paints before its slowest hole (65 ms p95 against 2,041 ms). Raised 211.4kb → 213.3kb.
+  // measured: 218649 B (2026-11-24; x build --target static, against origin/main's 218,403) — why:
+  // the feed island +246 B (96,733 → 96,979): `AsyncRegion`'s `failed` branch can be the app's own
+  // and `EmptyState` / `Alert` take a heading level, which the feed's states render through.
+  // Raised 213.3kb → 213.6kb.
+  // measured: 219483 B (2026-11-24; x build --target static) — why: the client router +834 B
+  // (31,904 → 32,738): a streamed soft visit scrolls to a fragment its hole brings, holds its
+  // recovery while the next visit is on its way, reloads a fragment URL it must load for real,
+  // and drops keep-alive frames as they arrive. Raised 213.6kb → 214.4kb.
+  budget: { js: '214.4kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

@@ -6,6 +6,7 @@
  */
 
 import type { MeterPeriod } from './meter';
+import { METER_PERIODS } from './meter';
 
 export interface MeterWindow {
   readonly startMs: number;
@@ -32,3 +33,21 @@ export function meterWindow(period: MeterPeriod, nowMs: number): MeterWindow {
 
 /** The period half of the stored key — the zone spelled out so it can never be assumed. */
 export const meterPeriodKey = (period: MeterPeriod): string => `${period}@UTC`;
+
+const PERIODS: ReadonlySet<string> = new Set<string>(METER_PERIODS);
+
+/** `day@UTC` → `day`; `undefined` for a stored key no shipped period spells. */
+export function periodOfKey(key: string): MeterPeriod | undefined {
+  const name = key.split('@')[0] ?? '';
+  return PERIODS.has(name) ? (name as MeterPeriod) : undefined;
+}
+
+/**
+ * The start of the period before the one starting at `startMs`: how far back a draw key is
+ * remembered, so a retry landing just after a reset still counts once. A key no shipped period
+ * spells remembers its own period only.
+ */
+export function previousPeriodStart(periodKey: string, startMs: number): number {
+  const period = periodOfKey(periodKey);
+  return period === undefined ? startMs : meterWindow(period, startMs - 1).startMs;
+}

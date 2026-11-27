@@ -26,13 +26,28 @@ export class DeviceOfflineError extends RealtimeError {
   }
 }
 
-/** The device took the request frame and sent no `response` carrying its id before the deadline. */
+/**
+ * The device took the request frame and sent no `response` carrying its id before the deadline —
+ * or, for a `disconnect()`, the node registered as holding it never said it closed the socket.
+ */
 export class DeviceRequestTimeoutError extends RealtimeError {
-  constructor(args: { path: string; deviceId: string; deadlineMs: number }) {
+  constructor(args: {
+    path: string;
+    deviceId: string;
+    deadlineMs: number;
+    operation?: 'request' | 'disconnect' | undefined;
+  }) {
+    const id = idArg(args.deviceId);
     super({
       code: 'X_DEVICE_REQUEST_TIMEOUT',
-      cause: `device ${JSON.stringify(args.deviceId)} on deviceSocket("${args.path}") did not answer within ${args.deadlineMs}ms`,
-      fix: `deviceLink.request(ctx, '${idArg(args.deviceId)}', frame, { deadlineMs: ${Math.min(args.deadlineMs * 2, DEVICE_MAX_DEADLINE_MS)} })   # or answer every request with { type: 'response', id, frame } on the device`,
+      cause:
+        args.operation === 'disconnect'
+          ? `the node holding device ${JSON.stringify(args.deviceId)} on deviceSocket("${args.path}") did not confirm the disconnect within ${args.deadlineMs}ms`
+          : `device ${JSON.stringify(args.deviceId)} on deviceSocket("${args.path}") did not answer within ${args.deadlineMs}ms`,
+      fix:
+        args.operation === 'disconnect'
+          ? `x doctor --json   # then retry deviceLink.disconnect(ctx, '${id}', reason); a node that died holding it closes on its own within three beats`
+          : `deviceLink.request(ctx, '${id}', frame, { deadlineMs: ${Math.min(args.deadlineMs * 2, DEVICE_MAX_DEADLINE_MS)} })   # or answer every request with { type: 'response', id, frame } on the device`,
     });
   }
 }

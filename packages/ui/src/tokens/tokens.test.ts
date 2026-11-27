@@ -4,13 +4,16 @@
 import { describe, expect, test } from 'bun:test';
 import { UI_ERROR_CODES } from '../errors';
 import {
+  ALIAS_ROLES,
   assertColorRole,
   breakpointTokens,
   CHART_ROLES,
+  COLOR_ALIASES,
   COLOR_ROLES,
   color,
   colorRgb,
   colorTokens,
+  colorVar,
   durationTokens,
   fontWeightTokens,
   lineHeightTokens,
@@ -20,6 +23,7 @@ import {
   spaceTokens,
   strokeTokens,
   touchTokens,
+  withAliases,
   zTokens,
 } from './tokens';
 
@@ -56,6 +60,20 @@ describe('SCSS <-> TS token parity', () => {
     const source = await scss('_colors.scss');
     expect(parseScssMap(source, 'light')).toEqual(mirror(colorTokens.light));
     expect(parseScssMap(source, 'dark')).toEqual(mirror(colorTokens.dark));
+    expect(parseScssMap(source, 'aliases')).toEqual(mirror(COLOR_ALIASES));
+  });
+
+  test('an alias role renders as its source until something sets it', () => {
+    for (const role of ALIAS_ROLES) {
+      const source = COLOR_ALIASES[role];
+      expect(withAliases(colorTokens.light)[role]).toBe(colorTokens.light[source]);
+      expect(colorRgb('dark', role)).toBe(colorRgb('dark', source));
+    }
+    expect(withAliases({ ...colorTokens.light, link: '1 2 3' }).link).toBe('1 2 3');
+    expect(Object.keys(colorTokens.light)).not.toContain('link');
+    expect(colorVar('link')).toBe('var(--color-link, var(--color-accent))');
+    expect(colorVar('focus')).toBe('var(--color-focus, var(--color-accent))');
+    expect(colorVar('accent')).toBe('var(--color-accent)');
   });
 
   test('every declared role appears in both themes', () => {

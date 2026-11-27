@@ -107,7 +107,7 @@ export function asset(path: AssetPath): string {
   if (resolver === undefined) {
     throw new AssetMissingError(
       `asset(${renderCauseValue(path)}) ran with no site asset table installed — in a browser (an island), or in a test that never loaded the app`,
-      'asset(path)   // in the page, the URL passed to the island as a prop; a unit test installs a table with setAssetResolver((path) => "/" + path)',
+      'asset(path)   // in the page, the URL passed to the island as a prop; a test run from the app root gets the app\'s table from @ultimat3/testing/preload, any other installs one with setAssetResolver((path) => "/" + path)',
     );
   }
   return resolver(path);

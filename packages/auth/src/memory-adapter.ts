@@ -49,7 +49,7 @@ export class MemoryAuthAdapter implements AuthAdapter {
   readonly #accounts = new Map<string, AuthAccount>();
   readonly #verifications = new Map<string, AuthVerification>();
   readonly #apiKeys = new Map<string, AuthApiKeyRecord>();
-  readonly #passkeys: PasskeyStore = memoryPasskeyStore();
+  readonly #passkeys: Required<PasskeyStore> = memoryPasskeyStore();
   // The passkey members are `passkey-memory.ts`'s, bound once: closures over the store, no `this`.
   readonly putPasskey: PasskeyStore['putPasskey'] = this.#passkeys.putPasskey;
   readonly findPasskey: PasskeyStore['findPasskey'] = this.#passkeys.findPasskey;
@@ -57,6 +57,7 @@ export class MemoryAuthAdapter implements AuthAdapter {
   readonly advancePasskeyCounter: PasskeyStore['advancePasskeyCounter'] =
     this.#passkeys.advancePasskeyCounter;
   readonly deletePasskey: PasskeyStore['deletePasskey'] = this.#passkeys.deletePasskey;
+  readonly renamePasskey: Required<PasskeyStore>['renamePasskey'] = this.#passkeys.renamePasskey;
   readonly putPasskeyChallenge: PasskeyStore['putPasskeyChallenge'] =
     this.#passkeys.putPasskeyChallenge;
   readonly takePasskeyChallenge: PasskeyStore['takePasskeyChallenge'] =
@@ -127,7 +128,7 @@ export class MemoryAuthAdapter implements AuthAdapter {
       id: input.id,
       // Stored as handed over, exactly as the `insert into x_users` binds it.
       email: input.email,
-      emailVerifiedAt: null,
+      emailVerifiedAt: input.emailVerifiedAt ?? null,
       passwordHash: input.passwordHash,
       orgId: input.orgId,
       roles: [...input.roles],

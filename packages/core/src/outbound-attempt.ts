@@ -1,15 +1,15 @@
 // Single responsibility: ONE attempt of an `outbound()` call — its signal, its hops, its status
-// read as a coded answer, and its body under the idle watchdog and the cap. Every way it can end
-// is classified here, so `retry()` above it reads a code and never an unclassified throw (which
-// it retries: measured, an unclassified throw from a POST ran three attempts).
+// read as a coded answer (a refusal's body as the call's `refusal` asks), and its body under the
+// idle watchdog and the cap. Every way it ends is classified here, so `retry()` above it reads a
+// code, never an unclassified throw (measured: one from a POST ran three attempts).
 
+import type { Schema } from '@ultimat3/schema';
 import { retryAfterSecondsOf } from './client-retry-after';
 import { tryUseContext } from './context';
 import type { DeadlineTimer } from './deadline-signal';
 import { deadlineSignal } from './deadline-signal';
 import { isUltimateError } from './errors';
 import { logger, redactFields } from './logger';
-import type { OutboundSite } from './outbound-errors';
 import {
   callerDeadline,
   outboundRedirected,
@@ -24,6 +24,8 @@ import type { HopCall } from './outbound-hops';
 import { redactedLocation, sendHops } from './outbound-hops';
 import type { WatchedFailure } from './outbound-read';
 import { watchedBody } from './outbound-read';
+import { refusalHeadersOf } from './outbound-refusal-headers';
+import type { OutboundRefusalRead } from './outbound-types';
 import { readWithinLimit } from './read-capped';
 import { isRetryableStatus } from './retryable-status';
 
@@ -36,6 +38,10 @@ export interface AttemptCall extends HopCall {
   readonly idleMs: number;
   readonly maxBytes: number;
   readonly read: 'bytes' | 'stream';
+  /** How a non-2xx body is read for the error; `undefined` is the default excerpt. */
+  readonly refusal: OutboundRefusalRead | undefined;
+  /** The `refusal.headers` names, validated and lowercased (`refusalHeaderNames`); none asked: `undefined`. */
+  readonly refusalHeaders: readonly string[] | undefined;
   readonly now: () => number;
   readonly timer: DeadlineTimer;
 }
@@ -48,6 +54,12 @@ export type AttemptAnswer =
       readonly headers: Headers;
       readonly stream: ReadableStream<Uint8Array>;
     };
+
+/** What the error carries from the body. */
+interface RefusalBody {
+  readonly detail: string;
+  readonly fields?: unknown;
+}
 
 /** How many bytes of a refusal's body are read for its `meta.detail`, and how much is kept. */
 const DETAIL_READ_BYTES = 1_024;
@@ -70,22 +82,64 @@ async function prefixOf(body: ReadableStream<Uint8Array>): Promise<string> {
   return text;
 }
 
-/** A refusal's body, short and with every credential-named field redacted. Never throws. */
-async function detailOf(body: ReadableStream<Uint8Array>): Promise<string> {
-  let text = '';
+const parsedJson = (text: string): { readonly value: unknown } | undefined => {
   try {
-    text = await prefixOf(body);
+    return { value: JSON.parse(text) };
   } catch {
-    return '';
+    return undefined;
   }
-  // A JSON OBJECT, redacted by key, or nothing: raw text is never kept. A body cut at the prefix,
-  // an array, a form (`client_secret=…`) or an HTML page carries a credential no key names.
+};
+
+/**
+ * A JSON OBJECT, redacted by key, or nothing: raw text is never kept. A body cut at the prefix,
+ * an array, a form (`client_secret=…`) or an HTML page carries a credential no key names.
+ */
+function detailOf(text: string): string {
+  const parsed = parsedJson(text)?.value;
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return '';
+  return JSON.stringify(redactFields(parsed as Record<string, unknown>)).slice(0, DETAIL_CHARS);
+}
+
+/** The schema's answer, redacted at any depth, or `undefined` when the body does not fit it. */
+function fieldsOf(text: string, schema: Schema<unknown, unknown>): unknown {
+  const parsed = parsedJson(text);
+  if (parsed === undefined) return undefined;
+  const result = schema.safeParse(parsed.value);
+  if (!('value' in result) || result.issues !== undefined) return undefined;
+  return redactFields({ fields: result.value })['fields'];
+}
+
+async function wholeBody(
+  body: ReadableStream<Uint8Array>,
+  read: OutboundRefusalRead & { readonly schema: Schema<unknown, unknown> },
+  maxBytes: number,
+): Promise<RefusalBody> {
+  const capped = await readWithinLimit(body, maxBytes);
+  if ('over' in capped) return { detail: '' };
+  const text = new TextDecoder().decode(capped.bytes);
+  const fields = fieldsOf(text, read.schema);
+  return {
+    detail: read.detail === false ? '' : detailOf(text),
+    ...(fields === undefined ? {} : { fields }),
+  };
+}
+
+/** What the error keeps of a refusal's body, as `read` asks. Never throws. */
+async function refusalBodyOf(
+  body: ReadableStream<Uint8Array>,
+  read: OutboundRefusalRead | undefined,
+  maxBytes: number,
+): Promise<RefusalBody> {
   try {
-    const parsed: unknown = JSON.parse(text);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return '';
-    return JSON.stringify(redactFields(parsed as Record<string, unknown>)).slice(0, DETAIL_CHARS);
+    if (read?.schema !== undefined)
+      return await wholeBody(body, { ...read, schema: read.schema }, maxBytes);
+    if (read?.detail === false) {
+      await body.cancel().catch(() => undefined);
+      return { detail: '' };
+    }
+    return { detail: detailOf(await prefixOf(body)) };
   } catch {
-    return '';
+    return { detail: '' };
   }
 }
 
@@ -98,12 +152,14 @@ function ambientLeftMs(): number {
 
 /** A non-2xx as the code it is. The body has been read for the detail, or cancelled. */
 async function refusalOf(
-  site: OutboundSite,
+  call: AttemptCall,
   response: Response,
   body: ReadableStream<Uint8Array>,
-  url: URL,
 ): Promise<unknown> {
+  const { site, url } = call;
   const { status, headers } = response;
+  const kept =
+    call.refusalHeaders === undefined ? undefined : refusalHeadersOf(call.refusalHeaders, headers);
   if (status >= 300 && status < 400) {
     await body.cancel().catch(() => undefined);
     const location = headers.get('location');
@@ -112,12 +168,13 @@ async function refusalOf(
   }
   if (isRetryableStatus(status)) {
     const after = retryAfterSecondsOf(headers.get('retry-after'), headers.get('date'));
-    const detail = await detailOf(body);
+    const { detail, fields } = await refusalBodyOf(body, call.refusal, call.maxBytes);
     return after === undefined
-      ? outboundUnavailable(site, status, detail)
-      : outboundThrottled(site, status, after, detail);
+      ? outboundUnavailable(site, status, detail, fields, kept)
+      : outboundThrottled(site, status, after, detail, fields, kept);
   }
-  return outboundRefused(site, status, await detailOf(body));
+  const { detail, fields } = await refusalBodyOf(body, call.refusal, call.maxBytes);
+  return outboundRefused(site, status, detail, fields, kept);
 }
 
 export async function runAttempt(call: AttemptCall, attempt: number): Promise<AttemptAnswer> {
@@ -188,7 +245,7 @@ export async function runAttempt(call: AttemptCall, attempt: number): Promise<At
       failure,
       onSettled: release,
     });
-    if (status < 200 || status >= 300) throw await refusalOf(call.site, response, body, call.url);
+    if (status < 200 || status >= 300) throw await refusalOf(call, response, body);
     if (call.read === 'stream') {
       logAttempt(call, attempt, startedAt, status, undefined);
       return { status, headers: response.headers, stream: body };

@@ -73,6 +73,22 @@ const credential = (id: string, createdAt = NOW): PasskeyCredential => ({
 });
 
 describe.each(ADAPTERS)('%s', (_name, make) => {
+  test('a user created verified carries the stamp from the creating write; absent is unverified', async () => {
+    const adapter = await make();
+    const verified = await adapter.createUser({
+      id: '00000000-0000-7000-8000-000000000c03',
+      email: 'lin@example.com',
+      passwordHash: null,
+      orgId: null,
+      roles: [],
+      emailVerifiedAt: NOW,
+      createdAt: NOW,
+    });
+    expect(verified.emailVerifiedAt).toEqual(NOW);
+    expect((await adapter.findUserByEmail('lin@example.com'))?.emailVerifiedAt).toEqual(NOW);
+    expect((await adapter.findUserById(ADA))?.emailVerifiedAt).toBeNull();
+  });
+
   test('the second factor: enumerate, compare-and-set, count unsealed, consume once', async () => {
     const adapter = await make();
     await adapter.updateUser(GRACE, { mfaSecret: 'JBSWY3DPEHPK3PXP' });

@@ -6,8 +6,9 @@
 import { DEFAULT_LOCALE, ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Catalog, Locale } from '@ultimat3/i18n';
 import { isMiss, placeholdersOf } from '@ultimat3/i18n';
+import type { CatalogLayout } from './catalog-layout';
+import { catalogFileOf } from './catalog-layout';
 import type { Finding } from './output';
-import { catalogPath } from './templates/locales';
 
 /**
  * The length above which two identical values are a copy rather than a name. `Postly`, `Free` and
@@ -41,6 +42,8 @@ const shownValue = (value: string): string =>
  */
 export function localeParityFindings(
   catalogs: Readonly<Record<Locale, Catalog>>,
+  /** Each locale's form on disk, so a split locale's finding names the namespace file. */
+  layout?: CatalogLayout,
 ): readonly Finding[] {
   const reference = catalogs[DEFAULT_LOCALE];
   if (reference === undefined) return [];
@@ -56,7 +59,11 @@ export function localeParityFindings(
       // `X_CATALOG_MISSING_KEYS`'s finding. Reporting it here too would be one defect under two
       // codes, and the second code's repair is not the first one's.
       if (value === undefined || translated === undefined) continue;
-      findings.push(...keyFindings(locale, key, value, translated));
+      const files = {
+        path: catalogFileOf(layout, locale, key),
+        reference: catalogFileOf(layout, DEFAULT_LOCALE, key),
+      };
+      findings.push(...keyFindings(locale, key, value, translated, files));
     }
   }
   return findings;
@@ -76,8 +83,9 @@ function keyFindings(
   key: string,
   reference: string,
   translated: string,
+  files: { readonly path: string; readonly reference: string },
 ): readonly Finding[] {
-  const path = catalogPath(locale);
+  const { path } = files;
   // A loud miss (`⟦key⟧`) is a placeholder, not a translation, and it carries no slot of its own:
   // a slot comparison across it blames the marker — `x i18n sync` seeds one into every key
   // nobody has translated — and prints a fix ("add {name}") that edits the placeholder. The hole
@@ -93,7 +101,7 @@ function keyFindings(
   if (comparable && extra.length > 0) {
     findings.push({
       code: 'X_CATALOG_SLOT_MISMATCH',
-      cause: `${path} defines "${key}" with ${shownSlots(extra)}, which ${catalogPath(DEFAULT_LOCALE)} does not — interpolate substitutes by name, so ${locale} renders ${shownMisses(extra)}`,
+      cause: `${path} defines "${key}" with ${shownSlots(extra)}, which ${files.reference} does not — interpolate substitutes by name, so ${locale} renders ${shownMisses(extra)}`,
       fix:
         referenceSlots.length === 0
           ? `x i18n check --json   # remove ${shownSlots(extra)} from "${key}" in ${path}`
@@ -107,7 +115,7 @@ function keyFindings(
   if (comparable && missing.length > 0) {
     findings.push({
       code: 'X_CATALOG_SLOT_MISMATCH',
-      cause: `${catalogPath(DEFAULT_LOCALE)} defines "${key}" with ${shownSlots(missing)}, which ${path} does not — the value it carries never renders in ${locale}`,
+      cause: `${files.reference} defines "${key}" with ${shownSlots(missing)}, which ${path} does not — the value it carries never renders in ${locale}`,
       fix: `x i18n check --json   # add ${shownSlots(missing)} to "${key}" in ${path}`,
       docs: ERROR_DOCS_URL,
       at: path,
@@ -122,7 +130,7 @@ function keyFindings(
   if (translated === reference && reference.length > COPY_LENGTH && !isMiss(reference)) {
     findings.push({
       code: 'X_CATALOG_UNTRANSLATED',
-      cause: `${path} defines "${key}" exactly as ${catalogPath(DEFAULT_LOCALE)} does ("${shownValue(reference)}") — ${reference.length} characters, so ${locale} reads the reference's sentence instead of its own`,
+      cause: `${path} defines "${key}" exactly as ${files.reference} does ("${shownValue(reference)}") — ${reference.length} characters, so ${locale} reads the reference's sentence instead of its own`,
       fix: `x i18n check --json   # translate "${key}" in ${path}`,
       docs: ERROR_DOCS_URL,
       at: path,

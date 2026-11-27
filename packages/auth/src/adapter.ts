@@ -46,6 +46,13 @@ export interface CreateUserInput {
   readonly roles: readonly string[];
   readonly scopes?: readonly string[] | undefined;
   readonly externalId?: string | null | undefined;
+  /**
+   * The address proven at creation (a sign-in link's sign-up). An adapter that stores it in the
+   * same write as the row leaves no failure between the account and its stamp. Absent is
+   * unverified. An adapter that drops it gets a second `updateUser` stamp, and if that write fails
+   * the account exists unverified (`X_AUTH_WRITE_FAILED`), refused by every later link.
+   */
+  readonly emailVerifiedAt?: Date | null | undefined;
   readonly createdAt: Date;
 }
 
@@ -250,6 +257,11 @@ export interface PasskeyCredential {
   readonly transports: readonly string[];
   readonly createdAt: Date;
   readonly lastUsedAt: Date | null;
+  /**
+   * The name its owner gave it ("Work laptop"), trimmed; absent when it has none. Optional so an
+   * adapter written before labels still binds: one that drops it stores a passkey with no name.
+   */
+  readonly label?: string | undefined;
 }
 
 /** An issued, not yet redeemed ceremony challenge. Never the challenge itself: its digest. */
@@ -300,6 +312,17 @@ export interface PasskeyStore {
   advancePasskeyCounter(id: string, expected: number, next: number, at: Date): Promise<boolean>;
   /** Scoped to the owner: one user cannot delete another's passkey by naming its id. */
   deletePasskey(userId: string, id: string): Promise<boolean>;
+  /**
+   * Sets the label (`null` clears it) and answers the updated row; `null` when `userId` holds no
+   * passkey with that id — owner-scoped as `deletePasskey` is. The label arrives validated
+   * (`passkeyLabel`). Optional, unlike the rest of the seam, so an adapter written before it still
+   * binds: `renamePasskey(auth, …)` then refuses with `X_PASSKEY_RENAME_UNSUPPORTED`.
+   */
+  renamePasskey?(
+    userId: string,
+    id: string,
+    label: string | null,
+  ): Promise<PasskeyCredential | null>;
   /** Also drops every challenge that expired before `record.createdAt`, so the table stays bounded. */
   putPasskeyChallenge(record: PasskeyChallengeRecord): Promise<void>;
   /**

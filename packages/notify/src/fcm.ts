@@ -59,6 +59,11 @@ export function fcmMessage(token: string, push: NativePush): Record<string, unkn
     return { token, data: { ...push.data }, android: { priority: 'high' } };
   }
   const { push: alert } = push;
+  // Android's own block only when it says something: an alert without these renders as before.
+  const shown = {
+    ...(alert.sound === undefined ? {} : { sound: alert.sound }),
+    ...(alert.channelId === undefined ? {} : { channel_id: alert.channelId }),
+  };
   return {
     token,
     notification: { title: alert.title, body: alert.body },
@@ -67,6 +72,7 @@ export function fcmMessage(token: string, push: NativePush): Record<string, unkn
       priority: alert.urgent ? 'high' : 'normal',
       ttl: `${String(alert.ttlSeconds)}s`,
       ...(alert.collapse === undefined ? {} : { collapse_key: alert.collapse }),
+      ...(Object.keys(shown).length === 0 ? {} : { notification: shown }),
     },
   };
 }

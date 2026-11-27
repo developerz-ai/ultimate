@@ -297,7 +297,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_BOUNDARY_PACKAGE_TO_APP:
     'x verify --only boundaries --json   # after moving the shared code into the package, or importing in the opposite direction',
   X_APP_IMPORT_UNRESOLVED:
-    'x doctor --json   # names the package to bun add, or the file whose import to edit',
+    'x doctor --json   # names the app module, and the install or the edit that clears it',
   X_STREAM_ALREADY_FLUSHED:
     'load: async () => { setCookie(name, value); return data; },   // in defineRoute, never inside a Hole',
   X_QUERY_SLICE_ENTITY:
@@ -393,6 +393,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // raised error's own `fix:` carries the named invocation; `ULTIMATE_TASK_RUN` stays in the cause.
   X_TASK_RUN_PRODUCTION:
     'x tasks list --json   # then name the task: x tasks run <name> --production --json',
+  X_BOUNDARY_DEV_IMPORT:
+    'x verify --only boundaries --json   # names the module and its import: move test support to apps/web/test/, which no role loads, or drop the import from a module a role needs',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

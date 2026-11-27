@@ -21,7 +21,7 @@
 }
 
 .link {
-  @include t.focus-ring('accent', t.stroke(thick), calc(-1 * #{t.stroke(thick)}));
+  @include t.focus-ring('focus', t.stroke(thick), calc(-1 * #{t.stroke(thick)}));
   @include t.touch-target;
   display: flex;
   flex-direction: column;
@@ -34,7 +34,7 @@
   text-decoration: none;
 
   &[aria-current='page'] {
-    color: t.role('accent');
+    color: t.role('nav-active');
     font-weight: t.weight(semibold);
   }
 }

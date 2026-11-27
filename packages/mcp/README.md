@@ -282,7 +282,7 @@ serves the same catalog pair plus three dispatchers, each running only its own e
 |---|---|---|---|
 | `read_resource` | every query (`destructive: false`) | `{ resource, action, params? }` | `readOnlyHint: true` |
 | `write_resource` | actions declaring `mcp: { effect: 'write' }` | `{ resource, action, params? }` | `readOnlyHint: false`, `destructiveHint: true` |
-| `delete_resource` | actions declaring `mcp: { effect: 'delete' }` — archive, cancel, delete, an external send, a spend | `{ resource, action, params?, live?, confirmed_by_user }` | `readOnlyHint: false`, `destructiveHint: true` |
+| `delete_resource` | actions declaring `mcp: { effect: 'delete' }` — archive, cancel, delete, an external send, a spend; and, as the stricter door, any `write` sent to it and a read the app's `stricter` hook demands | `{ resource, action, params?, live?, confirmed_by_user }` | `readOnlyHint: false`, `destructiveHint: true` |
 
 ```ts
 import { action } from '@ultimat3/action';
@@ -322,7 +322,46 @@ defineAppMcp({
   Neither is `required` by the schema — the dispatcher is the one gate, so a call carrying both only
   inside `params` is read, not refused as `X_INPUT_INVALID` (#798).
 - Order: visibility (absent answer) → effect (`X_MCP_WRONG_TOOL`) → scope → arguments → the policy's
-  actor half → preview / confirmation → `dispatch`, the flat path — same audit line, same bucket.
+  actor half → the `stricter` hook → preview / confirmation → `dispatch`, the flat path — same
+  audit line, same bucket.
+- **The stricter door** (`As of 2026-11`). `delete_resource` also runs a `write` action sent to it:
+  the same preview, the same `confirmed_by_user`. `write_resource` and `read_resource` are never
+  widened — a delete through `write_resource` stays `X_MCP_WRONG_TOOL`. A read through
+  `delete_resource` stays `X_MCP_WRONG_TOOL` unless the app demanded it for that call (below).
+- **The door is on the call.** `caller.door` is `{ tool, fields }` for a call that came through a
+  dispatcher: the audit line carries `door: '<dispatcher>'`, `onAudit` reads `event.caller.door`,
+  and a hand-written tool or a `runtimeTool` is handed `door` beside `input` and `ctx`.
+
+#### `split:` — envelope fields and the `stricter` hook
+
+`As of 2026-11`. Two things an app adds to the dispatchers, checked at boot (`X_MCP_SPLIT_INVALID`:
+a surface that is never `'meta-split'`, a field name the envelope owns, a `stricter` that is not a
+function):
+
+| `split.` | What it is | Refusal |
+|---|---|---|
+| `fields: { <name>: { description, tools?, required?, maxLength? } }` | a string field of the app's own on the envelope of the named dispatchers (default: all three): a `reason`, a change ticket. Published by `tools/list`, validated on the envelope, handed on as `door.fields`. **Never part of the action input** | undeclared, mistyped, too long, or a required one missing: invalid arguments, as for any other |
+| `stricter: (call) => boolean` | whether THIS call must come through `delete_resource`, decided from `{ caller, tool, resource, action, effect, params, fields }` — `params` already validated, the caller already in scope and admitted | demanded on `read_resource` / `write_resource`: `X_MCP_WRONG_TOOL` naming `delete_resource`, nothing ran. On `delete_resource` it is what lets a read run there, behind preview and `confirmed_by_user` |
+
+`stricter` fails closed: anything but the literal `false` demands the stricter door, and a throw
+fails the call. It is not asked for a `delete` action, nor for a `write` already on
+`delete_resource`.
+
+```ts
+import { defineAppMcp } from '@ultimat3/mcp';
+
+defineAppMcp({
+  include: 'exposed',
+  surface: 'meta-split',
+  groups: { payments: { description: 'Payments', tools: ['refundPayment', 'paymentById'] } },
+  split: {
+    fields: { reason: { description: 'Why this call is made, in one sentence.', maxLength: 500 } },
+    // A large refund is confirmed by the user, a small one is not.
+    stricter: ({ action, params }) =>
+      action === 'refundPayment' && Number(params['amountMinor']) > 10_000,
+  },
+});
+```
 - Ungrouped tools (`docs`, `whoami`) stay flat beside the five, exactly as on `'meta'`.
 
 ### Per-caller tools: `catalog:` and `runtimeTool()`
@@ -376,7 +415,7 @@ defineAppMcp({
 tenant it acts in under `tenant.arg`. The step runs first on a call:
 
 1. the arg is read and **stripped** — no tool's schema or handler ever sees it (`X_MCP_TENANT_INVALID`
-   at boot for a tool declaring it). Missing or empty: `X_MCP_TENANT_REQUIRED`, whose fix is `list_tenants({})`.
+   at boot for a tool declaring it). Missing or empty: `X_MCP_TENANT_REQUIRED`, whose fix is `list_tenants({})` (or the `discover` tool).
 2. `resolve({ person, value })` answers the call's actor, a `kind: 'agent'` — or `null`, which is
    **byte-for-byte the hidden-tool answer**: no 403, no echo of the value. A throw (or a non-agent
    actor) is `X_MCP_TENANT_UNRESOLVED`, never "not a member".
@@ -385,6 +424,20 @@ tenant it acts in under `tenant.arg`. The step runs first on a call:
 
 `list_tenants` (no arg, no scope) serves `list({ person })`; `tools/list` publishes the arg as a
 required string on every other tool.
+
+**Which calls may name no tenant** (`tenant-discover.ts`, `As of 2026-11`). By default one tool,
+`list_tenants`. Two options change that, both checked at boot (`X_MCP_TENANT_INVALID`):
+
+| option | names | a call with no `tenant.arg` | a call with one |
+|---|---|---|---|
+| `discover: '<tool>'` | `list_resources` (with `surface: 'meta'` or `'meta-split'`, never a function), or an ungrouped tool of `tools:` with no `visibleTo` | answers `{ tenants, next }` as the person, behind the tool's own scope, whatever else it sends | the tool itself, in that tenant |
+| `optional: ['<tool>', …]` | ungrouped tools of `tools:` (`docs`), never the `discover` tool | runs as the person: no `orgId`, `caller.tenant` absent | runs as the tenant actor |
+
+With `discover`, `list_tenants` is not registered — the tool list keeps its size — and
+`X_MCP_TENANT_REQUIRED` points at the discover tool. `tools/list` publishes the arg on those tools
+too, but not as required. Only an ABSENT arg opens either door: a present, unusable one (`''`,
+`null`, a number) is `X_MCP_TENANT_REQUIRED`, and a tenant the person is not in is the hidden-tool
+answer on these tools as on every other. A per-caller `catalog` tool can be named by neither.
 
 **`tools/list` is person-scoped, and not a promise.** It names no tenant (MCP's `tools/list` takes
 only a `cursor`), so `visibleTo`, `can()` and `catalog` run there as the PERSON. `tools/call` runs
@@ -502,11 +555,72 @@ did not.
 **Dual-era, `As of 2026-11`** (`protocol-era.ts`). A request whose
 `params._meta["io.modelcontextprotocol/protocolVersion"]` is in `MCP_MODERN_VERSIONS` (`2026-07-28`)
 is served statelessly: `server/discover`, no `initialize` or `ping`, every result stamped
-`resultType: 'complete'` + `_meta` `serverInfo`, lists and reads `ttlMs: 0`, `cacheScope: 'private'`.
+`resultType: 'complete'` + `_meta` `serverInfo` — except a `tools/call` answered
+`resultType: 'input_required'` (the URL prompt below), so a client branches on `resultType` before
+reading `content` — lists and reads `ttlMs: 0`, `cacheScope: 'private'`.
 No `_meta` version, or one in `MCP_LEGACY_VERSIONS` (`2025-11-25`, `2025-06-18`, `2025-03-26`), is
 today's legacy dispatch; `initialize` echoes an offered legacy revision, else `2025-11-25`. Any
 other version is `-32022` `X_MCP_PROTOCOL_UNSUPPORTED` with `data: { supported, requested }`.
 There is no `MCP_PROTOCOL_VERSION`: name the era, `MCP_MODERN_VERSIONS[0]` or `MCP_LEGACY_VERSIONS`.
+
+**URL-mode elicitation, `As of 2026-11`** (`url-elicitation.ts`; MCP 2026-07-28 `client/elicitation`,
+`basic/patterns/mrtr`). A handler that needs the person to open a page returns
+`withUrlElicitation(output, { url, message })`. `output` is unchanged and is the whole answer for
+every client that cannot show a prompt, so it says the same in its own fields.
+
+```ts
+import { withUrlElicitation } from '@ultimat3/mcp';
+
+declare const appOrigin: string;
+
+// What a projected handler (an action's or a query's) returns when the person has a page to open.
+export function notConnected() {
+  const link = new URL('/connect', appOrigin).href;
+  return withUrlElicitation(
+    { status: 'not_connected', open: link },
+    { url: link, message: 'Open this page to finish connecting.' },
+  );
+}
+```
+
+| `tools/call` | Answer |
+|---|---|
+| modern, `_meta["io.modelcontextprotocol/clientCapabilities"].elicitation.url` an object | `{ resultType: 'input_required', inputRequests: { url_elicitation: { method: 'elicitation/create', params: { mode: 'url', url, message } } } }` — no `content`, no `requestState`. `url` is the checked URL in its parsed spelling (`new URL(url).href`) |
+| the retry, `params.inputResponses.url_elicitation.action` `accept`, `decline` or `cancel` | the tool runs again and its result is the answer: asked once per call. `accept` is consent to open the page, not proof it was finished. Any other `action` is no answer: the tool runs again, and an ask it makes is sent, not suppressed; a rerun that no longer asks answers its result |
+| the tool failed (`isError`, a result that is not JSON) | the failure, to every caller: a prompt never hides it, and an ask beside it is not checked |
+| modern without the capability (`elicitation: {}` is form mode only) | the tool's result |
+| legacy | the tool's result. `-32042` is not sent: its capability is declared on `initialize`, and no handshake is kept |
+| the ask is not an absolute `https:` URL (`http:` on `localhost`, `127.0.0.1`, `[::1]`), carries `user:password@`, or has an empty message | `isError`, `X_MCP_ELICITATION_URL_INVALID` — for every caller, capable or not |
+
+The ask belongs to the call whose handler made it — an output object returned again by a later
+call carries nothing — and an action's `output` parse does not drop it.
+
+The handler runs again on the retry whatever the person answered (`decline` and `cancel`
+included), so it must be replay-safe: a write before the ask runs twice. Keep the write behind a
+completion check the handler makes itself — read whether the page was finished, and ask only when
+it was not. Asked once per call: a rerun that asks again inside the retry (a second page, a fresh
+nonce in the URL) is answered with its content, which says what is still needed, and the next call
+asks. An action with an `idempotencyKey` replays its first result to a retry under the same key, so
+it can never see the page finished: the completion check goes in a call without that key.
+
+The spec's rules a
+value cannot show stay the app's: nothing about the person and no pre-authenticated link in the
+URL, and the page verifies that whoever opened it is the caller the ask was made for (its
+session against the MCP caller's subject) before it accepts anything.
+
+A hand-built `McpTool` sets the field on its `McpToolResult` instead, beside its `content`:
+
+```ts
+import type { McpToolResult } from '@ultimat3/mcp';
+import { textResult } from '@ultimat3/mcp';
+
+declare const link: string;
+
+const answer: McpToolResult = {
+  ...textResult(`Not connected yet. Open ${link} to finish.`),
+  urlElicitation: { url: link, message: 'Open this page to finish connecting.' },
+};
+```
 
 | HTTP refusal | Status | Code |
 |---|---|---|
@@ -778,18 +892,22 @@ A driver without `introspect` is `X_MCP_JOB_TOOL_INVALID`.
 | Declare | What it does |
 |---|---|
 | `recipes: [{ name, title, description, steps: [{ tool, why, example? }], notes? }]` | each served as `docs://recipes/<name>` (`text/markdown`) and through a read-only `docs` tool. Every step's tool must be in the catalog (`X_MCP_RECIPE_TOOL_UNKNOWN`), every example must pass its input (`X_MCP_RECIPE_EXAMPLE_INVALID`), at boot, all offenders at once |
-| `recipes: await markdownRecipes({ dir })` | one `*.md` per recipe, body served verbatim. Name = file name; `---` `title:` / `description:` frontmatter, else the first `# ` heading and paragraph. A ```` ```call ```` fence — `tool {"arg": "value"}` — is a step, checked like one; a whole `"<name>"` value is a placeholder, any value at boot. A `docs://recipes/` link in the text that names no recipe is `X_MCP_RECIPE_LINK_DANGLING` |
-| `extraRecipes: (caller) => recipes` | the caller's own (a tenant's runbooks), asked per request: on `docs` as `source: 'caller'`, on `resources/list` and `resources/read` to that caller alone (a throw is `-32603` on all three, audited `failed`). Not boot-checked; one naming a tool the caller cannot call is not shown |
+| `recipes: [{ ..., section: 'ref', aliases: ['refusals'] }]` | served as `docs://ref/<name>` instead of `docs://recipes/<name>`; `section`, like a name, is lowercase letters and digits in groups joined by single `-` (`ref-v2`; never `-ref`, `ref-` or `ref--v2`) (`X_MCP_RECIPE_URI_RESERVED`), one URI per recipe, and every section a recipe uses is owned by `recipes:` — a `resources:` URI under it is refused. `aliases` score in `docs({ q })` like the title |
+| `recipes: await markdownRecipes({ dir })` | one `*.md` per recipe, body served as written (line ends normalised to LF, outer blank lines trimmed). Name = file name; a sub-folder one level down is its section (`ref/errors.md` → `docs://ref/errors`; `recipes/<name>.md` is `<name>.md`). `---` `title:` / `description:` / `aliases: a, b` frontmatter, else the first `# ` heading and paragraph. A ```` ```call ```` fence — `tool {"arg": "value"}` — is a step, checked like one; a whole `"<name>"` value is a placeholder, any value at boot. A `docs://<section>/` link into a section this server serves that names no recipe is `X_MCP_RECIPE_LINK_DANGLING`, the link's whole path checked (`docs://ref/errors/old` is not `docs://ref/errors`); another `docs://` prefix is not judged |
+| `extraRecipes: (caller) => recipes` | the caller's own (a tenant's runbooks), asked per request: on `docs` as `source: 'caller'`, on `resources/list` and `resources/read` to that caller alone (a throw is `-32603` on all three, audited `failed`). Not boot-checked; one naming a tool the caller cannot call is not shown. May add a section of its own; a section outside that grammar is `X_MCP_RECIPE_URI_RESERVED` |
+| `docsTool: { description?, index?: 'json' \| 'map' }` | `description` replaces the `docs` tool's own. `index: 'map'` makes `docs({})` plain text: a `# <section>` line per section, then `<uri>  <title>` per recipe (` (yours)` for a caller's own). Default `'json'`: `{ recipes: [{ name, title, description, uri, source }] }`; `name` is bare, so outside `recipes` read by `uri` (or `<section>/<name>`) |
 
-`docs({})` lists what this caller can follow; `docs({ name })` / `docs({ uri })` reads one;
-`docs({ q })` inlines the best match (3 points a word in name or title, 2 in description, 1 in the
-body) and names the nearest names on a miss — never an empty answer while a recipe is visible. `q`
+`docs({})` lists what this caller can follow; `docs({ name })` / `docs({ uri })` reads one —
+`name` is the bare name in `recipes`, `<section>/<name>` elsewhere;
+`docs({ q })` inlines the best match (3 points a word in name, title or aliases, 2 in description,
+1 in the body) and names the nearest names on a miss — never an empty answer while a recipe is visible. `q`
 is at most 1000 characters (`X_INPUT_INVALID` beyond); a miss compares its first 16 words. A
 recipe is visible only when every step's tool is visible to the caller and its scope is on the
 token; hidden and unknown are the same not-found. An `UltimateError`'s `docs://recipes/<name>` is
 checked at load (`X_MCP_RECIPE_UNKNOWN`). In a contract test, `replayRecipes(server, recipes, {
-caller, placeholders })` CALLS every fenced example through the server and reads every link: no
-such tool, refused arguments, a refusing policy or a dangling link fails it.
+caller, placeholders, sections? })` CALLS every fenced example through the server and reads every
+link into a section `recipes` uses or `sections` names — replaying a subset, name the server's
+other sections. No such tool, refused arguments, a refusing policy or a dangling link fails it.
 
 `McpResource.read(caller)` takes the caller the gates admitted, and `mcpServer({ resourceSources })`
 lists resources per caller — what `extraRecipes` is built on.
@@ -804,7 +922,7 @@ lists resources per caller — what `extraRecipes` is built on.
 | output | `{ untrusted, isError }`: the remote's text inside `<untrusted source="mcp:<name>/<tool>">`, middle cut past `maxResultChars`; invisible format characters (`\p{Cf}`) stripped, then every `<` (and full-width `＜`, small `﹤`) written `&lt;` — no tag-shaped pattern left to bypass |
 | `expose` | default `false`: the actions are this app's, not its `/mcp`'s — `include: 'exposed'` leaves them out, while an in-app `agent()` is still offered them (`agents: true`). `expose: true` opts one remote server in, making this app's `/mcp` answer for a third party's tools |
 | `reverifyMs` | default 3,600,000: one verdict against the live server stands this long (read on `clock`, default `systemClock`), then the next call re-lists and holds it to the lock again — a remote that changes and announces nothing is caught within the hour |
-| `mcpClient({ name, url, dial, deadlineMs, auth })` | over core's `outbound()`; modern era first, the legacy handshake when the server refuses it for its era (a 400/404/405, an unknown-version/method/request JSON-RPC code, a body that is no answer — never a 429, 408 or 403; one handshake shared by concurrent first calls, and a failed one decides nothing). A `tools/list` whose cursor outlasts 50 pages is `malformed`, never a truncated list. A text-only result is a success. `X_MCP_REMOTE_REFUSED`'s `meta.failure` tells `transport` / `status` / `rpc` / `malformed` apart; a tool's own `isError` is a result. A 401 is `X_MCP_REMOTE_AUTH_REQUIRED` with `meta.resourceMetadata` |
+| `mcpClient({ name, url, dial, deadlineMs, auth, maxBytes?, fetch? })` | over core's `outbound()`; `maxBytes` caps one answer (default 16 MiB, `X_MCP_REMOTE_REFUSED` `transport` past it); `fetch` is the transport under `outbound()`, so the screen, deadline, cap and redirect refusal stay the client's; modern era first, the legacy handshake when the server refuses it for its era (a 400/404/405, an unknown-version/method/request JSON-RPC code, a body that is no answer — never a 429, 408 or 403; one handshake shared by concurrent first calls, and a failed one decides nothing). A `tools/list` whose cursor outlasts 50 pages is `malformed`, never a truncated list. A text-only result is a success. `X_MCP_REMOTE_REFUSED`'s `meta.failure` tells `transport` / `status` / `rpc` / `malformed` apart; a tool's own `isError` is a result. A 401 is `X_MCP_REMOTE_AUTH_REQUIRED` with `meta.resourceMetadata` |
 | `mcpOAuthClient({ clientId, clientName, redirectUri, scopes? })` | the upstream's OAuth: `begin(serverUrl)` reads RFC 9728 then RFC 8414 metadata and answers `{ authorizeUrl, handshake }` (PKCE S256 from `@ultimat3/auth`, `resource` per RFC 8707); `exchange(handshake, { code, state })` and `refresh(handshake, token)` answer `{ accessToken, refreshToken, expiresIn }`. When the server's refresh answer carries no `refresh_token`, `refresh` answers the one it was passed (RFC 6749 §6: the old one stays valid), so storing the answer never loses it; `null` only from `exchange`. `begin` refuses a server URL or an issuer that is not `https:` (loopback `http:` aside), before fetching its metadata. `clientId` is the HTTPS URL this app serves `metadata()` at (a client ID metadata document). Keep the handshake server-side; return the token from `auth` |
 
 ## Errors
@@ -821,7 +939,7 @@ lists resources per caller — what `extraRecipes` is built on.
 | `X_MCP_SURFACE_OVER_BUDGET` | `assertMcpSurfaceBudget` measured a surface over its declared ceiling |
 | `X_MCP_TENANT_REQUIRED` | a call on a `tenant:` server names no tenant (missing or empty `tenant.arg`); refused before dispatch, `list_tenants({})` names the values — `refused`, at `warn` |
 | `X_MCP_TENANT_UNRESOLVED` | `tenant.resolve` threw or answered a non-agent actor — never "not a member", which is the hidden-tool answer |
-| `X_MCP_TENANT_INVALID` | `tenant.arg` is not a plain name, or a tool's own input already declares it — at boot |
+| `X_MCP_TENANT_INVALID` | `tenant.arg` is not a plain name, or a tool's own input already declares it; or `tenant.discover` / `tenant.optional` names a tool some caller cannot reach by that name — at boot |
 | `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | an idempotent action's input declares `idempotencyKey`, the reserved retry-key argument |
 | `X_MCP_PROTOCOL` | malformed envelope, unknown method, bad auth header |
 | `X_MCP_PROTOCOL_UNSUPPORTED` | the request names a protocol version this server does not serve (`-32022`, 400) |

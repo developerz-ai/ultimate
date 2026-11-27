@@ -1,5 +1,6 @@
 // The conformance suite over the memory store, and the proof it can fail: a take that never marks
-// the code used (every replay is fresh), and a revokeGrants that ignores the client it was handed.
+// the code used (every replay is fresh), a revokeGrants that ignores the client it was handed, and
+// a revokeLiveGrant that claims a second revoke of one grant ended it too.
 
 import { describe, expect, test } from 'bun:test';
 import { memoryAuthServerStore } from '@ultimat3/auth';
@@ -45,6 +46,63 @@ describe(testName('unit', 'a store that breaks the contract fails conformance'),
     await expect(race.run(neverSpends())).rejects.toThrow();
     await expect(check('taken fresh once').run(neverSpends())).rejects.toThrow();
     await race.run(memoryAuthServerStore());
+  });
+
+  test('a revokeLiveGrant that claims every call ended the grant', async () => {
+    const inner = memoryAuthServerStore();
+    const alwaysEnds: AuthServerStore = {
+      ...inner,
+      revokeLiveGrant: async (id, at) => {
+        await inner.revokeGrant(id, at);
+        return true;
+      },
+    };
+    const answers = check('revokeLiveGrant answers true only');
+    await expect(answers.run(alwaysEnds)).rejects.toThrow();
+    await answers.run(memoryAuthServerStore());
+  });
+
+  test('a revokeLiveGrant that ends every grant of the subject', async () => {
+    const inner = memoryAuthServerStore();
+    const subjectWide: AuthServerStore = {
+      ...inner,
+      // Atomic on the asked grant, so only the sibling assertion can catch it.
+      revokeLiveGrant: async (id, at) => {
+        const won = (await inner.revokeLiveGrant?.(id, at)) === true;
+        const grant = await inner.getGrant(id);
+        if (won && grant !== null) await inner.revokeGrants({ subject: grant.subject }, at);
+        return won;
+      },
+    };
+    await expect(check('revokeLiveGrant answers true only').run(subjectWide)).rejects.toThrow();
+  });
+
+  test('a revokeLiveGrant whose losing call still overwrites the time', async () => {
+    const inner = memoryAuthServerStore();
+    const overwrites: AuthServerStore = {
+      ...inner,
+      revokeLiveGrant: async (id, at) => {
+        const grant = await inner.getGrant(id);
+        const won = await inner.revokeLiveGrant?.(id, at);
+        if (grant !== null) await inner.putGrant({ ...grant, revokedAt: at });
+        return won === true;
+      },
+    };
+    await expect(check('revokeLiveGrant answers true only').run(overwrites)).rejects.toThrow();
+  });
+
+  test('a revokeLiveGrant that reads, then writes in a separate step', async () => {
+    const inner = memoryAuthServerStore();
+    const readThenWrite: AuthServerStore = {
+      ...inner,
+      revokeLiveGrant: async (id, at) => {
+        const grant = await inner.getGrant(id);
+        if (grant === null || grant.revokedAt !== null) return false;
+        await inner.revokeGrant(id, at);
+        return true;
+      },
+    };
+    await expect(check('revokeLiveGrant answers true only').run(readThenWrite)).rejects.toThrow();
   });
 
   test('a revokeGrants that ignores the client', async () => {

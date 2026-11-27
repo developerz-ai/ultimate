@@ -47,6 +47,19 @@ export interface McpCaller {
    * belongs to the server, and `ToolRegistry` is where it lives.
    */
   readonly tenant?: string;
+  /**
+   * The `'meta-split'` dispatcher THIS call came through — set by `meta-split-call.ts` for one
+   * call. Absent on every other path. The audit line carries its `tool`, never its `fields`.
+   */
+  readonly door?: McpDoor;
+}
+
+/** The dispatcher one call came through, and the app-declared envelope fields it carried. */
+export interface McpDoor {
+  /** `read_resource`, `write_resource` or `delete_resource`. */
+  readonly tool: string;
+  /** `split.fields` as this call sent them: a `reason`, a ticket. Never part of the action input. */
+  readonly fields: Readonly<Record<string, string>>;
 }
 
 /**
@@ -66,6 +79,17 @@ export type McpVisibility = readonly McpRole[] | ((caller: McpCaller) => boolean
 export type ContentBlock =
   | { readonly type: 'text'; readonly text: string }
   | { readonly type: 'resource'; readonly uri: string; readonly mimeType?: string };
+
+/**
+ * A URL-mode elicitation (MCP 2026-07-28, `client/elicitation`): a page the person opens in their
+ * own browser, for what must not pass through the client or the model — a credential, a consent.
+ */
+export interface McpUrlElicitation {
+  /** Absolute `https:` (`http:` on this machine only), no `user:password@`, nothing secret in it. */
+  readonly url: string;
+  /** Why the page is needed, shown to the person beside the URL. */
+  readonly message: string;
+}
 
 /**
  * `tools/call` result. `isError` flags an EXPECTED tool-level failure (a policy denied the
@@ -91,6 +115,12 @@ export interface McpToolResult {
    * through. Absent keeps the conservative reading.
    */
   readonly code?: string;
+  /**
+   * A page the person is asked to open (`url-elicitation.ts`). NEVER a wire field of this result:
+   * a modern client that declared `elicitation.url` is answered an `InputRequiredResult` carrying
+   * it instead of `content`; every other caller gets `content`, which says the same in text.
+   */
+  readonly urlElicitation?: McpUrlElicitation;
 }
 
 export type ToolArgs = Record<string, unknown>;

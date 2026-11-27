@@ -139,6 +139,18 @@ describe('unit · addressing a device across nodes', () => {
     expect(newer.closed).toBeNull();
   });
 
+  test("a redial on the same node before the first socket's claim lands keeps the newer socket", async () => {
+    const { nodeOf } = await fleet();
+    const one = await nodeOf('web1', true);
+    const older = fakeWs(data('s1'));
+    one.host?.open(older);
+    const newer = fakeWs(data('s2'));
+    one.host?.open(newer);
+    await flush();
+    expect(older.closed).toEqual({ code: 1008, reason: 'replaced' });
+    expect(newer.closed).toBeNull();
+  });
+
   test('a timed-out request and a stopped bus leave nothing pending', async () => {
     const { nodeOf, timers } = await fleet();
     const web = await nodeOf('web1', true);
@@ -205,7 +217,11 @@ describe('unit · DeviceBus.start refused half-way', () => {
       clock,
       newId: () => 'id0',
     });
-    const handlers = { onRequest: () => undefined, onClaim: () => undefined };
+    const handlers = {
+      onRequest: () => undefined,
+      onClaim: () => undefined,
+      onDisconnect: () => undefined,
+    };
     expect(await codeOf(bus.start(handlers))).toBe('X_TRANSPORT_UNAVAILABLE');
     expect(transport.held).toBe(0);
   });

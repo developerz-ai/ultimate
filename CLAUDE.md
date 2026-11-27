@@ -168,7 +168,7 @@ a list, never a count or ordinal: `PRIMITIVE_FACTORIES` in the same file, held c
 - A 1–4 line header comment per file stating its single responsibility. Comments explain **why**, never what.
 - Every package carries `README.md` (public API) + `CLAUDE.md` (boundary, deps, commands). This file stays ≤ 16 KB and a package's ≤ 24 KB or its pin (`bun run scripts/claude-md-size.ts`): history goes to `docs/history/`.
 - Route files: `page.tsx` on `site/`/`app/` — the directory is the URL. `registerRoute()` enforces it (`X_ROUTE_FILE_INVALID`). `api/` holds no route file: actions and queries via `defineApi()`. `site/` never imports `app/` (`X_BOUNDARY_SITE_TO_APP`).
-- i18n catalogs: one flat file per locale. An **app's** live at `packages/i18n/catalogs/<locale>.json` (`x i18n check` audits them); the **framework's own** is `packages/i18n/src/catalogs/en.json` (the `boundaries` step audits it, `X_CATALOG_KEY_UNREACHABLE`).
+- i18n catalogs: a file or a dir of namespace files per locale. An **app's** are `packages/i18n/catalogs/*` (`x i18n check` audits them); the **framework's own** is `packages/i18n/src/catalogs/en.json` (the `boundaries` step audits it, `X_CATALOG_KEY_UNREACHABLE`).
 - Docs style: lead with the rule, fragments over sentences, tables for any ≥3-row structure, no meta-framing, no trailing summary. Date load-bearing claims `As of 2026-07`.
 
 ## Where things live

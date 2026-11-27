@@ -5,20 +5,24 @@
 
 import { insufficientContrastError, invalidBrandTokenError, runtimeMissingError } from '../errors';
 import { contrastRatio } from '../tokens/contrast';
-import { CONTRAST_PAIRS } from '../tokens/contrast-pairs';
+import { ALIAS_CONTRAST_PAIRS, CONTRAST_PAIRS } from '../tokens/contrast-pairs';
 import {
-  COLOR_ROLES,
-  type ColorRole,
+  COLOR_ALIASES,
   colorTokens,
+  isAliasRole,
   type RadiusName,
   SHADOW_NAMES,
   type ShadowName,
   shadowTokens,
+  THEME_ROLES,
   type Theme,
+  type ThemeRole,
 } from '../tokens/tokens';
 import {
   colorDeclarations,
   fontDeclarations,
+  type MotionInput,
+  motionDeclarations,
   radiusDeclarations,
   shadowDeclarations,
 } from './brand-declarations';
@@ -36,12 +40,20 @@ export interface BrandInput {
    * role, so `{ preset: 'scifi', colors: { dark: { accent: … } } }` is scifi with your accent.
    */
   preset?: ThemePresetName | undefined;
-  /** Channel overrides per theme. Omit a theme to leave it at the shipped palette. */
-  colors?: Themed<ColorRole> | undefined;
+  /**
+   * Channel overrides per theme, palette and alias roles alike (`THEME_ROLES`). Omit a theme to
+   * leave it at the shipped palette; omit an alias (`link`, `focus`, …) to keep it on its source.
+   */
+  colors?: Themed<ThemeRole> | undefined;
   /** Shadow overrides per theme, by rung (`SHADOW_NAMES`) — elevation is themed like colour. */
   shadows?: Themed<ShadowName> | undefined;
   radius?: Partial<Record<RadiusName, string>> | undefined;
   font?: Partial<Record<FontSlot, string>> | undefined;
+  /**
+   * Durations and curves by rung (`durationTokens`, `easingTokens`): the app's own tempo, read by
+   * every `t.duration()` and `t.easing()`. Not themed — motion is the same in light and dark.
+   */
+  motion?: MotionInput | undefined;
 }
 
 export interface Brand {
@@ -83,6 +95,7 @@ export function defineTheme(input: BrandInput): Brand {
     ...light,
     ...radiusDeclarations(layer(base?.radius, input.radius)),
     ...fontDeclarations(layer(base?.font, input.font)),
+    ...motionDeclarations(input.motion),
   ];
   const blocks: string[] = [];
   if (root.length > 0) blocks.push(rule(':root', root));
@@ -92,7 +105,7 @@ export function defineTheme(input: BrandInput): Brand {
   // specificity, so every level it emits is answered here, in the same order.
   if (light.length > 0) blocks.push(rule("html[data-theme='light']", light));
   const media = [
-    ...darkMediaDeclarations('color', COLOR_ROLES, colors, colorTokens.dark),
+    ...darkMediaDeclarations('color', THEME_ROLES, colors, SHIPPED_DARK_COLORS),
     ...darkMediaDeclarations('shadow', SHADOW_NAMES, shadows, shadowTokens.dark),
   ];
   if (media.length > 0) {
@@ -166,6 +179,18 @@ function indent(block: string): string {
 }
 
 /**
+ * The shipped dark palette as a declaration answers it: an alias role is its source's PROPERTY,
+ * never that source's shipped channels — a brand that set `link` in light only and its own dark
+ * `accent` keeps a dark link that is its dark accent.
+ */
+const SHIPPED_DARK_COLORS: Readonly<Record<ThemeRole, string>> = Object.fromEntries(
+  THEME_ROLES.map((role) => [
+    role,
+    isAliasRole(role) ? `var(--color-${COLOR_ALIASES[role]})` : colorTokens.dark[role],
+  ]),
+) as Record<ThemeRole, string>;
+
+/**
  * The dark media `:root` must answer every token the brand's own `:root` touched. That `:root`
  * (light) comes after `theme.scss`'s dark media `:root` at equal specificity, so a role overridden
  * in light only would otherwise reach an OS-dark document with no `data-theme` — scripting off, or
@@ -198,14 +223,19 @@ function darkMediaDeclarations<K extends string>(
  */
 function assertContrast(
   theme: Theme,
-  overrides: Partial<Record<ColorRole, string>> | undefined,
+  overrides: Partial<Record<ThemeRole, string>> | undefined,
 ): void {
   if (overrides === undefined) return;
-  const resolved = (role: ColorRole): string => overrides[role] ?? colorTokens[theme][role];
-  for (const pair of CONTRAST_PAIRS) {
+  // An alias the brand left unset renders as its source, the brand's source when it set one — so
+  // `accent: …` alone re-measures every link, nav and focus pairing against the new accent.
+  const own = (role: ThemeRole): string | undefined =>
+    overrides[role] ?? (isAliasRole(role) ? overrides[COLOR_ALIASES[role]] : undefined);
+  const resolved = (role: ThemeRole): string =>
+    own(role) ?? colorTokens[theme][isAliasRole(role) ? COLOR_ALIASES[role] : role];
+  for (const pair of [...CONTRAST_PAIRS, ...ALIAS_CONTRAST_PAIRS]) {
     // Only pairings this brand can have changed. The rest are the shipped palette, which
     // `contrast.test.ts` already holds — re-reporting them would blame the app for our colours.
-    if (overrides[pair.fg] === undefined && overrides[pair.bg] === undefined) continue;
+    if (own(pair.fg) === undefined && own(pair.bg) === undefined) continue;
     const fg = resolved(pair.fg);
     const bg = resolved(pair.bg);
     const ratio = contrastRatio(fg, bg);

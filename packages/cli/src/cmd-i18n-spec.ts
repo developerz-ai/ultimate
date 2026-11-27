@@ -3,14 +3,14 @@
 
 import type { CommandSpec } from './parse';
 
-export const I18N_SUBCOMMANDS = ['check', 'add', 'sync'] as const;
+export const I18N_SUBCOMMANDS = ['check', 'add', 'sync', 'split'] as const;
 
 export const i18nSpec: CommandSpec = {
   name: 'i18n',
-  summary: 'catalogs: add a locale, sync keys, check for gaps',
-  usage: 'x i18n [check|add <locale>|sync <locale>] [--json]',
+  summary: 'catalogs: add a locale, sync keys, check for gaps, split into namespace files',
+  usage: 'x i18n [check|add <locale>|sync <locale>|split [<locale>]] [--json]',
   requiresApp: true,
   subcommands: I18N_SUBCOMMANDS,
-  // The bare `x i18n` audits; `add` and `sync` write catalogs and must be asked for.
+  // The bare `x i18n` audits; `add`, `sync` and `split` write catalogs and must be asked for.
   defaultSubcommand: 'check',
 };

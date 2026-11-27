@@ -117,6 +117,34 @@ describe('apiMountRoutes — defineApi({ http: { mounts } })', () => {
       expect(typeof route.meta.authenticate).toBe('function');
     }
   });
+
+  test('a mount declaring tenant is handed it: the listing is served beside the cut', () => {
+    defineApi({
+      actions: {
+        publishPost: action({
+          input: Input,
+          output: t.object({ ok: t.boolean }),
+          policy: allow(),
+          handle: () => ({ ok: true }),
+        }),
+      },
+      http: {
+        pathStyle: 'readable',
+        mounts: [
+          {
+            prefix: '/v1',
+            scopes: { 'posts:write': ['publishPost'] },
+            resolveToken: () => null,
+            tenant: { arg: 'org', resolve: () => null, list: () => [] },
+          },
+        ],
+      },
+    });
+    const served = apiMountRoutes()
+      .filter((route) => route.path !== '/v1/*rest')
+      .map((route) => `${route.method} ${route.path}`);
+    expect(served).toEqual(['POST /v1/publish-post', 'GET /v1/tenants']);
+  });
 });
 
 describe('pagePostRoutes — defineRoute({ post })', () => {

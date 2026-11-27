@@ -26,6 +26,21 @@ const PROCESSES_HELM_WHY =
 
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...TEMPLATE_CODEMOD_HISTORY,
+  {
+    template: 'biome.json',
+    since: '31.50.0',
+    none: 'the merge moves only the `$schema` editor hint to 2.6.6; an existing app keeps its installed Biome and its own config remains valid, so no codemod moves an app file',
+  },
+  {
+    template: 'package.json',
+    since: '31.50.0',
+    none: 'the root `@biomejs/biome` pin moves to 2.6.6 (D9), what x new writes and x doctor reads; an existing app retains its installed Biome, and its own dependency range is its to set, so x upgrade leaves it alone',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-repo.ts',
+    since: '31.50.0',
+    none: 'x new now writes the 2.6.6 Biome pin and schema URL (D9); an existing app keeps its valid Biome config and its own pin, so x upgrade leaves the app files alone',
+  },
   ...[
     'packages/cli/src/templates/scaffold-helm-templates.ts',
     'docker/helm/templates/_helpers.tpl',
@@ -294,5 +309,24 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     template: 'packages/cli/src/templates/sign-in-challenge.ts',
     since: '31.49.0',
     none: "x g sign-in now holds the second-factor challenge in auth's own cookie for both shapes; an existing app's sign-in-challenge.ts is its own code and keeps working with its own cookie, so x upgrade leaves it alone",
+  },
+  ...[
+    'packages/cli/src/templates/catalog-barrel.ts',
+    'packages/cli/src/templates/locales.ts',
+    'packages/cli/src/templates/scaffold-i18n.ts',
+  ].map((template) => ({
+    template,
+    since: '31.52.0',
+    none: 'x new still writes flat catalogs and the same index; the split form (catalogs/<locale>/ with its barrel) is opt-in, and x i18n split writes it and rewrites the index import for the app that asks, so x upgrade leaves a flat app alone',
+  })),
+  {
+    template: 'packages/cli/src/templates/scaffold-gitattributes.ts',
+    since: '31.52.0',
+    none: "the catalog merge rule widened to catalogs/**/*.json plus each split locale's barrel; an existing app's catalogs/*.json rule still covers its flat files, and x i18n split widens that line in the app that splits, so x upgrade leaves .gitattributes alone",
+  },
+  {
+    template: '.gitattributes',
+    since: '31.52.0',
+    none: "the catalog merge rule widened to catalogs/**/*.json plus each split locale's barrel; an existing app's catalogs/*.json rule still covers its flat files, and x i18n split widens that line in the app that splits, so x upgrade leaves .gitattributes alone",
   },
 ];

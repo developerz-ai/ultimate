@@ -12,6 +12,7 @@ import type { FrozenClock } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
+import { siteAssetTable } from '@ultimat3/render/server';
 import type { ListOptions, StorageDriver } from '@ultimat3/storage';
 import { memoryStorageDriver } from '@ultimat3/storage';
 import type { IslandBundle } from './island-bundle';
@@ -21,7 +22,6 @@ import { publishBuildAssets } from './retained-assets';
 import { retainedFileKey, retainedPrefix } from './retained-assets-layout';
 import { retainedAssets, withRetainedAssets } from './retained-assets-read';
 import { siteAssetRoutes } from './site-asset-routes';
-import { createSiteAssetTable } from './site-assets';
 import { styleBundleOf } from './style-bundle';
 import { styleRoutes } from './style-routes';
 import { pageBootRoutes, syncWorkerRoutes } from './worker-bundle';
@@ -42,7 +42,7 @@ const empty: IslandBundle = {
 const ROUTES: readonly Route[] = [
   ...styleRoutes(() => styleBundleOf([])),
   ...islandRoutes(() => empty),
-  ...siteAssetRoutes(createSiteAssetTable(root)),
+  ...siteAssetRoutes(siteAssetTable(root)),
   ...syncWorkerRoutes(() => undefined),
   ...pageBootRoutes(() => undefined),
 ];

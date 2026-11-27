@@ -6,7 +6,12 @@
 // A framework table an app has to install by hand is a table that will be missing in production on
 // the one code path that needs it, and it surfaces as a Postgres `42P01` from inside a worker.
 
-import { SQL_AUDIT_TABLE, SQL_IDEMPOTENCY_TABLE, SQL_METER_TABLE } from '@ultimat3/action';
+import {
+  SQL_AUDIT_TABLE,
+  SQL_IDEMPOTENCY_TABLE,
+  SQL_METER_KEY_TABLE,
+  SQL_METER_TABLE,
+} from '@ultimat3/action';
 import {
   ADMIN_AUDIT_TABLE,
   ERROR_GROUPS_TABLE,
@@ -100,12 +105,17 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     tables: Object.freeze(['x_audit']),
     ddl: Object.freeze([SQL_AUDIT_TABLE]),
   }),
-  // The counters behind `meter:`. One row per tenant × meter × period declaration, rolled over in
-  // place, so it ships no purge: the table is bounded by its subjects, never by time.
+  // The counters behind `meter:` and `drawMeter`. One row per tenant × meter × period declaration,
+  // rolled over in place, so it ships no purge: the table is bounded by its subjects, never by
+  // time. `x_meter_key` holds one row per counted keyed draw, about two periods of them per active
+  // counter: a keyed draw that counts prunes its counter's older rows, and an idle counter keeps
+  // its last rows until its next one.
+  // `SQL_METER_KEY_TABLE` also creates `x_meter_key_counted`, the function a refused keyed draw
+  // reads its key through: not a table, so it is in no `tables` list.
   Object.freeze({
     pkg: '@ultimat3/action',
-    tables: Object.freeze(['x_meter']),
-    ddl: Object.freeze([SQL_METER_TABLE]),
+    tables: Object.freeze(['x_meter', 'x_meter_key']),
+    ddl: Object.freeze([SQL_METER_TABLE, SQL_METER_KEY_TABLE]),
   }),
   Object.freeze({
     pkg: '@ultimat3/http',

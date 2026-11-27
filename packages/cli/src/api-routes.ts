@@ -38,6 +38,7 @@ export function apiMountRoutes(store?: RateLimitStore): readonly Route[] {
       scopes: mount.scopes,
       resolveToken: mount.resolveToken,
       ...(mount.rateLimit === undefined ? {} : { rateLimit: mount.rateLimit }),
+      ...(mount.tenant === undefined ? {} : { tenant: mount.tenant }),
       ...(store === undefined ? {} : { rateLimitStore: store }),
     }),
   );

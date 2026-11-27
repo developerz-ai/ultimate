@@ -104,7 +104,23 @@ export const config = defineRoute({
   // its islands; the inline hydration runtime +100 B, an island boots with the props inside its own
   // wrapper, not the first script in the document with its id (a modal's island took the page's).
   // Against 113,106, origin/main built the same way. Raised 110.5kb → 111.3kb.
-  budget: { js: '111.3kb' },
+  // measured: 115814 B (2026-11-24; x build --target static) — why: the client router +1,949 B
+  // (29,955 → 31,904): a soft visit to a `stream` page reads the answer as it arrives, swaps
+  // the shell in at the server's flush mark and fills each hole as its chunk lands, so the page
+  // paints before its slowest hole (65 ms p95 against 2,041 ms). Raised 111.3kb → 113.1kb.
+  // measured: 123485 B (2026-11-24; x build --target static, against 115,814) — why: the board
+  // island +7,667 B (79,876 → 87,543): `Board` gains card selection — a native checkbox per card,
+  // Shift+click and the grid keys ranging in reading order, a long press on touch, the prune of a
+  // card that left the board, and `BulkBar` with its live count and "all matching" box — carried by
+  // `sort-surface.tsx`, which every `Board` and `SortableList` shares; the review's fixes (boxes
+  // reconciled to `value`, the native mixed state, per-list memos) are 952 B of it. The selection
+  // stays in a board that never sets it: its no-script boxes render in the same synchronous pass,
+  // and the barrel is the one import path. Raised 113.1kb → 120.6kb.
+  // measured: 124319 B (2026-11-24; x build --target static) — why: the client router +834 B
+  // (31,904 → 32,738): a streamed soft visit scrolls to a fragment its hole brings, holds its
+  // recovery while the next visit is on its way, reloads a fragment URL it must load for real,
+  // and drops keep-alive frames as they arrive. Raised 120.6kb → 121.5kb.
+  budget: { js: '121.5kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

@@ -90,6 +90,8 @@ export const OFF_SOCKET: Pins = {
     'X_CATALOG_MISSING_KEYS',
     'X_CATALOG_UNREGISTERED',
     'X_I18N_FAMILY_INCOMPLETE',
+    'X_CATALOG_LAYOUT_MIXED',
+    'X_CATALOG_KEY_DUPLICATE',
   ],
   // tier 1 — `registerCurrency`'s refusals and nothing else raises them. `REGISTERED` is per
   // PROCESS: a request-driven registration lands on one replica and leaves the others answering
@@ -261,6 +263,7 @@ export const OFF_SOCKET: Pins = {
     'X_MCP_RECIPE_LINK_DANGLING',
     'X_MCP_TENANT_INVALID',
     'X_MCP_INCLUDE_EARLY',
+    'X_MCP_SPLIT_INVALID',
   ],
   // tier 4 — the service worker and the PWA manifest: build-time rules, faults raised in the
   // BROWSER, where there is no response to give a status to, and the VAPID pair refused at BOOT,

@@ -53,6 +53,8 @@ export function useMigratedDatabase(): void {
 }
 ```
 
+**Shared test support lives in `apps/<app>/test/`** (a package's in `packages/<pkg>/test/`), never under `site/`, `app/`, `api/` or `shared/`. The boot scan imports the modules there, all but tests, client islands (`*.island.tsx`) and their `*.island.states.ts`, so a helper named `board.fixture.ts` beside its tests is evaluated by a role, `@ultimat3/cli` and `@ultimat3/testing` with it. Tests alone import what is in `test/`. The `boundaries` step warns `X_BOUNDARY_DEV_IMPORT`, naming the import to cut and the chain.
+
 | Scope | What it gets |
 |---|---|
 | a test **file** | the worker's database with its DATA reset to the template's — every table truncated and re-filled, every sequence reset, triggers off meanwhile (`reusableDatabase`) |
@@ -393,6 +395,30 @@ test('the vendor map renders', async () => {
 
 An entry covers the reads after the call and ends with the test; a blank `because` is refused, as in `e2eTest`. Each `goto` now spends five CDP deadlines, not three (`E2E_GOTO_MS`), for the audit's two reads. Source: `packages/testing/src/e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (one test's run), `e2e-a11y-tabs.ts` (raw tabs), `ax-node.ts` (the tree reader).
 
+## Passkeys and a second person in the e2e browser
+
+`As of 2026-11`. Two free functions over the harness's own objects — `e2eBrowser()` in an app's e2e suite, `openE2eBrowser()` beside it — never a member a hand-rolled tab would lack:
+
+```ts
+import { addVirtualAuthenticator, e2eBaseUrl, e2eBrowser, expect, newBrowserContext } from '@ultimat3/testing';
+
+const { page, session } = e2eBrowser();
+const passkey = await addVirtualAuthenticator(page); // CTAP2, resident key, user verified
+// … the app's own register / sign-in buttons run navigator.credentials.create/get, unprompted
+expect((await passkey.credentials()).map((one) => one.rpId)).toEqual(['localhost']);
+
+const invitee = await newBrowserContext(session); // no cookie or storage of the first profile
+const tab = await invitee.newTab();
+await tab.goto(`${e2eBaseUrl()}/invite/accept`);
+await invitee.close();
+```
+
+| Call | Is |
+|---|---|
+| `addVirtualAuthenticator(tab, { transport?, residentKey?, userVerified? })` | CDP `WebAuthn` on that tab: `{ id, credentials(), setUserVerified(verified), remove() }`. Per tab, presence simulated; `userVerified: false` makes every user-verification fail. The rp id the ceremony names must be the page's host or a parent domain of it (`login.example.com` may register for `example.com`) and never an IP; locally, serve on `localhost`. `remove()` detaches that authenticator only |
+| `newBrowserContext(session)` | `Target.createBrowserContext`: `{ id, newTab(), close() }`. Its tabs are attached, configured (offline switch, init scripts, `Accept-Language`) and audited as `session.newTab()`'s are; `close()` disposes every tab in it |
+| a tab or session the harness did not build | `X_TEST_FIXTURE_UNAVAILABLE`, naming what it needs |
+
 ## Matchers
 
 Installed by the preload on `expect`.
@@ -450,12 +476,41 @@ unitTest('the dashboard counts the posts of the org that is looking', async () =
 | Answer | Is |
 |---|---|
 | `view.html` | the markup, as the document carries it |
-| `view.text` | what a reader sees — tags and script/style bodies removed, entities decoded. Compare it with `t('<key>')` |
+| `view.text` | what a reader sees — tags and script/style bodies removed, character references decoded (every numeric one, and the common named ones: `&quot;`, `&apos;`, `&nbsp;`, typographic quotes and dashes …) as a browser reads them; a no-break space is kept. Compare it with `t('<key>')` |
 | `view.data` · `view.meta` | what `load` resolved, and what `meta` answered for that same object |
 | `view.islands` | the islands the render emitted. Empty on a page that ships no JavaScript |
 
-`actor` runs `load` and the page inside a request context holding that actor. `renderView` refuses
+`actor` runs `load` and the page inside a request context holding that actor. A `url` whose first
+segment is a routed locale (`https://example.test/es/precios`) renders `load`, `meta` and the page
+in that locale, as the router reads the prefix. Unprefixed and with no `actor`, no request context is
+opened: standalone that is the default locale, inside your own `runWithContext` it is that context's.
+`cookies: { sid: '…' }` runs them inside a GET request for `url` carrying those cookies, read by
+`useRequestCookie(name)` as a browser's are (`As of 2026-11`); with `actor` or a locale prefix too,
+the actor still acts and the locale still holds. `renderView` refuses
 a component that renders an `island()` — its hydration timing is a route's. `As of 2026-10`.
+
+### A page's own GET
+
+`renderRoute` says what a page renders. To see what a visitor RECEIVES (status, headers, cookies
+set, a redirect, the document) through the real pipeline, import `pageRoute` from `@ultimat3/cli`,
+the package that owns the page handler:
+
+```ts
+import { pageRoute } from '@ultimat3/cli';
+import { expect, unitTest } from '@ultimat3/testing';
+
+unitTest('the dashboard refuses an anonymous visitor', async () => {
+  expect((await pageRoute('/dashboard')).status).toBe(401);
+  const seen = await pageRoute('/dashboard', { cookies: { sid: 's-1' } });
+  expect(seen.status).toBe(200);
+});
+```
+
+`pageRoute(path, { headers?, cookies?, buildId? }): Promise<Response>` sends `GET <path>` (URL path
+and query, starting with `/`) through `httpPipeline` over the pages registered in the process
+(`registerRoute`, or `loadApp`). `cookies` are percent-encoded as `useRequestCookie` decodes them;
+give `cookies` or a `cookie` header, not both. A path no page claims is the pipeline's 404; a path
+without a leading `/` is `X_INVARIANT`, naming the fix. `As of 2026-11`.
 
 ## Asserting on what an element carries
 
@@ -622,6 +677,29 @@ What the rendered result is then held to: [Interface rules](Interface-Rules).
 | `deploy` | `newBuild()` — same app, new build id, page still open | a browser driver |
 | `subscribe` | one subscriber's `rows()` `patches()` `settled()` `lsn()` | a replicator |
 | `seed`, and anything else | the app's own graph | the app's `scripts/test-setup.ts` |
+
+**Keys and the console: `pressKey(page, key)`, `consoleMessages(page)`, `expectNoConsoleErrors(page)`** (`@ultimat3/testing`). Free functions over the `page` an `e2eTest` or the `{ page }` fixture hands you, so `PageLike` itself does not grow:
+
+```ts
+import { e2eTest, expect, expectNoConsoleErrors, pressKey } from '@ultimat3/testing';
+
+e2eTest('the dialog is keyboard-reachable and the page logs no error', async ({ page }) => {
+  await page.goto('/settings');
+  await pressKey(page, 'Tab');                // a real key: focus moves, Enter submits
+  await pressKey(page, 'Control+k');          // a chord: Alt, Control, Meta, Shift held
+  await pressKey(page, 'Escape');
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe('search');
+  await expectNoConsoleErrors(page);          // X_E2E_CONSOLE_ERRORS, quoting each
+});
+```
+
+| Call | Answers |
+|---|---|
+| `pressKey(page, key)` | a trusted key press at the focused element: a name in `PRESS_KEYS` (`Tab` `Enter` `Escape` `Backspace` `Delete` `Home` `End` `PageUp` `PageDown` the arrows, `' '`), one ASCII letter or digit, or a chord `Mod+…+key` (`Shift+Tab`, `Control+k`) — Shift makes the key a US keyboard makes (`Shift+1` is `!`), Control/Meta/Alt type nothing. A chord the grammar refuses is `X_SCRAPE_KEY_INVALID` (the one chord grammar, `@ultimat3/scraping`'s); a key it does not know, `X_CDP_CALL_FAILED` |
+| `consoleMessages(page)` | `readonly E2eConsoleMessage[]`, `{ level: 'debug' \| 'log' \| 'info' \| 'warning' \| 'error', text, source: 'console' \| 'exception' }`, since the running test began — each `e2eTest` and each test that takes the `{ page }` fixture starts it, after flushing the previous test's lines in flight — and after one round trip, so a line printed just before is in it. A cross-site iframe's console counts. `text` is the raw arguments joined by a space (no `%d` substitution). The tab keeps 1,000 lines of 2,000 characters at most, dropping the oldest non-error first, so an error survives a noisy page |
+| `expectNoConsoleErrors(page)` | resolves when no `error` arrived since the test began (`console.error`, a failed `console.assert`, an uncaught throw); else `X_E2E_CONSOLE_ERRORS` listing them all. Warnings pass; filter `consoleMessages` for another rule |
+
+A page no e2e driver built, or a hand-rolled `E2eBrowserPage` without `press` / `consoleMessages` (with `clearConsole` to start each test's console), is refused by name (`X_TEST_FIXTURE_UNAVAILABLE`). `As of 2026-11`.
 
 **`waitForServiceWorker({ timeoutMs? })` hands the first page over** (25.0.0, #678). The framework's register script runs on `load`, so the first page of a run is committed before its worker activates and `clients.claim()` can miss it: `ready` resolves and no `controllerchange` ever fires. The wait answers `ready`, gives the claim a second (`CLAIM_GRACE_MS`), and reloads an uncontrolled page ONCE — that navigation is answered by the worker — within one budget (`serviceWorkerTimeoutMs`, 10 s, or this call's `timeoutMs`). A page with no worker is refused without a reload, and a reload still uncontrolled is refused saying so (`X_E2E_SERVICE_WORKER_ABSENT`). Proven against a real worker that never claims: `packages/testing/e2e/service-worker-handover.e2e.test.ts`.
 
@@ -1151,6 +1229,7 @@ shape, same unreached code. `As of 2026-11`.
 | Rule | |
 |---|---|
 | Database | a scratch one with the framework tables and every migration applied; never the developer's. The pass commits, so the tenant proof can read rows after the call |
+| Services | what a server's boot installs beside its database, over the scratch one: a memory storage disk (unless the app defined its own), the fleet-wide rate-limit store, the fleet-wide auth limiter (`postgresAuthLimiter` per declared policy, so `defineAuth({ rateLimit: { scope: 'shared' } })` is judged, not refused with `X_AUTH_LIMITER_NOT_SHARED`, `As of 2026-11`), and a Web Push runtime whose sends are captured |
 | Rows | one seed graph for the pass, a fresh pair of tenants per primitive in it — the first the actor's (A), the second the tenant proof's intruder (B); every table seeded off its declaration, parents first, same-tenant keys (`x db seed --generate`'s graph). A view and a `readOnly: '<why>'` table get no row; a NOT NULL key into a `readOnly` one is `X_SEED_GRAPH_UNSATISFIED` naming it ([Read-only tables](Entities-And-Migrations#read-only-tables)) |
 | Actor | the entry's `actor` when it declares one, seated in the primitive's tenant — and a top-level value of its bound input — or of its `facts`, a string or an array holding it — equal to the org the entry declared becomes that tenant too, so `input: (drawn) => ({ ...drawn, orgId: '<the actor's org>' })` holds in every tenant the pass seeds; otherwise the first of `x policy explain`'s actors the policy allows, in the primitive's tenant (an `{ input }`-only entry keeps this pick and still binds its input). None allowed is `refused`, by design. Its id has a user's shape: a uuid per role × tenant, the same on every run (`exerciseActorId`), never the role's name. Where the database has `x_users` (the framework schema every pass database is built with) each actor the pass acts as gets its row first — `<id>@exercise.invalid`, its tenant, roles, permissions, scopes — so `findUserById(ctx.actor.id)` finds it; a refused insert is `X_EXERCISE_ACTOR_USER_UNSEATED`. `defineExercise(…, { actor: members })` makes the id a seeded row's key instead (`As of 2026-11-08`) |
 | Input | the override, then an id field whose stem names a seeded entity (`postId` → `posts`), then the schema's minimal draw. A wrong guess shows as `unreached` |
@@ -1268,7 +1347,7 @@ Source: `packages/testing/src/scale-sweep*.ts`, `plan-oracle.ts`, `plan-sweep*.t
 | Sweep | What | Red |
 |---|---|---|
 | scale | every reached primitive once more in a tenant at 2 rows a table, once in one at 8; per statement shape, the counts compared. Each sized seed is written beside the graph before it: row positions (a generated integer, a factory's `index`) continue past that graph's, so ``code: `c${index}` `` on a unique column never repeats the pass's own row | a shape sent more often at 8 than at 2, where it was sent at least once: `X_QUERY_SCALES_WITH_ROWS`, fix `preload()` or `expectedQueryLoop('<why>', fn)`. A shape sent only at 8, nothing else grown, is another path (a branch on the handed row), `unproven` (`As of 31.16.0`); the 8-row graph opens on the 2-row graph's values in every non-unique column, so the handed row is the same at both sizes |
-| plans | every distinct statement whose first relation is an app table, `PREPARE`d and explained as a generic plan with `enable_seqscan`, `enable_bitmapscan` off — and, for a statement with a `Limit`, planned again with `enable_sort` off for its sort alone — in a read-only transaction | `Seq Scan`, or an index scan with no `Index Cond` no `Limit` stops: `X_QUERY_UNINDEXED`. `Sort` under `Limit`: `X_QUERY_SORT_UNSERVED`, on the table its key names. Each prints an `indexes:` entry, one per arm for an `or`; a sort no declarable index serves (an expression, an aggregate, a derived column, keys across tables, mixed directions) or an index the entity already declares prints a rewrite or `expectedSeqScan` instead |
+| plans | every distinct statement whose first relation is an app table, `PREPARE`d and explained as a generic plan with `enable_seqscan`, `enable_bitmapscan` off — and, for a statement with a `Limit`, planned again with `enable_sort` off for its sort alone — in a read-only transaction | `Seq Scan`, or an index scan with no `Index Cond` no `Limit` stops: `X_QUERY_UNINDEXED`. `Sort` under `Limit`: `X_QUERY_SORT_UNSERVED`, on the table its key names. Each prints an `indexes:` entry, one per arm for an `or`; a sort no declarable index serves (an expression, an aggregate, a derived column, keys across tables, mixed directions) or an index the entity already declares prints a rewrite or `expectedSeqScan` instead. An index WALK that an index the entity already holds would serve (its equality columns, then the order) is green: on a seed of a few rows a partial index such as `where revoked_at is null` costs as little as the keyed one and the generic plan walks it. A schema heuristic, not a promise about production plans: with many revoked rows sharing a key and few active ones, the walk can stay cheaper at volume (`As of 2026-11`) |
 
 With the planner's scans and sorts disabled it picks one only when no index can answer, so the
 verdict reads the schema on empty tables — no volume, no statistics. Never red: `scale.verdict`

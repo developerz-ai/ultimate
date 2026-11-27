@@ -22,7 +22,7 @@
   -webkit-overflow-scrolling: touch;
 
   &:focus-visible {
-    outline: t.stroke(thick) solid t.role('accent');
+    outline: t.stroke(thick) solid t.role('focus');
     outline-offset: calc(-1 * #{t.stroke(thick)});
   }
 }
@@ -54,7 +54,7 @@
   cursor: pointer;
 
   &:focus-visible {
-    outline: t.stroke(thick) solid t.role('accent');
+    outline: t.stroke(thick) solid t.role('focus');
     outline-offset: t.stroke(thick);
   }
 }

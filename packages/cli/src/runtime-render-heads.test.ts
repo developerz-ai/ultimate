@@ -24,12 +24,11 @@ import {
   SURFACE_SPECS,
   setAssetResolver,
 } from '@ultimat3/render';
-import { clearStylesheets, loadStylesheet } from '@ultimat3/render/server';
+import { clearStylesheets, loadStylesheet, siteAssetTable } from '@ultimat3/render/server';
 import { renderRoute } from '@ultimat3/testing';
 import { faviconBytes } from './favicon';
 import { appRoutes } from './runtime-render';
 import { appFaviconHead } from './runtime-render-document';
-import { siteAssetTable } from './site-assets';
 
 const BUILD_ID = 'build-under-test';
 type Data = { url: string; params: Record<string, string> };

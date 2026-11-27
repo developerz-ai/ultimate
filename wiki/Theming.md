@@ -12,7 +12,7 @@ Every colour is a semantic token. A raw hex in any component or stylesheet is a 
 
 Named by **role**, not by value: `--color-bg`, never `--blue-500`. Stored as **space-separated RGB channels** so `rgb(var(--color-accent) / 0.5)` composites without a second token.
 
-**24 roles**, in the order `COLOR_ROLES` declares them. A component that needs a 25th is asking for a design decision, not a variable.
+**32 palette roles** (`COLOR_ROLES`: the 24 below plus the eight `chart-*` series) and **four alias roles** (`ALIAS_ROLES`: `link`, `link-strong`, `nav-active`, `focus`); `THEME_ROLES` is both, in that order. A component that needs another is asking for a design decision, not a variable.
 
 | Role | Light | Dark | Used for |
 |---|---|---|---|
@@ -25,7 +25,7 @@ Named by **role**, not by value: `--color-bg`, never `--blue-500`. Stored as **s
 | `fg-muted` | `110 102 94` | `155 151 145` | captions, placeholders |
 | `line` | `208 198 188` | `72 72 80` | borders, dividers |
 | `scrim` | `17 15 13` | `0 0 0` | modal backdrops — the darkest role in each theme |
-| `accent` | `31 110 178` | `96 170 240` | primary action, links |
+| `accent` | `31 110 178` | `96 170 240` | primary action; links, nav and focus until their alias roles are set |
 | `accent-strong` | `21 92 152` | `130 190 248` | hover/active of accent |
 | `accent-fg` | `255 255 255` | `16 20 26` | text **on** accent |
 | `success` | `21 123 80` | `74 190 130` | the success tone |
@@ -40,6 +40,28 @@ Named by **role**, not by value: `--color-bg`, never `--blue-500`. Stored as **s
 | `info` | `31 110 178` | `96 170 240` | the info tone |
 | `info-soft` | `224 239 252` | `22 38 56` | its filled background |
 | `info-fg` | `255 255 255` | `12 20 30` | text on `info` |
+
+### Alias roles: links, navigation, focus
+
+Four roles **default to the accent** and are never emitted by `theme.scss` (`As of 2026-11`). `t.role(link)` compiles to `rgb(var(--color-link, var(--color-accent)))`, and `colorVar('link')` answers the same fallback, so an app that never sets them renders exactly as before — its brand's accent included, and an accent a subtree overrides. Setting one in `defineTheme()` splits it off the accent.
+
+| Role | Falls back to | Read by |
+|---|---|---|
+| `link` | `accent` | `Link` (`tone="accent"`), plain `<a>` in `reset.scss`, a hovered `Breadcrumb` link |
+| `link-strong` | `accent-strong` | the hover of both |
+| `nav-active` | `accent` | the current item of `NavList` and `BottomNav`, the selected `Tabs` tab and its indicator |
+| `focus` | `accent` | every focus ring: `:focus-visible` in `reset.scss`, `t.focus-ring` (its default role) and each control's own focus outline |
+
+```ts
+// links and the focus ring in their own colour; buttons keep the accent
+import { defineTheme } from '@ultimat3/ui';
+
+export const brand = defineTheme({
+  colors: { light: { link: '20 90 60', focus: '150 60 0' }, dark: { link: '120 210 160' } },
+});
+```
+
+An alias read raw is `var(--color-link, var(--color-accent))`, never a bare `var(--color-link)`: that property is unset until a brand sets it. A shadow override names a palette role only. `COLOR_ALIASES` (`color-tokens.ts`) mirrors `$aliases` (`_colors.scss`); `tokens.test.ts` fails on drift. `colorTokens` holds palette roles only; `colorRgb('dark', 'link')` answers the source's channels.
 
 The six-name tone vocabulary components expose — `neutral`, `accent`, `success`, `warning`, `danger`, `info` — is `$tones` in `_colors.scss`, mirroring `TONES` in `components/variants.ts`; `variants.test.ts` fails on drift.
 
@@ -65,7 +87,7 @@ Most scales carry a typed mirror in `tokens.ts` as well, for consumers that cann
 
 | Scale | Custom property | Read it with | Values |
 |---|---|---|---|
-| colour | `--color-accent` | `t.role('accent', $alpha)` | the 24 roles above, as RGB channels |
+| colour | `--color-accent` | `t.role('accent', $alpha)` | the roles above, as RGB channels; an alias with its fallback |
 | space | `--space-4` | `t.space(4)` | `0 1 2 3 4 5 6 8 10 12 16` → `0` … `4rem` |
 | radius | `--radius-md` | `t.radius(md)` | `none sm md lg xl pill full` |
 | stroke | `--stroke-thick` | `t.stroke(thick)` | `hairline 1px`, `thick 2px`, `heavy 3px` — a border, an outline, a focus ring. px on purpose: a line weight does not grow with text size |
@@ -224,12 +246,13 @@ brandStyleTag(brand);       // '<style>…</style>' — for a page you render yo
 | Field | Shape | Notes |
 |---|---|---|
 | `preset` | `'scifi'` | a shipped palette every other slot layers onto, role by role |
-| `colors` | `Partial<Record<'light' \| 'dark', Partial<Record<ColorRole, string>>>>` | any subset of the 24 roles, per theme |
+| `colors` | `Partial<Record<'light' \| 'dark', Partial<Record<ColorRole, string>>>>` | any subset of `THEME_ROLES` — palette and alias roles — per theme |
 | `shadows` | `Partial<Record<'light' \| 'dark', Partial<Record<ShadowName, string>>>>` | elevation is themed like colour |
 | `radius` | `Partial<Record<RadiusName, string>>` | `none sm md lg xl pill full` |
 | `font` | `Partial<Record<'sans' \| 'mono' \| 'data', string>>` | the font slots |
+| `motion` | `{ duration?: Partial<Record<DurationName, string>>; easing?: Partial<Record<EasingName, string>> }` | the app's own tempo: `t.duration(base)` reads `--duration-base`, so one rung re-times every component. Declaring `--duration-base` with a literal time (`180ms`, `.5s`; lowercase `ms` or `s`) or `cubic-bezier(…)` in a stylesheet is `X_RAW_MOTION`, whose fix names this slot with the value spelled as the slot takes it; a zero (`0ms`) or a plain `var(--…)` read is not reported, but a literal nested in one (`var(--x, calc(180ms * 2))`) is |
 
-Returns a frozen `{ css: string }`. It emits `:root`, `html[data-theme='light']`, the `prefers-color-scheme: dark` block and `html[data-theme='dark']` — radius and font ride `:root` only. Output is ordered by the canonical scale arrays rather than by your object, so re-rendering the same input is byte-identical. Empty input gives `css: ''`, which the framework emits nothing for.
+Returns a frozen `{ css: string }`. It emits `:root`, `html[data-theme='light']`, the `prefers-color-scheme: dark` block and `html[data-theme='dark']` — radius, font and motion ride `:root` only. Output is ordered by the canonical scale arrays rather than by your object, so re-rendering the same input is byte-identical. Empty input gives `css: ''`, which the framework emits nothing for.
 
 ### Values are validated, never escaped
 
@@ -239,12 +262,14 @@ The output can land in a `<style>` element (`brandStyleTag`), so a value that co
 |---|---|---|
 | colour | `^\d{1,3} \d{1,3} \d{1,3}$`, each channel ≤ 255 | `#1e6eb2`, `rgb(1,2,3)`, `1 1 1; } html { display: none }` |
 | radius | `^(0\|\d+(\.\d+)?(px\|rem\|em\|ch\|%))$` | `calc(…)`, `var(…)`, `1` with no unit |
+| duration | `^(0\|\d+(\.\d+)?(ms\|s))$`; `0` is emitted as `0ms`, a unitless zero being no CSS time | `180`, `calc(…)`, `-10ms` |
+| easing | `cubic-bezier(x1, y1, x2, y2)`, numbers only, x1 and x2 in [0, 1] | `ease-in`, `steps(4)`, `cubic-bezier(1.2, 0, 0, 1)` |
 | font | `^[\w\s,'"-]{1,200}$` | anything with `;` `}` `<` `>` `(` `)` `/` `:` — so `Menlo</style><script>` cannot get through |
 
 | Failure | Code | Means |
 |---|---|---|
-| unknown role, radius name or font slot | `X_TOKEN_UNKNOWN` | the key is not in the scale; `cause` lists every name that is |
-| known key, unusable value | `X_UI_INVALID_VALUE` | `cause` names the slot and what was expected |
+| unknown role, radius name, font slot, motion scale or rung | `X_TOKEN_UNKNOWN` | the key is not in the scale; `cause` lists every name that is |
+| known key, unusable value — or a `motion`, `duration` or `easing` that is not an object (`null` from JSON) | `X_UI_INVALID_VALUE` | `cause` names the slot and what was expected |
 
 ## Resolution and first paint
 
@@ -296,7 +321,7 @@ The manifest is generated. Hand-editing a colour there drifts from the tokens an
 
 ```scss
 :focus-visible {
-  outline: var(--stroke-thick) solid rgb(var(--color-accent));
+  outline: var(--stroke-thick) solid rgb(var(--color-focus, var(--color-accent)));
   outline-offset: var(--stroke-thick);
 }
 
@@ -323,10 +348,11 @@ The manifest is generated. Hand-editing a colour there drifts from the tokens an
 |---|---|
 | `fg`, `fg-strong`, `fg-muted` on every surface | `AA_TEXT` **4.5:1** |
 | `accent`, `accent-strong` on every surface | 4.5:1 |
+| `link`, `link-strong`, `nav-active` on every surface (`ALIAS_CONTRAST_PAIRS`) | 4.5:1 |
 | `accent-fg` on `accent` / `accent-strong`; each `<tone>-fg` on its tone | 4.5:1 |
 | each `<tone>` on its own `-soft`; `fg-muted` on every `-soft` | 4.5:1 |
 | each `<tone>` on every surface | 4.5:1 |
-| `accent` (the focus ring) on every surface | `AA_LARGE` **3:1** |
+| `accent` and `focus` (the focus ring) on every surface | `AA_LARGE` **3:1** |
 | `line` on every surface | **1.4:1** — a framework floor, not a WCAG level: a border is not text, but 1.16 is invisible |
 | `scrim` | must be the darkest role in its theme — a luminance ordering, not a ratio |
 
@@ -335,8 +361,8 @@ The manifest is generated. Hand-editing a colour there drifts from the tokens an
 | Check | Enforcement |
 |---|---|
 | Contrast, shipped pairings | the table above, run by `x verify`'s `unit` step |
-| Contrast, a `defineTheme()` override | **refused when `defineTheme()` runs** — at import, since a brand is declared at module top level — before a single declaration renders. Every pair in `CONTRAST_PAIRS` (`packages/ui/src/tokens/contrast-pairs.ts`, the same list `contrast.test.ts` holds the shipped palette to) is measured on the resolved palette — your overrides on top of the shipped channels — at its floor: 4.5:1 text, 3:1 the focus ring, 1.4:1 `line`. Only pairs the brand changed, either side, are measured; the rest are the shipped palette's. A miss throws `X_UI_CONTRAST_INSUFFICIENT` naming the pair, the theme and the ratio. The `scrim` ordering is not measured for a brand |
-| Focus ring | `:focus-visible` from `--color-accent` in `reset.scss`, and `@include t.focus-ring` per control. Taking one away without painting one back is refused in an **app** by `guards/focus-visible.ts`, on `x verify`'s `boundaries` step — **not by lint**, which ignores `.scss` entirely |
+| Contrast, a `defineTheme()` override | **refused when `defineTheme()` runs** — at import, since a brand is declared at module top level — before a single declaration renders. Every pair in `CONTRAST_PAIRS` and `ALIAS_CONTRAST_PAIRS` (`packages/ui/src/tokens/contrast-pairs.ts`, the same lists `contrast.test.ts` holds the shipped palette to) is measured on the resolved palette — your overrides on top of the shipped channels — at its floor: 4.5:1 text, 3:1 the focus ring, 1.4:1 `line`. Only pairs the brand changed, either side, are measured — an alias it left unset counts as its source, so a new `accent` alone is measured as the link and the focus ring it becomes; the rest are the shipped palette's. A miss throws `X_UI_CONTRAST_INSUFFICIENT` naming the pair, the theme and the ratio. The `scrim` ordering is not measured for a brand |
+| Focus ring | `:focus-visible` from `focus` (the accent until set) in `reset.scss`, and `@include t.focus-ring` per control. Taking one away without painting one back is refused in an **app** by `guards/focus-visible.ts`, on `x verify`'s `boundaries` step — **not by lint**, which ignores `.scss` entirely |
 | Reduced motion | honored globally, not per component — and it *deletes* rather than reduces, see below |
 | Lighthouse a11y | minimum threshold in `app.config.ts`, default 95 → [Testing](Testing) |
 

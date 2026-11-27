@@ -15,7 +15,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // why: Bun has no file-URL-to-path API; the router's entry is located beside this file.
 import { fileURLToPath } from 'node:url';
-import { isUltimateError, userActor } from '@ultimat3/core';
+import { clientScopeOf } from '@ultimat3/auth';
+import { CLIENT_NAVIGATION_SCOPE_HEADER, isUltimateError, userActor } from '@ultimat3/core';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { RouteNavigationDeclaration } from '@ultimat3/render';
 import {
@@ -173,6 +174,37 @@ describe('unit · the gate over real pages — what a router request may run', (
     expect(loads).toEqual([]);
   });
 
+  // Red team: the router holds a page alice was rendered in org A, and she is now acting in org B.
+  // Swapping B's page into A's document would keep A's store, rows and queued writes in memory.
+  test('a page for the same person in another org is refused before its load runs', async () => {
+    page('apps/web/app/casos/page.tsx', { gated: true });
+    loads.length = 0;
+    const alice = { id: 'alice@example.com', permissions: ['casos.read'] };
+    const inOrgA = userActor({ ...alice, orgId: 'org-a' });
+    const inOrgB = userActor({ ...alice, orgId: 'org-b' });
+    // The router echoes the scope org A's real document carried, not one this test computes.
+    const document = await (
+      await serverFor(inOrgA).fetch(new Request('http://dev.test/casos'))
+    ).text();
+    const scope = /<meta name="ultimate-scope" content="([^"]+)">/.exec(document)?.[1];
+    expect(scope).toBe(clientScopeOf(inOrgA));
+    loads.length = 0;
+    const fromOrgA = router('soft', { [CLIENT_NAVIGATION_SCOPE_HEADER]: String(scope) });
+
+    const across = await serverFor(inOrgB).fetch(
+      new Request('http://dev.test/casos', { headers: fromOrgA }),
+    );
+    expect(across.status).toBe(204);
+    expect(across.headers.get('x-ultimate-location')).toBe('/casos');
+    expect(loads).toEqual([]);
+
+    const same = await serverFor(inOrgA).fetch(
+      new Request('http://dev.test/casos', { headers: fromOrgA }),
+    );
+    expect(same.status).toBe(200);
+    expect(loads).toEqual(['/casos']);
+  });
+
   test("navigation: { modal: true, prefetch: 'intent' } — a prefetch runs it, and it is still a modal", async () => {
     page('apps/web/app/runs/[id]/peek/page.tsx', {
       navigation: { modal: true, prefetch: 'intent' },
@@ -237,6 +269,17 @@ describe('unit · pageNavigation', () => {
       return;
     }
     expect.unreachable('a navigation key nothing can honour was accepted');
+  });
+
+  // 'document' asks for what a surface with no router already does: a real load. A shared page
+  // module declaring it is honoured on every surface, opted in or not.
+  test("navigation: 'document' on a surface with no client navigation boots, and names no router", () => {
+    page('apps/web/site/baja/page.tsx', { navigation: 'document' });
+    expect(() => assertRouteNavigation(['app'], routeEntries())).not.toThrow();
+    expect(() => assertRouteNavigation([], routeEntries())).not.toThrow();
+    const [entry] = routeEntries();
+    if (entry === undefined) return expect.unreachable('the page registered');
+    expect(routeNavigationOf(entry, HEAD)).toBeUndefined();
   });
 
   test('a document names its router as <app>:<surface>; another surface gets no head', () => {

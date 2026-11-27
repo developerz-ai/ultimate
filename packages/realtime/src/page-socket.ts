@@ -128,7 +128,7 @@ export function closePageSockets(): void {
 }
 
 /** Where `hasPageSocket` lives, re-exported for the callers that reach it from here. */
-export { hasPageSocket } from './page-store';
+export { hasPageSocket, hasSyncTarget } from './page-store';
 
 function hostFor(scope: string | null, buildId: string): SocketHost {
   const workerUrl =

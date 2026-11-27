@@ -13,18 +13,26 @@ import { mkdir, rm } from 'node:fs/promises'; // why: Bun has no recursive remov
 import { join } from 'node:path';
 import { resetLifecycle } from '@ultimat3/core';
 import { cspHashSource } from '@ultimat3/http';
+import { siteAssetTable } from '@ultimat3/render/server';
 import { brandStyleCspSource, defineTheme } from '@ultimat3/ui';
 import { inlineStyleBodies } from './error-page-csp';
 import { processRoot } from './process-root-fixture';
 import { serveApp } from './serve';
-import { siteAssetTable } from './site-assets';
 import { setBrandStyles } from './style-bundle';
 import { APP_THEME_MODULE } from './theme-brand';
 
-const ROOT = processRoot(join(import.meta.dir, '..', '.serve-brand-fixture'));
+// One directory per EVALUATION of this file, as `app-manifest.test.ts` keeps: `--rerun-each`
+// evaluates it again in the same process, and Bun serves each fixture app's modules from its cache
+// by path, so a second pass booted an app whose modules never ran again. The count lives on
+// `globalThis`, which outlives the module.
+const EVALUATIONS = Symbol.for('ultimate.test.serve-web-brand.evaluations');
+const counter = globalThis as unknown as Record<symbol, number | undefined>;
+counter[EVALUATIONS] = (counter[EVALUATIONS] ?? 0) + 1;
+const PASS = `eval-${counter[EVALUATIONS]}`;
+const ROOT = processRoot(join(import.meta.dir, '..', '.serve-brand-fixture', PASS));
 // Its own root: `app.config.ts` is imported once per PATH, so a second fixture at the same path
 // would read the first one's module and declare a brand where this one declares a favicon.
-const FAVICON_ROOT = processRoot(join(import.meta.dir, '..', '.serve-favicon-fixture'));
+const FAVICON_ROOT = processRoot(join(import.meta.dir, '..', '.serve-favicon-fixture', PASS));
 const UI = join(import.meta.dir, '../../ui/src/index.ts');
 const RENDER = join(import.meta.dir, '../../render/src/index.ts');
 

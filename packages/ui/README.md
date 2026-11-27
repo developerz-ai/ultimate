@@ -27,6 +27,7 @@ channels** so `rgb(var(--color-accent) / 0.12)` gives a tint with no extra token
 | `line` | borders, dividers |
 | `scrim` | modal backdrops |
 | `accent` / `accent-strong` / `accent-fg` | primary action, its hover, text on it |
+| `link` / `link-strong` / `nav-active` / `focus` | links and their hover, the current nav item, the focus ring — each **the accent until a brand sets it** (`COLOR_ALIASES`) |
 | `success` / `warning` / `danger` / `info` | status solid, each with a `-soft` tint and a `-fg` text-on-solid |
 | `chart-1` … `chart-8` | categorical chart series, in assignment order (`CHART_ROLES`) |
 
@@ -140,7 +141,10 @@ const region = (
 ```
 
 `empty` and `ready` are **required**, so forgetting the empty state is a type error rather than a
-review comment. Three properties are structural, not documented:
+review comment. `failed={(error, retry) => …}` is optional: the failed branch for a person's page,
+in place of `ErrorState`'s code, cause and shell fix (`As of 2026-11`). Supply it on every end-user
+page: nothing enforces it, and a page without it shows `ErrorState`. `EmptyState` and `Alert`
+take `level` to title with a heading. Three properties are structural, not documented:
 
 - **`empty` is unreachable while pending.** A `pending` state carries no data, so nothing can be
   found empty in it — "No results" before the first page arrives is unconstructible.
@@ -243,7 +247,8 @@ table — and every series has a dash and a marker as well as a colour (`chart-1
 | `LiveIndicator` | a static dot whose shape is the state, the word beside it: live, reconnecting, paused, offline; a change is announced once | a live view's connection |
 | `ChartFrame` | the figure, caption, legend and data table every chart stands in | a custom chart |
 | `niceTicks` · `chartTable` | axis ticks, the fallback table | building a custom chart |
-| `DataTable` | sort, cursor paging (link mode with `listUrl` needs no island), states; `narrow: 'cards'` (default) collapses rows to labelled cards below `sm`; `Column.priority` hides a column behind a per-row disclosure, never losing its value; `stickyFirstColumn` | any list of records |
+| `DataTable` | sort, cursor paging (link mode with `listUrl` needs no island), states; `narrow: 'cards'` (default) collapses rows to labelled cards below `sm`; `Column.priority` hides a column behind a per-row disclosure, never losing its value; `stickyFirstColumn`; `selection` ticks rows for a bulk action | any list of records |
+| `BulkBar` | the selection's sticky bar: a live count, the caller's actions, an "all matching" box posting the filter | under a `DataTable` or `Board` `selection`, which render it; alone over a list of your own |
 | `Table` | a captioned table with a sticky header; `stickyFirstColumn` | static tabular data |
 | `InlineBar` | a caller-formatted figure with a decorative proportional bar | a number in a table cell |
 | `StatTile` / `Meter` / `Sparkline` | a KPI with its delta (`goodWhen` says which way is good), `trend`, `of`, `href`, `loading`; a bar against a max with a `target` tick; a signed mini line with `area`, where `null` is a gap | the KPI row |
@@ -394,7 +399,7 @@ drag events, which fire on no touch screen and have no keyboard form) under thre
 | Component | Renders | Keyboard | No script |
 |---|---|---|---|
 | `SortableList({ items, itemKey, renderItem, label, onMove, canDrop?, action?, fields? })` | a `<ul>`, a handle `<button>` per row | Space lifts, arrows move, Space drops, Esc restores; Alt+arrow moves at once | each row a `<form method="post" action>` with Move up and Move down |
-| `Board({ groups, itemKey, renderItem, label, onMove, canDrop?, action?, fields? })` | a `role="group"` column per group, columns snap-scroll sideways, one wide below `sm` | the same, plus the inline arrows across columns (mirrored under `dir="rtl"`) | each card a form with a target `select` |
+| `Board({ groups, itemKey, renderItem, label, onMove, canDrop?, action?, fields?, selection? })` | a `role="group"` column per group, columns snap-scroll sideways, one wide below `sm` | the same, plus the inline arrows across columns (mirrored under `dir="rtl"`) | each card a form with a target `select` |
 | `SplitPane({ start, end, defaultValue, value?, min?, max?, onResize?, label? })` | a grid with a `role="separator"` holding `aria-valuenow` in percent | arrows step 5, Home, End; Esc mid-drag restores | fixed at `defaultValue`; one column below `md` |
 
 - **A drop is a request.** `onMove({ id, fromGroup, toGroup, toIndex })` is called once; the
@@ -661,6 +666,7 @@ that renders documents itself.
 | `colors.light` / `colors.dark` | any `ColorRole`, as `R G B` channels | `X_TOKEN_UNKNOWN` for the role, `X_UI_INVALID_VALUE` for the value |
 | `radius` | any `RadiusName`, as a bare CSS length | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` |
 | `font` | `sans`, `mono`, `data`, as a `font-family` list | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` |
+| `motion.duration` / `motion.easing` | any `DurationName` as a time with its leading digit (`'180ms'`, `'0.3s'`, never `'.3s'`; `'0'` is emitted as `0ms`), any `EasingName` as `cubic-bezier(x1, y1, x2, y2)`, one space after each comma, with both x in [0, 1]. `:root` only, not themed | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` |
 | `shadows.light` / `shadows.dark` | any `ShadowName`, as a `box-shadow`: comma-separated layers of lengths plus `rgb(R G B / a)` or `rgb(var(--color-<role>) / a)`, or `none` | `X_TOKEN_UNKNOWN` for the rung, `X_UI_INVALID_VALUE` for the value |
 | `preset` | a `THEME_PRESETS` name — `'scifi'` | `X_UI_INVALID_VALUE` |
 

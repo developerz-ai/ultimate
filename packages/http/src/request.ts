@@ -6,6 +6,7 @@ import type { Actor } from '@ultimat3/core';
 import { readCookie, readWithinLimit, renderThrowable } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import { bodyInvalid, buildSkew } from './errors';
+import { coerceFormFields } from './form-fields';
 import { BODY_CHARSETS, textDecoderFor } from './request-charset';
 import type { Schema } from './validate';
 import { validateBody, validateSync } from './validate';
@@ -152,8 +153,20 @@ export class UltimateRequest {
     return this.#bytes;
   }
 
+  /**
+   * `bodyRaw()`, ready for `schema` to parse: a form's text fields coerced toward it as a query
+   * string's are (`t.boolean` takes `ok=true`), every other body exactly as parsed — JSON carries
+   * its caller's own types. What `body()` validates and an action's route hands its input parser.
+   */
+  async bodyCoerced(schema: unknown): Promise<unknown> {
+    const parsed = await this.bodyRaw();
+    const type = contentTypeOf(this.raw);
+    const form = type === 'application/x-www-form-urlencoded' || type === 'multipart/form-data';
+    return form ? coerceFormFields(schema, parsed) : parsed;
+  }
+
   async body<Out>(schema: Schema<Out>): Promise<Out> {
-    const outcome = await validateBody(schema, await this.bodyRaw());
+    const outcome = await validateBody(schema, await this.bodyCoerced(schema));
     if (!outcome.ok) throw bodyInvalid(this.pathname, outcome.issues);
     return outcome.value;
   }

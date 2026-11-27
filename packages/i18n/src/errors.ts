@@ -11,6 +11,8 @@ export const I18N_ERROR_CODES = [
   'X_CATALOG_INVALID',
   'X_CATALOG_UNREGISTERED',
   'X_I18N_FAMILY_INCOMPLETE',
+  'X_CATALOG_LAYOUT_MIXED',
+  'X_CATALOG_KEY_DUPLICATE',
 ] as const;
 
 export type I18nErrorCode = (typeof I18N_ERROR_CODES)[number];
@@ -21,6 +23,8 @@ export const I18N_ERROR_TITLES: Readonly<Record<I18nErrorCode, string>> = {
   X_CATALOG_INVALID: 'a catalog entry is malformed',
   X_CATALOG_UNREGISTERED: 'a shipped catalog never reached the runtime registry',
   X_I18N_FAMILY_INCOMPLETE: 'a select or ordinal family has no _other',
+  X_CATALOG_LAYOUT_MIXED: 'a locale ships both a catalog file and a catalog directory',
+  X_CATALOG_KEY_DUPLICATE: 'a catalog key is defined in two files of one locale',
 };
 
 // Titles must be registered for format() to render the contract's first line. Every code above is
@@ -49,25 +53,40 @@ export function localeUnsupported(tag: string, supported: readonly string[]): I1
 }
 
 /**
+ * A locale's catalog as a cause names it when the caller says nothing more: the flat file. A split
+ * locale (`catalogs/<locale>/`, one file per namespace) is named by the CLI, the half that reads
+ * the disk — this package never does.
+ */
+const catalogFileOfLocale = (locale: string): string => `packages/i18n/catalogs/${locale}.json`;
+
+/**
  * `fix` must name the locale file and the exact keys — an agent reading this
  * error should not have to diff two catalogs to learn what to write.
  */
-export function catalogMissingKeys(locale: string, keys: readonly string[]): I18nError {
+export function catalogMissingKeys(
+  locale: string,
+  keys: readonly string[],
+  file: string = catalogFileOfLocale(locale),
+): I18nError {
   const shown = keys.slice(0, 12);
   const suffix = keys.length > shown.length ? `, +${keys.length - shown.length} more` : '';
   return new I18nError({
     code: 'X_CATALOG_MISSING_KEYS',
-    cause: `packages/i18n/catalogs/${locale}.json is missing ${keys.length} key(s) source names or the reference locale defines: ${shown.join(', ')}${suffix}`,
+    cause: `${file} is missing ${keys.length} key(s) source names or the reference locale defines: ${shown.join(', ')}${suffix}`,
     fix: `x i18n sync ${renderFixShellArg(locale, '<locale>')}   # writes each key above as a placeholder to replace with the real string: ⟦key⟧ in the default locale, ⟦the default locale’s string⟧ in any other`,
   });
 }
 
 /** A select or ordinal family with no `_other`: a value it does not name renders `⟦key⟧`. */
-export function familyIncomplete(locale: string, owed: readonly string[]): I18nError {
+export function familyIncomplete(
+  locale: string,
+  owed: readonly string[],
+  file: string = catalogFileOfLocale(locale),
+): I18nError {
   return new I18nError({
     code: 'X_I18N_FAMILY_INCOMPLETE',
-    cause: `packages/i18n/catalogs/${locale}.json defines a select or ordinal family with no _other, so a value it does not name renders the loud miss: ${shownKeys(owed)}`,
-    fix: `x i18n check --json   # then add each key named here (${owed[0] ?? '<key>_select_other'}) to packages/i18n/catalogs/${locale}.json`,
+    cause: `${file} defines a select or ordinal family with no _other, so a value it does not name renders the loud miss: ${shownKeys(owed)}`,
+    fix: `x i18n check --json   # then add each key named here (${owed[0] ?? '<key>_select_other'}) to ${file}`,
   });
 }
 
@@ -99,10 +118,12 @@ export function catalogUnregistered(input: {
   locale: string;
   shipped: number;
   missing: readonly string[];
+  /** Where the locale's catalog lives on disk; the flat file when not named. */
+  file?: string;
 }): I18nError {
   return new I18nError({
     code: 'X_CATALOG_UNREGISTERED',
-    cause: `packages/i18n/catalogs/${input.locale}.json defines ${input.shipped} key(s) and ${input.missing.length} of them are not in the runtime registry after the app's own modules loaded: ${shownKeys(input.missing)} — each renders \u27e6key\u27e7`,
+    cause: `${input.file ?? catalogFileOfLocale(input.locale)} defines ${input.shipped} key(s) and ${input.missing.length} of them are not in the runtime registry after the app's own modules loaded: ${shownKeys(input.missing)} — each renders \u27e6key\u27e7`,
     fix: REGISTRATION_FIX,
   });
 }
@@ -150,4 +171,32 @@ export function catalogInvalid(path: string, cause: string): I18nError {
 function normalizeForFix(tag: string): string {
   const primary = tag.split('-')[0] ?? tag;
   return primary.toLowerCase().replace(/[^a-z]/g, '') || 'xx';
+}
+
+/**
+ * A locale held as both `catalogs/<locale>.json` and `catalogs/<locale>/`. Refused rather than
+ * merged: the index imports ONE of them, so the other is strings on disk that no page renders, and
+ * which one won would depend on a line nobody reads. `x i18n split` is the repair — it moves the
+ * flat file's keys into the directory, refusing any key both hold.
+ */
+export function catalogLayoutMixed(locale: string): I18nError {
+  return new I18nError({
+    code: 'X_CATALOG_LAYOUT_MIXED',
+    cause: `locale "${locale}" has both packages/i18n/catalogs/${locale}.json and packages/i18n/catalogs/${locale}/ — a locale is one file or one directory of namespace files, never both, so one of them is strings no page renders`,
+    fix: `x i18n split ${renderFixShellArg(locale, '<locale>')}   # moves every key of the .json file into its namespace file in the directory and deletes the file; a key both hold is refused`,
+  });
+}
+
+/**
+ * One key from two files of a split locale — the same key twice, or a leaf in one file that the
+ * other nests under (`site.home` in `site.json`, `site/home.json` beside it). The index merges the
+ * files into one object, so the loser vanishes without a word: refused here, naming both files.
+ */
+export function catalogKeyDuplicate(key: string, files: readonly [string, string]): I18nError {
+  const [first, second] = files;
+  return new I18nError({
+    code: 'X_CATALOG_KEY_DUPLICATE',
+    cause: `catalog key "${key}" is defined by both ${first} and ${second}, so the app ships whichever its index merges last and the other wording is never rendered`,
+    fix: `grep -n ${renderFixShellArg(key.split('.').pop() ?? key, '<leaf>')} ${renderFixShellArg(first, '<file>')} ${renderFixShellArg(second, '<file>')}   # delete "${key}" from one of the two, keeping the wording that ships; then: x i18n check --json`,
+  });
 }

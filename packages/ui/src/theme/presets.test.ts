@@ -5,8 +5,8 @@
 import { describe, expect, test } from 'bun:test';
 import { CHART_DISTINCT_MIN, closestChartPair } from '../tokens/colour-vision';
 import { contrastRatio, relativeLuminance } from '../tokens/contrast';
-import { CONTRAST_PAIRS } from '../tokens/contrast-pairs';
-import { CHART_ROLES, COLOR_ROLES, SHADOW_NAMES, type Theme } from '../tokens/tokens';
+import { ALIAS_CONTRAST_PAIRS, CONTRAST_PAIRS } from '../tokens/contrast-pairs';
+import { CHART_ROLES, COLOR_ROLES, SHADOW_NAMES, type Theme, withAliases } from '../tokens/tokens';
 import { THEME_PRESETS, type ThemePresetName } from './presets';
 
 const THEMES: readonly Theme[] = ['light', 'dark'];
@@ -17,7 +17,7 @@ describe('THEME_PRESETS', () => {
     expect(NAMES).toEqual(['scifi']);
   });
 
-  test('each preset states every colour role in both themes — it never leans on the default', () => {
+  test('each preset states every palette role in both themes — it never leans on the default', () => {
     for (const name of NAMES) {
       for (const theme of THEMES) {
         expect(Object.keys(THEME_PRESETS[name].colors[theme])).toEqual([...COLOR_ROLES]);
@@ -28,8 +28,8 @@ describe('THEME_PRESETS', () => {
   test('every pairing a shipped component renders clears WCAG 2.2 AA, both themes', () => {
     const failures = NAMES.flatMap((name) =>
       THEMES.flatMap((theme) => {
-        const palette = THEME_PRESETS[name].colors[theme];
-        return CONTRAST_PAIRS.flatMap((pair) => {
+        const palette = withAliases(THEME_PRESETS[name].colors[theme]);
+        return [...CONTRAST_PAIRS, ...ALIAS_CONTRAST_PAIRS].flatMap((pair) => {
           const ratio = contrastRatio(palette[pair.fg], palette[pair.bg]);
           return ratio >= pair.minimum
             ? []
@@ -58,7 +58,7 @@ describe('THEME_PRESETS', () => {
   test('the scrim is the darkest role, so a backdrop recedes', () => {
     for (const name of NAMES) {
       for (const theme of THEMES) {
-        const palette = THEME_PRESETS[name].colors[theme];
+        const palette = withAliases(THEME_PRESETS[name].colors[theme]);
         const scrim = relativeLuminance(palette.scrim);
         const darker = COLOR_ROLES.filter((role) => relativeLuminance(palette[role]) < scrim);
         expect(`${name}.${theme}: ${darker.join(',')}`).toBe(`${name}.${theme}: `);

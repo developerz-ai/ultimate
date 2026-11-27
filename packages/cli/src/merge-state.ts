@@ -55,8 +55,9 @@ export async function catalogFileFindings(root: string): Promise<readonly Findin
   const findings: Finding[] = [];
   const directory = `${root}/${CATALOG_ROOT}`;
   if (!existsSync(directory)) return findings;
-  for await (const name of new Bun.Glob('*.json').scan(directory)) {
-    const at = `${CATALOG_ROOT}/${name}`;
+  // `**`: a split locale's namespace files (`en/billing.json`) are imported by every page too.
+  for await (const name of new Bun.Glob('**/*.json').scan(directory)) {
+    const at = `${CATALOG_ROOT}/${name.replaceAll('\\', '/')}`;
     const text = await Bun.file(`${root}/${at}`).text();
     if (MARKER.test(text)) {
       findings.push(

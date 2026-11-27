@@ -46,10 +46,16 @@ export const LINE_ENDING_ATTRIBUTES = `# Every text file is LF, in the index and
 ${BINARY_EXTENSIONS.map((extension) => `*.${extension} binary`).join('\n')}
 `;
 
+/** The catalog rule `x new` wrote before split catalogs, and what `x i18n split` replaces it with. */
+export const FLAT_CATALOG_ATTRIBUTE = 'packages/i18n/catalogs/*.json merge=x-registry';
+
 /**
  * How two branches' features merge. `bunx x merge-driver install` (a step of `bun run setup`) defines
  * the drivers in `.git/config`; a clone without them gets git's ordinary text merge, so nothing here
- * can lose work. Also carried into existing apps by the `merge-drivers` codemod.
+ * can lose work. Also carried into existing apps by the `merge-drivers` codemod. The catalog rule
+ * holds a flat `<locale>.json` and every namespace file of a split locale alike (git's `**` also
+ * matches no directory); a split locale's barrel is one import and one entry per line, so the
+ * registry driver keeps the namespace each branch added.
  */
 export const MERGE_ATTRIBUTES = `# Merging two features. x-registry keeps what both branches added and leaves a real conflict alone;
 # x-generated keeps our copy of a projection, which \`bunx x manifest\` then rebuilds.
@@ -57,7 +63,8 @@ apps/web/api/index.ts merge=x-registry
 apps/web/exercise.ts merge=x-registry
 apps/web/shared/roles.ts merge=x-registry
 packages/db/src/client.ts merge=x-registry
-packages/i18n/catalogs/*.json merge=x-registry
+packages/i18n/catalogs/**/*.json merge=x-registry
+packages/i18n/catalogs/*/index.ts merge=x-registry
 x.manifest.json merge=x-generated
 openapi.json merge=x-generated
 `;

@@ -16,7 +16,14 @@ import { setTransactionSettings } from './transaction-settings';
 const PGLITE_BOOT_MS = 60_000;
 const A = '00000000-0000-4000-8000-00000000000a';
 const B = '00000000-0000-4000-8000-00000000000b';
-const RULE = `(org_id = (NULLIF(current_setting('x.tenant'::text, true), ''::text))::uuid) OR (current_setting('x.cross'::text, true) = 'on'::text)`;
+/** The policy as Postgres deparses it: `pg_get_expr` lays a `case` out over lines. */
+const RULE = [
+  '',
+  'CASE',
+  "    WHEN (current_setting('x.cross'::text, true) = 'on'::text) THEN true",
+  "    ELSE (org_id = (NULLIF(current_setting('x.tenant'::text, true), ''::text))::uuid)",
+  'END',
+].join('\n');
 
 describe('the schema dump · row security', () => {
   const replayed = pgliteClient();
@@ -43,7 +50,7 @@ describe('the schema dump · row security', () => {
           '',
           'alter table "posts" force row level security;',
           '',
-          `create policy "ultimate_tenant" on "posts" as permissive for all to public using ((${RULE})) with check ((${RULE}));`,
+          `create policy "ultimate_tenant" on "posts" as permissive for all to public using (${RULE}) with check (${RULE});`,
           '',
         ].join('\n'),
       );

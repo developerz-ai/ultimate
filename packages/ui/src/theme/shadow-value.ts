@@ -24,7 +24,8 @@ export const SHADOW_EXPECTED =
 /**
  * Whether `value` is a shadow this seam will write. Every layer is matched whole, every channel is
  * 0–255, and every role a layer names is a role the palette has — a `--color-brand` that resolves
- * to nothing would render no shadow at all and no error anywhere.
+ * to nothing would render no shadow at all and no error anywhere. A PALETTE role, never an alias:
+ * `--color-link` is unset until a brand sets it, and the bare read here carries no fallback.
  */
 export function isShadowValue(value: string): boolean {
   if (value === 'none') return true;

@@ -374,8 +374,24 @@
  * supervised child reads, reached through `logger.ts` on the core barrel, so every line carries
  * its `child`) and `cli/src/runtime-jobs-share.ts` (a queue's slots split across the children).
  * The supervisor itself is `await import()`ed by `runRole`: none of it is on this graph.
+ * raised 1005 → 1006, measured 1006 (2026-11-23, per-call tenant on bearer mounts, metafile walk):
+ * `http/src/bearer-mount-tenant.ts` (the tenant step, its listing and the `BearerMountTenant`
+ * shape), reached through `bearer-mount.ts` on the http barrel — a split that keeps
+ * `bearer-mount.ts` one job, worth its one module.
+ * raised 1006 → 1007, measured 1007 (2026-11-24, allOf and anyOf): `entity/src/expr-connectives.ts` — the connectives and the operand rules `iff` now imports, on the entity barrel).
+ * raised 1007 → 1008, measured 1008 (2026-11-24, a CHECK refusing an update): `entity/src/check-refusal.ts` — `asInvariantRefusal`, the 23514-to-invariant map the postgres write funnel runs, on the entity barrel graph).
+ * raised 1008 → 1009, measured 1009 (2026-11-24, form bodies coerced): `http/src/form-fields.ts` — `coerceFormFields`, which `UltimateRequest#bodyCoerced` reads, on the http barrel).
+ * raised 1009 → 1010, measured 1010 (2026-11-24, keyed meter draws, review round 4):
+ * `action/src/meter-fifo.ts`, the first-in-first-out queue the memory meter store keeps its key
+ * order in, so a busy counter forgets its oldest key in constant time.
+ * raised 1010 → 1011, measured 1011 (2026-11-24, outbound refusal headers):
+ * `core/src/outbound-refusal-headers.ts`, the check and the read of `refusal.headers`, on the core
+ * barrel graph `outbound()` is reached through.
+ * raised 1011 → 1014, measured 1014 (2026-11-26, framework strings in ro, es and pt-BR):
+ * `i18n/src/catalogs/{ro,es,pt-BR}.json`, the framework's own translations `framework.ts` installs
+ * at import on the i18n barrel, so every role renders `ui.*` and `errors.*` in an app's language.
  */
-export const MIGRATE_CEILING = 1005;
+export const MIGRATE_CEILING = 1014;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

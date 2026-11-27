@@ -1,34 +1,28 @@
-// `x i18n check|add <locale>|sync <locale>` — the command every X_LOCALE_UNSUPPORTED,
+// `x i18n check|add <locale>|sync <locale>|split [<locale>]` — the command every X_LOCALE_UNSUPPORTED,
 // X_CATALOG_MISSING_KEYS and X_CATALOG_INVALID fix line already names. CLI wiring only: the
 // facts come from `i18n-audit.ts`, the audit itself from `@ultimat3/i18n`'s own `auditCatalogs`.
 
-// why: `node:` and not Bun: Bun has no exclusive-create write, and `open(path, 'wx')` is the only
-// one there is — `Bun.write` overwrites, so an existence check before it is a race a second
-// `x i18n add` wins. `mkdir` comes with it because `open` does not create the parent directory
-// `Bun.write` would, and `node:path` because Bun exposes no path API to build what either of them
-// takes.
-import { type FileHandle, mkdir, open } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { DEFAULT_LOCALE, stringField } from '@ultimat3/core';
+import { DEFAULT_LOCALE } from '@ultimat3/core';
 import type { Catalog } from '@ultimat3/i18n';
 import { auditCatalogs, catalogFor, catalogKeys } from '@ultimat3/i18n';
 import { adminKeyLabel, mountedAdminKeys } from './admin-catalog-keys';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
-import { i18nSpec } from './cmd-i18n-spec';
-import type { CliCommand, CommandContext } from './command';
-import { BadFlagError, CatalogExistsError, MissingPositionalError } from './errors';
+import type { CatalogLayout } from './catalog-layout';
 import {
-  auditApp,
-  loadCatalogs,
-  resolveDefaultLocale,
-  scanSource,
-  seedCatalog,
-  serializeCatalog,
-  syncCatalog,
-} from './i18n-audit';
+  catalogLocation,
+  loadLayoutCatalogs,
+  readCatalogLayout,
+  writeLocaleCatalog,
+} from './catalog-layout';
+import { i18nSpec } from './cmd-i18n-spec';
+import { runSplit } from './cmd-i18n-split';
+import type { CliCommand, CommandContext } from './command';
+import { BadFlagError, MissingPositionalError } from './errors';
+import { auditApp, resolveDefaultLocale, scanSource, seedCatalog, syncCatalog } from './i18n-audit';
 import { syncI18nIndex } from './i18n-index';
 import { localeParityFindings } from './i18n-locale-parity';
+import { writeNewLocale } from './i18n-new-locale';
 import {
   checkRegistration,
   isLoudMiss,
@@ -47,41 +41,6 @@ export { I18N_SUBCOMMANDS } from './cmd-i18n-spec';
 
 /** `ExtractReport` is plain JSON by construction — same idiom as `cmd-registries.ts`'s `asJson`. */
 const asJson = (value: object): Record<string, JsonValue> => value as Record<string, JsonValue>;
-
-/**
- * `open`'s failure when the file is already there — the one errno this command translates.
- *
- * `stringField`, never `'code' in error && error.code`: `in` narrows for the COMPILER and promises
- * the runtime nothing, so the read still happens on a value this process did not build and a
- * throwing getter takes the command down one line after the guard written to make it safe. The
- * same repair `dev-lock.ts` took for the cast spelling of the identical read.
- */
-const isAlreadyExists = (error: unknown): boolean => stringField(error, 'code') === 'EEXIST';
-
-/**
- * The exclusive half of the create: `wx` fails rather than truncates, so an existing catalog is
- * refused by the write itself. An `existsSync` before a `Bun.write` is the same answer with a
- * window in it, and what falls through that window is a translator's work.
- */
-async function openExclusive(absolute: string, locale: string): Promise<FileHandle> {
-  try {
-    return await open(absolute, 'wx');
-  } catch (error) {
-    if (isAlreadyExists(error)) throw new CatalogExistsError({ locale, path: catalogPath(locale) });
-    throw error;
-  }
-}
-
-/** `x i18n add`'s only write. `catalogs/` may not exist yet, and `open` never creates it. */
-async function writeNewCatalog(absolute: string, locale: string, contents: string): Promise<void> {
-  await mkdir(dirname(absolute), { recursive: true });
-  const handle = await openExclusive(absolute, locale);
-  try {
-    await handle.writeFile(contents);
-  } finally {
-    await handle.close();
-  }
-}
 
 function requireLocalePositional(ctx: CommandContext, sub: string): string {
   const raw = ctx.args.positionals[0];
@@ -132,21 +91,31 @@ const unansweredAdminKeys = (locale: string, keys: readonly string[]): readonly 
   unanswered(catalogFor(locale), keys);
 
 async function runCheck(root: string): Promise<CommandResult> {
-  const { report: audited, catalogs, extraction, ignoreUnused } = await auditApp(root);
+  const { report: audited, catalogs, extraction, ignoreUnused, layout } = await auditApp(root);
   // Corrected once, before anything reads it: the table's `missing` column, the summary count, the
   // findings and `--json`'s `data` are four projections of one report, and a placeholder counted in
   // only some of them is the command disagreeing with itself about the same app.
   const report = withPlaceholdersMissing(audited, catalogs);
   // The runtime question, asked after the file question and never instead of it: a catalog can be
   // complete on disk, used everywhere in source, and reach no registry at all (issue #249).
-  const registration = await checkRegistration({ root, catalogs, extraction, ignoreUnused });
+  const registration = await checkRegistration({
+    root,
+    catalogs,
+    extraction,
+    ignoreUnused,
+    layout,
+  });
   // The two rules only a comparison with the reference locale can see: a slot one side does not
   // have, and a string nobody translated. The same call `x verify`'s `i18n` step makes, so the
   // command and the gate answer about an app with one voice.
-  const parity = localeParityFindings(catalogs);
+  const parity = localeParityFindings(catalogs, layout);
   const parityLocales = new Set(parity.map((finding) => finding.meta?.['locale'])).size;
 
-  const findings: Finding[] = [...missingKeyFindings(report), ...registration.findings, ...parity];
+  const findings: Finding[] = [
+    ...missingKeyFindings(report, layout),
+    ...registration.findings,
+    ...parity,
+  ];
 
   // Whether the LOCALE has a catalog is the wrong question — the framework's own `en` is always
   // registered, so a locale-presence column reads `yes` for an app whose every key is a loud miss.
@@ -228,12 +197,14 @@ async function runCheck(root: string): Promise<CommandResult> {
 
 async function runAdd(root: string, ctx: CommandContext): Promise<CommandResult> {
   const locale = resolveOneLocale(ctx, 'add');
-  const path = catalogPath(locale);
   const app = await loadApp(root);
-  const catalogs = await loadCatalogs(root);
+  const layout = await readCatalogLayout(root);
+  const catalogs = await loadLayoutCatalogs(root, layout);
   const from = resolveDefaultLocale(app.locales.defaultLocale, catalogs);
   const seeded = seedCatalog(from === undefined ? {} : (catalogs[from] ?? {}));
-  await writeNewCatalog(join(root, path), locale, serializeCatalog(seeded));
+  // In the default locale's form: a split app's new locale is a directory of the same files.
+  const source = from === undefined ? undefined : layout[from];
+  const path = await writeNewLocale(root, locale, seeded, source);
   // The second half of adding a locale, and without it this command SHIPPED A RED GATE: the file
   // landed, `packages/i18n/src/index.ts` still said `locales: { en }`, and `x verify --only i18n`
   // answered `X_CATALOG_UNREGISTERED` with a fix naming an edit that had already been made. Same
@@ -308,9 +279,37 @@ async function adminCatalog(locale: string, seeded: boolean): Promise<Catalog> {
   return Object.fromEntries(keys.map((key) => [key, label(key)]));
 }
 
+/**
+ * The admin keys just written to a second locale that the default locale's FILE lacks, written
+ * there too. The default locale answers them already — the framework's own `en` holds the admin
+ * chrome (`admin.brand.name`, `admin.x_jobs.title`), so its registry is green with no such key in
+ * the app's catalog — and syncing only the second locale left the app's catalogs with two key sets,
+ * the scaffold's own "same keys as the default" test red on the command the gate prescribed. The
+ * value is the string the default locale already renders, never a marker, so its page is unchanged.
+ */
+async function backfillDefault(
+  root: string,
+  catalogs: Readonly<Record<string, Catalog>>,
+  layout: CatalogLayout,
+  from: string,
+  adminKeys: readonly string[],
+): Promise<readonly string[]> {
+  const target = catalogs[from] ?? {};
+  const rendered = catalogFor(from);
+  const real = (key: string): string => {
+    const value = rendered[key];
+    return value === undefined || isLoudMiss(value) ? adminKeyLabel(key) : value;
+  };
+  const source = Object.fromEntries(adminKeys.map((key) => [key, real(key)]));
+  const { merged, added } = syncCatalog(target, source);
+  if (added.length > 0) await writeLocaleCatalog(root, from, merged, layout[from]);
+  return added;
+}
+
 async function runSync(root: string, ctx: CommandContext): Promise<CommandResult> {
   const locale = resolveOneLocale(ctx, 'sync');
-  const catalogs = await loadCatalogs(root);
+  const layout = await readCatalogLayout(root);
+  const catalogs = await loadLayoutCatalogs(root, layout);
   const target = catalogs[locale];
   if (target === undefined) {
     throw new BadFlagError({
@@ -330,14 +329,20 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
   const seeded = from === undefined || from === locale;
   // The admin's keys first, so a value the default locale already carries for one (copied, marked)
   // wins over a label read off the key.
+  const admin = await adminCatalog(locale, seeded);
   const source = {
-    ...(await adminCatalog(locale, seeded)),
+    ...admin,
     ...(seeded
       ? placeholderCatalog(await untranslatedKeys(root, catalogs, locale))
       : seedCatalog(catalogs[from] ?? {})),
   };
   const { merged, added } = syncCatalog(target, source);
-  if (added.length > 0) await Bun.write(join(root, catalogPath(locale)), serializeCatalog(merged));
+  // Into the locale's own form: a split locale's key lands in its namespace file, created if new.
+  if (added.length > 0) await writeLocaleCatalog(root, locale, merged, layout[locale]);
+  const adminAdded = added.filter((key) => Object.hasOwn(admin, key));
+  const defaultAdded = seeded
+    ? []
+    : await backfillDefault(root, catalogs, layout, from, adminAdded);
   // Unconditional, and not only when keys moved: a catalog that reached disk some other way — a
   // hand-created file, a `git merge` — is exactly the unregistered locale the gate refuses, and
   // this is the command its `fix:` names. Re-deriving an index that is already correct writes the
@@ -360,13 +365,16 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
       from: from ?? locale,
       added,
       total,
-      path: catalogPath(locale),
+      path: catalogLocation(layout, locale),
       registered,
       // Which of `added` still need a human: every one but an admin label in the default locale.
       // `⟦key⟧` where there was no catalog to copy from, `⟦<default string>⟧` on a real merge —
       // both are what `x i18n check` counts as missing until replaced, so `--json` never reports a
       // copy as a translation.
       placeholders: added.filter((key) => isLoudMiss(merged[key])),
+      // The admin keys also written to the default locale's catalog, so every app catalog keeps one
+      // key set (`backfillDefault`). Empty when the default locale is the one synced.
+      defaultAdded,
     },
   };
 }
@@ -378,6 +386,10 @@ export const i18nCommand: CliCommand = {
     const sub = ctx.args.subcommand ?? 'check';
     if (sub === 'add') return runAdd(root, ctx);
     if (sub === 'sync') return runSync(root, ctx);
+    if (sub === 'split') {
+      const named = ctx.args.positionals[0] === undefined ? undefined : resolveOneLocale(ctx, sub);
+      return runSplit(root, named);
+    }
     return runCheck(root);
   },
 };

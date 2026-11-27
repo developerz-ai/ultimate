@@ -54,8 +54,9 @@ prefetch: 'intent' }` — only for a GET that does nothing but render.** A plain
 unprefetched: a modal is often a form, and its GET may prepare one (a draft, a token, a reserved
 slot). One spelling per meaning: the object takes exactly those two keys and values, anything else
 is `X_ROUTE_NAVIGATION_INVALID`, and `{ modal: true }` alone is refused — that is `'modal'`.
-Declaring any of them on a surface without client navigation refuses the boot
-(`X_ROUTE_NAVIGATION_INVALID`).
+A `navigation` key on a page of a surface `navigation.client` does not list is refused at boot,
+since no router runs there — except `'document'`, which asks for the real load such a surface
+already gives and is honoured on every surface (`As of 2026-11`).
 
 An opted-in document (every page of the surface except a `'document'` one) carries:
 
@@ -66,7 +67,9 @@ An opted-in document (every page of the surface except a `'document'` one) carri
 | `<script src="/_x/assets/navigation/<hash>.js" defer>` | the router: one classic script, content-addressed, `immutable`, `'self'` under the default CSP. `x dev`, the container and `x build --target static` all serve or write it |
 | `<meta name="ultimate-modals" content='{"routes":[…],"close":"…","loading":"…"}'>` | only on a surface with a `'modal'` route: the modal patterns, most specific first, with `!<pattern>` for a page that outranks one (`/runs/new/peek` over `/runs/:id/peek`), and the frame's two words in the document's locale (`ui.close`, `ui.loading` — override them in the app's catalog). What lets a click open the dialog before the answer ([Modals](#opening-on-the-click)) |
 
-**Budget:** the router is 27,845 B minified (10,094 B gzip) `As of 29.1.0` — 24,448 B (9,028 B
+**Budget:** the router is 32,699 B minified (11,809 B gzip) `As of 2026-11` — 31,904 B (11,507 B
+gzip) before a stream's late fragment, its recovery and keep-alive frames were handled (+795 B);
+29,955 B (10,817 B gzip) before a soft visit read as it streams (+1,949 B); 27,845 B (10,094 B gzip) at 29.1.0, 24,448 B (9,028 B
 gzip) before the modal that opens on the click and its popover opening (+3,397 B), and 19,966 B
 before route-presented modals and navigating from code (+4,092 B, 26.1.0). It is **charged** to
 every route on the surface, like realtime's page boot, because it is interactivity the app opted
@@ -87,6 +90,15 @@ before any hook, before the handler**:
 | GET | a tab on another build | `409` from the existing build check; the router loads the page for real |
 | any router request answered with a 3xx (a form's 303, a sign-in wall, a `load`'s `setRedirect`, an OAuth or payment hop) | any | `204` + `x-ultimate-location: <target>`, cookies kept. The handler ran once; the router follows a same-origin target as its own next request, and hands another origin to the browser. A target that is not `http:`/`https:` (or will not parse) is never handed over: the header names the requested URL instead, as a path |
 | POST | any | never gated: it is the form's submission |
+
+A principal is the actor's kind and id, who is really acting (an impersonator), and the actor's
+`orgId` when it has one: the same person in two orgs is two principals, so a soft GET never swaps
+a page rendered in one org into a document of the other, and the client store it fences is never
+shared. The one exception is a POST answered in place: a form that switches org and renders its
+page instead of redirecting is swapped in, since it cannot be repeated; the router then empties
+every tab's cache and stops swapping (the POST row under
+[What happens to the answer](#what-happens-to-the-answer)). An actor with no `orgId` keeps the scope id it had before the org joined it (`As of
+2026-11`; `packages/core/src/client-scope-id.ts`).
 
 A soft GET across a principal change runs auth and rate-limit **twice** — once before the `204` of
 the principal row above, once for the real load. Expected and harmless (auth and rate-limit only;
@@ -169,6 +181,23 @@ In one order, so no frame is unstyled and no island runs twice:
    full load would), never when the current head already has it (the theme boot, on every page);
    one only the previous page had is removed. Every inline script, head or body, still needs its
    CSP hash — the router re-inserts the same text, and the policy judges it as on a full load.
+
+**A `stream` page paints before its slowest hole** (`As of 2026-11`). A soft visit reads the
+answer as it arrives: the swap above runs once the shell is in (the server ends it with a flush
+mark), with each hole's fallback on screen, and on a page (not a modal) `ultimate:navigated` fires
+then, after the shell's scripts and before any hole's. Each hole's chunk is appended to the body as it lands and
+its scripts run — the `$X()` reveal and the hole's own islands — so a hole fills, or shows its
+`error` markup, as on a full load. A link to a fragment the shell does not have (`/feed#post-7`,
+the post inside a hole) is scrolled to when the hole that carries it lands, unless the visitor
+scrolled first. The next swap, or `stop()` (from an `ultimate:navigated` listener too), cancels
+the request: the server aborts each open hole's signal, and a read that passes that signal on
+(`fetch(url, { signal: useContext().signal })`) stops — one that ignores it runs to its end, and
+its result is dropped. Nothing of a page left lands in the next one. A stream that breaks under the
+page on screen is loaded for real (a GET, reloaded when only its fragment differs) or reported as
+`ultimate:navigation-error` (a POST, never re-sent); while the visitor's next page is on its way,
+the break waits for it, and is recovered only if that page never took the tab. A prefetch still
+reads the whole answer, so a click that reuses one in flight waits for every hole; a modal is shown
+whole. Measured: [Known gaps](Known-Gaps).
 
 Inside `document.startViewTransition` when the browser has it and `prefers-reduced-motion` is not
 `reduce`. Style the transition with the standard `::view-transition-*` pseudo-elements. While it
@@ -480,7 +509,7 @@ Dispatched on `document`:
 | Event | When | `detail` |
 |---|---|---|
 | `ultimate:navigate` | before the fetch. **Cancelable**: `preventDefault()` keeps the tab where it is | `{ url, method }` |
-| `ultimate:navigated` | after the swap, the scroll and the new scripts — and after a modal opens, its `url` the modal's | `{ url }` |
+| `ultimate:navigated` | after the swap, the scroll and the new scripts — and after a modal opens, its `url` the modal's. On a `stream` page swapped in as a page, the shell's scripts only: each hole's run when its chunk lands, so a hole's element may still be its fallback. A `stream` modal is shown whole, holes included | `{ url }` |
 | `ultimate:navigation-error` | a POST that failed or could not be shown, a swap that failed on a POST. **Cancelable**: the default is a GET of the current page | `{ url, method, reason }` |
 
 The three event names are on `@ultimat3/render/client` too — what an island listens with. The event
@@ -510,6 +539,7 @@ names and attributes are exported from `@ultimat3/render` (`NAVIGATE_EVENT`,
 | the server gate and the redirect hand-over, counting handler runs | `packages/http/src/navigation.test.ts` |
 | speculation rules: which pages are candidates, the tag on a router-less document only, the CSP hash of the served bytes | `packages/cli/src/page-speculation.test.ts`, `packages/render/src/speculation-rules.test.ts` |
 | real pages: prefetch and `'document'` run no `load`, another principal or app is refused, a misplaced key refuses the boot | `packages/cli/src/page-navigation.test.ts` |
+| a soft visit to a `stream` page: the shell before an open hole, the hole filling and hydrating, its error branch, a second navigation cancelling the first | `packages/cli/e2e/stream-hole.e2e.test.ts`, `packages/render/src/navigation-stream.test.ts` |
 | writes announced after they settle | `packages/core/src/client-writes.test.ts` |
 | in a real Chrome, through the real pipeline under an enforced CSP: every rule above, counted in route executions | `packages/cli/e2e/client-navigation-*.e2e.test.ts` |
 | the reference app, opted in: real pages, sign-out, a like after a round trip, the editor as a modal over the feed, scripting off | `examples/dummy/apps/web/e2e/client-navigation.e2e.test.ts` |

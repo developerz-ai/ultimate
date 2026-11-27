@@ -62,8 +62,10 @@ hashed URL, in `x dev`, the container and `x build --target static` alike.
 → `src: url("/assets/fonts/inter-var.9c1d2e3f.woff2") format("woff2")`. A missing file or a path
 outside `assets/` is `X_ASSET_MISSING` at compile time, naming the path — not a Sass stack. The Sass
 disk cache re-checks every asset a cached sheet named, so a replaced font is never served under its
-old hash. Sass has no table without an app loaded, so a unit test that compiles such a sheet
-installs one with `setAssetResolver`, as below.
+old hash. In a test process run from the app root, `@ultimat3/testing/preload` installs the app's
+own table (again at every file boundary), so a test importing a module whose sheet calls `asset()`
+compiles it to the URL the app serves, and a missing file is still `X_ASSET_MISSING`. Only a test
+run outside an app root installs one itself, with `setAssetResolver`.
 
 ## Served types
 
@@ -90,7 +92,7 @@ unsatisfiable range gets a `416`. Safari will not play a `<video>` without this.
 
 | Question | Answer |
 |---|---|
-| the table | `packages/cli/src/site-assets.ts`: one table per app root, installed into `asset()` by `loadApp` |
+| the table | `packages/render/src/site-assets.ts` (`@ultimat3/render/server`): one table per app root, installed into `asset()` by `loadApp`, and by `@ultimat3/testing/preload` in a test process at an app root |
 | the route | `packages/cli/src/site-asset-routes.ts`: `GET /assets/*file`, mounted by `assetRoutes()`, which both `x dev` and the container compose |
 | the export | `writeSiteAssets(root, out)` copies every asset to `out/assets/…/<name>.<hash>.<ext>` |
 | the helper | `packages/render/src/asset.ts`: `asset()`, `setAssetResolver()`, `assetPathProblem()` |

@@ -5,10 +5,29 @@
 // `tokens.test.ts` (run by `x verify`) fails if the two ever disagree.
 
 import { unknownTokenError } from '../errors';
-import { COLOR_ROLES, type ColorRole, colorTokens, type Theme } from './color-tokens';
+import {
+  type AliasRole,
+  COLOR_ALIASES,
+  COLOR_ROLES,
+  type ColorRole,
+  colorTokens,
+  isAliasRole,
+  THEME_ROLES,
+  type Theme,
+  type ThemeRole,
+} from './color-tokens';
 
-export type { ChartRole, ColorRole, Theme } from './color-tokens';
-export { CHART_ROLES, COLOR_ROLES, colorTokens } from './color-tokens';
+export type { AliasRole, ChartRole, ColorRole, Theme, ThemeRole } from './color-tokens';
+export {
+  ALIAS_ROLES,
+  CHART_ROLES,
+  COLOR_ALIASES,
+  COLOR_ROLES,
+  colorTokens,
+  isAliasRole,
+  THEME_ROLES,
+  withAliases,
+} from './color-tokens';
 
 export const spaceTokens = {
   '0': '0',
@@ -69,6 +88,9 @@ export const easingTokens = {
   'in-out': 'cubic-bezier(0.65, 0, 0.35, 1)',
   spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
 } as const;
+
+export type DurationName = keyof typeof durationTokens;
+export type EasingName = keyof typeof easingTokens;
 
 /**
  * The elevation rungs, then the two accent-drawn families: `glow-*` (a halo, no offset — a focused
@@ -156,29 +178,40 @@ export const lineHeightTokens = {
   loose: '1.75',
 } as const;
 
-/** `var(--color-accent)` — the channel list, for use inside `rgb()`. */
-export function colorVar(role: ColorRole): string {
-  assertColorRole(role);
+/**
+ * `var(--color-accent)` — the channel list, for use inside `rgb()`. An alias role falls back to its
+ * source, `var(--color-link, var(--color-accent))`, exactly as `role()` in `_colors.scss` compiles.
+ */
+export function colorVar(role: ColorRole | AliasRole): string {
+  assertThemeRole(role);
+  if (isAliasRole(role)) return `var(--color-${role}, var(--color-${COLOR_ALIASES[role]}))`;
   return `var(--color-${role})`;
 }
 
 /** `rgb(var(--color-accent) / 0.5)` — a CSS-ready colour. */
-export function color(role: ColorRole, alpha = 1): string {
+export function color(role: ColorRole | AliasRole, alpha = 1): string {
   return `rgb(${colorVar(role)} / ${alpha})`;
 }
 
 /**
  * Resolved `rgb(...)` for a theme, with no custom-property indirection — the
- * only form <canvas>, chart libraries, and email clients can consume.
+ * only form <canvas>, chart libraries, and email clients can consume. An alias answers its
+ * source's shipped channels: what renders until a brand sets it.
  */
-export function colorRgb(theme: Theme, role: ColorRole, alpha = 1): string {
-  assertColorRole(role);
-  const channels = colorTokens[theme][role];
+export function colorRgb(theme: Theme, role: ColorRole | AliasRole, alpha = 1): string {
+  assertThemeRole(role);
+  const channels = colorTokens[theme][isAliasRole(role) ? COLOR_ALIASES[role] : role];
   return alpha === 1 ? `rgb(${channels})` : `rgb(${channels} / ${alpha})`;
 }
 
 export function assertColorRole(role: string): asserts role is ColorRole {
   if (!(COLOR_ROLES as readonly string[]).includes(role)) {
     throw unknownTokenError('color', role, COLOR_ROLES);
+  }
+}
+
+function assertThemeRole(role: string): asserts role is ThemeRole {
+  if (!(THEME_ROLES as readonly string[]).includes(role)) {
+    throw unknownTokenError('color', role, THEME_ROLES);
   }
 }

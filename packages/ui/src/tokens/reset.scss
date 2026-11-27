@@ -67,13 +67,13 @@
 }
 
 :where(a) {
-  color: t.role('accent');
+  color: t.role('link');
   text-decoration-thickness: 1px;
   text-underline-offset: 0.15em;
 }
 
 :where(a:hover) {
-  color: t.role('accent-strong');
+  color: t.role('link-strong');
 }
 
 // Intrinsic ratio preserved and dimensions honoured so CLS stays at 0.
@@ -115,7 +115,7 @@
 
 // Themed keyboard focus for anything the component layer forgot.
 :where(:focus-visible) {
-  outline: t.stroke(thick) solid t.role('accent');
+  outline: t.stroke(thick) solid t.role('focus');
   outline-offset: t.stroke(thick);
 }
 

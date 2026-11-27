@@ -10,6 +10,7 @@ import type { MetaIssue } from '@ultimat3/seo';
 import { llmsDescriptionIssues, validateMeta } from '@ultimat3/seo';
 import { checkAgentsMd } from './app-agents-md';
 import { readAppSources } from './app-boundaries';
+import { devImportWarnings } from './app-dev-imports';
 import { envExampleFindings } from './app-env';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
@@ -125,18 +126,21 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // second time (`guard-sources.ts`).
     //
     // A report-only guard's findings ride as warnings, as the filesize band does: listed, never red.
+    // So does a development entry a role loads (`app-dev-imports.ts`).
     async run(ctx) {
       const sources = await readAppSources(ctx.root);
       const guards = await guardReport(ctx.root, sources);
+      const warnings = [
+        ...guards.warnings.map(guardWarningLine),
+        ...(await devImportWarnings(ctx.root)),
+      ];
       return {
         ...fromFindings([
           ...(await appBoundaryFindings(ctx.root, sources)),
           ...guards.findings,
           ...(await hostFindings(ctx, 'boundaries')),
         ]),
-        ...(guards.warnings.length === 0
-          ? {}
-          : { warnings: guards.warnings.map(guardWarningLine) }),
+        ...(warnings.length === 0 ? {} : { warnings }),
       };
     },
   },

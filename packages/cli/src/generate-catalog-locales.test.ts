@@ -11,6 +11,8 @@ import { join } from 'node:path';
 import { loadCatalog, resetLocaleConfig } from '@ultimat3/i18n';
 import { generate } from './cmd-generate';
 import { localiseCatalogs } from './generate-catalog-locales';
+import { plannedDisk } from './generate-disk';
+import { followUpEdits } from './generate-follow-ups';
 import type { GeneratedFile } from './templates';
 import { thrownByAsync } from './thrown-by-fixture';
 
@@ -86,5 +88,34 @@ describe('unit · catalogs a generator writes for a non-default locale', () => {
     await writeCatalog('en', {});
     const files = resource(['en']);
     expect(await localiseCatalogs(root, files)).toEqual(files);
+  });
+});
+
+describe('unit · catalogs a generator writes into a split locale', () => {
+  const splitEn = async (): Promise<void> => {
+    await Bun.write(join(root, 'packages/i18n/catalogs/en/app.json'), '{"title":"Home"}\n');
+    await Bun.write(join(root, 'packages/i18n/catalogs/en/app/coupon.json'), '{}\n');
+  };
+
+  test('each key lands in its namespace file, the nested one when it exists', async () => {
+    await splitEn();
+    const files = await localiseCatalogs(root, resource(['en']));
+    const paths = files.map((file) => file.path).filter((path) => path.includes('/catalogs/'));
+    // Never `en.json` beside `en/`: that is X_CATALOG_LAYOUT_MIXED on the next read.
+    expect(paths).not.toContain('packages/i18n/catalogs/en.json');
+    const coupon = files.find((file) => file.path === 'packages/i18n/catalogs/en/app/coupon.json');
+    if (coupon?.merge !== 'json') return expect.unreachable('a merge: json namespace file');
+    expect(loadCatalog(JSON.parse(coupon.contents))['empty']).toBe('No coupons yet.');
+  });
+
+  test('the follow-up re-derives the barrel over a namespace the run creates', async () => {
+    await Bun.write(join(root, 'packages/i18n/catalogs/en/site.json'), '{"title":"Home"}\n');
+    const planned = 'packages/i18n/catalogs/en/app.json';
+    const disk = plannedDisk(root, new Map([[planned, '{"coupon":{"empty":"None"}}\n']]));
+    const follow = await followUpEdits(root, [planned], undefined, disk);
+    expect(follow.edited).toContain('packages/i18n/catalogs/en/index.ts');
+    const barrel = (await disk.read('packages/i18n/catalogs/en/index.ts')) ?? '';
+    expect(barrel).toContain("import nsApp from './app.json';");
+    expect(barrel).toContain("import nsSite from './site.json';");
   });
 });

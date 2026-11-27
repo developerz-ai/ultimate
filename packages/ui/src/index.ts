@@ -56,6 +56,8 @@ export type { BottomNavProps } from './components/BottomNav';
 export { BottomNav } from './components/BottomNav';
 export type { BreadcrumbItem, BreadcrumbProps } from './components/Breadcrumb';
 export { Breadcrumb } from './components/Breadcrumb';
+export type { BulkBarProps, SelectionMatching } from './components/BulkBar';
+export { BulkBar } from './components/BulkBar';
 export type { ButtonProps } from './components/Button';
 export { Button } from './components/Button';
 export type { BarRect, ChartPoint } from './components/bar-chart-view';
@@ -213,6 +215,8 @@ export { Radio } from './components/Radio';
 export type { RelativeTimeProps } from './components/RelativeTime';
 export { RelativeTime } from './components/RelativeTime';
 export { rankOptions } from './components/rank-options';
+export type { RowSelection } from './components/row-selection';
+export { NO_SELECTION } from './components/row-selection';
 export type {
   SearchableSelectManyProps,
   SearchableSelectOneProps,
@@ -246,6 +250,7 @@ export { Stepper } from './components/Stepper';
 export type { SwitchProps } from './components/Switch';
 export { Switch } from './components/Switch';
 export type { SearchableOption } from './components/searchable-select-view';
+export type { ListSelection } from './components/selection-control';
 export type { SortDirection, SortState } from './components/sort-state';
 export type { SparklinePoint } from './components/sparkline-view';
 export { sparklinePath } from './components/sparkline-view';
@@ -368,9 +373,27 @@ export { useToasts } from './toast/use-toasts';
 export type { ColourVision } from './tokens/colour-vision';
 export type { Channels } from './tokens/contrast';
 export { AA_LARGE, AA_TEXT, contrastRatio, roleContrast } from './tokens/contrast';
-export { CONTRAST_PAIRS } from './tokens/contrast-pairs';
-export type { ColorRole, RadiusName, ShadowName, Theme } from './tokens/tokens';
+export { ALIAS_CONTRAST_PAIRS, CONTRAST_PAIRS } from './tokens/contrast-pairs';
+export type {
+  AliasRole,
+  ColorRole,
+  DurationName,
+  EasingName,
+  RadiusName,
+  ShadowName,
+  Theme,
+  ThemeRole,
+} from './tokens/tokens';
 // --- tokens ------------------------------------------------------------------
-export { COLOR_ROLES, color, colorRgb, colorTokens, colorVar } from './tokens/tokens';
+export {
+  ALIAS_ROLES,
+  COLOR_ALIASES,
+  COLOR_ROLES,
+  color,
+  colorRgb,
+  colorTokens,
+  colorVar,
+  THEME_ROLES,
+} from './tokens/tokens';
 export { uiCatalog } from './ui-catalog';
 export { registerHotkeys, useHotkeys } from './use-hotkeys';

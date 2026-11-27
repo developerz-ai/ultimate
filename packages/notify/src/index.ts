@@ -80,7 +80,7 @@ export {
   postgresDeliveryLedger,
   SQL_NOTIFY_DELIVERIES_TABLE,
 } from './ledger-pg';
-export type { NativePusher, NativePushOptions } from './native-push';
+export type { NativePusher, NativePushOptions, NativePushReport } from './native-push';
 export {
   nativePush,
   PUSH_BAD_TOKEN_LIMIT,

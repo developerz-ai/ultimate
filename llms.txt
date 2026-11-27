@@ -266,7 +266,7 @@ The single documentation source. Source of truth is `wiki/` in this repo, mirror
 - [Static assets](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Static-Assets.md).
 - [I18n](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/I18n.md): flat catalogs, loud misses, locale routing, `hreflang`.
 - [Theming](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Theming.md): 24 semantic colour roles as RGB channels, every token scale, breakpoint and layout mixins, `defineTheme()`, what contrast is gated.
-- [UI components](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/UI-Components.md): the four page composites, and the generated catalog of 99 source-derived UI components.
+- [UI components](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/UI-Components.md): the four page composites, and the generated catalog of 100 source-derived UI components.
 - [Interface rules](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Interface-Rules.md): how a screen must behave, and which of the app's `guards/` refuses each rule.
 - [Timezones and dates](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Timezones-And-Dates.md): store UTC, format with an explicit IANA zone, frozen clocks in tests.
 - [Money](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Money.md): `Money = { minor, currency }`, never a float.
