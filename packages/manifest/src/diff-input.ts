@@ -1,6 +1,7 @@
 // An input schema's change, classified (`diffActions`, `diffQueries`, `diffJobs`): byte-identical
-// is no change; only ADDING optional top-level properties to an object schema is `additive`, since
-// every payload the old (closed) schema accepted the new one accepts; anything else is `breaking`.
+// is no change; ADDING optional top-level properties to a closed object schema, or ADDING values to
+// an `enum`, is `additive`, since every payload the old schema accepted the new one accepts;
+// anything else is `breaking`.
 //
 // Deliberately shallow: only the top level is compared, so an optional property added INSIDE a
 // nested object still reads as breaking — over-reporting is the safe side of a contract check.
@@ -34,6 +35,33 @@ export function onlyAddsOptionalProperties(before: unknown, after: unknown): boo
   return names(afterRequired).every((name) => wasRequired.has(name));
 }
 
+/**
+ * True when `after` is `before` with values ADDED to one or more `enum` lists and nothing else
+ * changed: every payload the old schema accepted, the new one accepts (a webhook topic, a status a
+ * filter takes). A removed value, or any other difference, is not this.
+ */
+export function onlyWidensEnums(before: unknown, after: unknown): boolean {
+  if (Array.isArray(before) || Array.isArray(after)) {
+    if (!Array.isArray(before) || !Array.isArray(after) || before.length !== after.length)
+      return false;
+    return before.every((item, index) => onlyWidensEnums(item, after[index]));
+  }
+  if (!isJsonObject(before) || !isJsonObject(after))
+    return canonicalJson(before) === canonicalJson(after);
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  for (const key of keys) {
+    const was = before[key];
+    const now = after[key];
+    if (key === 'enum' && Array.isArray(was) && Array.isArray(now)) {
+      const offered = new Set(now.map((value) => canonicalJson(value)));
+      if (!was.every((value) => offered.has(canonicalJson(value)))) return false;
+      continue;
+    }
+    if (!(key in before) || !(key in after) || !onlyWidensEnums(was, now)) return false;
+  }
+  return true;
+}
+
 /** The change between two input schemas at `path`, or none. */
 export function diffInput(
   path: string,
@@ -44,6 +72,9 @@ export function diffInput(
   if (canonicalJson(before) === canonicalJson(after)) return [];
   if (onlyAddsOptionalProperties(before, after)) {
     return [{ kind: 'additive', path, detail: 'input gained optional properties' }];
+  }
+  if (onlyWidensEnums(before, after)) {
+    return [{ kind: 'additive', path, detail: 'input accepts more enum values' }];
   }
   return [{ kind: 'breaking', path, detail: breakingDetail }];
 }

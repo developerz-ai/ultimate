@@ -65,3 +65,27 @@ describe('an input schema change', () => {
     expect(onlyAddsOptionalProperties(null, before)).toBe(false);
   });
 });
+
+describe('an input enum change', () => {
+  const topics = (values: string[], extra = {}) =>
+    schema({ topic: { enum: values } }, ['topic'], extra);
+
+  test('a widened enum is additive: every old payload still parses', () => {
+    expect(diffInput('actions.a.input', topics(['a', 'b']), topics(['a', 'b', 'c']), 'x')).toEqual([
+      { kind: 'additive', path: 'actions.a.input', detail: 'input accepts more enum values' },
+    ]);
+  });
+
+  test('a removed enum value, or a widening beside any other change, is breaking', () => {
+    for (const after of [
+      topics(['a']),
+      topics(['a', 'c']),
+      topics(['a', 'b', 'c'], { additionalProperties: true }),
+      schema({ topic: { enum: ['a', 'b', 'c'] }, more: { type: 'string' } }, ['topic', 'more']),
+    ]) {
+      expect(diffInput('actions.a.input', topics(['a', 'b']), after, 'x')).toEqual([
+        { kind: 'breaking', path: 'actions.a.input', detail: 'x' },
+      ]);
+    }
+  });
+});
