@@ -1508,6 +1508,11 @@ Capabilities (`DRIVER_CAPABILITIES`): `transactions`, `lock`, `series`, `upsert`
 `aggregate:approximateCount`. A duplicate key is `entityUniqueViolation(entity, constraint)` —
 `X_DB_UNIQUE_VIOLATION`, the code Postgres' `23505` becomes, with no faked SQLSTATE.
 
+A custom store must implement `updateChecked` for unversioned writes needing invariant or
+same-tenant reference checks. It must exclude concurrent changes to the matching set while it
+passes all current rows to the callback and applies the returned patch, atomically. A callback
+rejection must leave all rows unchanged. Without it those writes refuse with `X_DRIVER_UNSUPPORTED`.
+
 **A custom store owns its own schema, uniqueness and foreign keys.** Migrations, drift and every
 `x db` command describe Postgres only; `x verify`'s drift step skips (and says why) when no SQL
 store was constructed (`driverStores()`). The meanings a custom store borrows — `matchesPredicate`,

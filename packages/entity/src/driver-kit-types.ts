@@ -83,6 +83,15 @@ export interface DriverRepo<Row> {
     patch: Readonly<Record<string, unknown>>,
     advance?: DriverAdvance,
   ): Promise<number>;
+  /** Atomically judge the complete matching set and apply the returned patch to all rows.
+   * Concurrent writes affecting the match must be excluded until completion; a rejection writes nothing. */
+  updateChecked?:
+    | ((
+        filter: DriverFilter,
+        judge: (rows: readonly Row[]) => Promise<Readonly<Record<string, unknown>>>,
+        advance?: DriverAdvance,
+      ) => Promise<number>)
+    | undefined;
   delete(filter: DriverFilter): Promise<number>;
   /** `'upsert'`. The plan is `bulk-write.ts`'s — target, overwritten columns — already judged. */
   upsert?(rows: readonly Row[], plan: UpsertPlan, write: DriverWrite): Promise<readonly Row[]>;
