@@ -14,9 +14,9 @@
 @use 'typography';
 @use 'units';
 
-/// Keyboard-only focus, drawn from the accent role so it themes automatically.
+/// Keyboard-only focus, drawn from the `focus` role (the accent until a brand sets it).
 @mixin focus-ring(
-  $role: 'accent',
+  $role: 'focus',
   $width: stroke.stroke(thick),
   $offset: stroke.stroke(thick)
 ) {

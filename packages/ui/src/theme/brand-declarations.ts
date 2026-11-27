@@ -6,8 +6,6 @@ import { isJsonObject } from '@ultimat3/core';
 import { invalidBrandTokenError, unknownTokenError } from '../errors';
 import { parseChannels } from '../tokens/contrast';
 import {
-  COLOR_ROLES,
-  type ColorRole,
   type DurationName,
   durationTokens,
   type EasingName,
@@ -16,6 +14,8 @@ import {
   radiusTokens,
   SHADOW_NAMES,
   type ShadowName,
+  THEME_ROLES,
+  type ThemeRole,
 } from '../tokens/tokens';
 import { FONT_SLOTS, type FontSlot } from './preset-shape';
 import { isShadowValue, SHADOW_EXPECTED } from './shadow-value';
@@ -58,13 +58,13 @@ function assertKnown(
 }
 
 export function colorDeclarations(
-  overrides: Partial<Record<ColorRole, string>> | undefined,
+  overrides: Partial<Record<ThemeRole, string>> | undefined,
   scope: string,
 ): string[] {
   if (overrides === undefined) return [];
-  assertKnown('color', overrides, COLOR_ROLES);
+  assertKnown('color', overrides, THEME_ROLES);
   const out: string[] = [];
-  for (const role of COLOR_ROLES) {
+  for (const role of THEME_ROLES) {
     const value = overrides[role];
     if (value === undefined) continue;
     try {

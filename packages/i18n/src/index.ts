@@ -71,7 +71,7 @@ export {
   type LocaleAudit,
   mergeExtractions,
 } from './extract';
-export { FRAMEWORK_CATALOG } from './framework';
+export { FRAMEWORK_CATALOG, FRAMEWORK_CATALOGS } from './framework';
 export {
   type InterpolationValue,
   type InterpolationVars,

@@ -9,10 +9,10 @@
 }
 
 .tone-accent {
-  color: t.role('accent');
+  color: t.role('link');
 
   &:hover {
-    color: t.role('accent-strong');
+    color: t.role('link-strong');
   }
 }
 

@@ -11,7 +11,7 @@
 // benchmark (EN 301 549, ADA Title II, the EAA). 4.5:1 for body text (1.4.3), 3:1 for large text
 // and non-text UI (1.4.11).
 
-import { CHART_ROLES, type ColorRole } from './color-tokens';
+import { type AliasRole, CHART_ROLES, type ColorRole } from './color-tokens';
 import { AA_LARGE, AA_TEXT } from './contrast';
 
 /** What a page, a card and a raised panel are made of. */
@@ -85,4 +85,28 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...(['chart-1', 'chart-5'] as const).map((role) =>
     pair(role, 'bg-soft', AA_TEXT, `ANSI ${role} terminal text on the code surface`),
   ),
+];
+
+export interface AliasContrastPair {
+  readonly fg: AliasRole;
+  readonly bg: ColorRole;
+  readonly minimum: number;
+  readonly what: string;
+}
+
+/**
+ * The pairings an alias role renders, at the floor of what it is. Unset, each alias IS its source
+ * and the source's own pairs above already hold it; this list is what a brand that splits one off
+ * (`defineTheme({ colors: { light: { link } } })`) is measured against — and what `contrast.test.ts`
+ * holds the shipped palette to with every alias resolved.
+ */
+export const ALIAS_CONTRAST_PAIRS: readonly AliasContrastPair[] = [
+  ...(
+    [
+      ['link', AA_TEXT, 'a Link or plain <a> on a surface'],
+      ['link-strong', AA_TEXT, 'a hovered Link or <a> on a surface'],
+      ['nav-active', AA_TEXT, 'the current item of a NavList, BottomNav or Tabs on a surface'],
+      ['focus', AA_LARGE, 'the focus ring against a surface'],
+    ] as const
+  ).flatMap(([fg, minimum, what]) => SURFACES.map((bg) => ({ fg, bg, minimum, what }))),
 ];

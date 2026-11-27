@@ -67,7 +67,7 @@
 }
 
 .input:focus-visible + .dot {
-  outline: t.stroke(thick) solid t.role('accent');
+  outline: t.stroke(thick) solid t.role('focus');
   outline-offset: t.stroke(thick);
 }
 
@@ -123,7 +123,7 @@
 
     &:has(.input:focus-visible) {
       position: relative;
-      outline: t.stroke(thick) solid t.role('accent');
+      outline: t.stroke(thick) solid t.role('focus');
       outline-offset: t.stroke(thick);
     }
   }

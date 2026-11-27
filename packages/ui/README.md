@@ -27,6 +27,7 @@ channels** so `rgb(var(--color-accent) / 0.12)` gives a tint with no extra token
 | `line` | borders, dividers |
 | `scrim` | modal backdrops |
 | `accent` / `accent-strong` / `accent-fg` | primary action, its hover, text on it |
+| `link` / `link-strong` / `nav-active` / `focus` | links and their hover, the current nav item, the focus ring — each **the accent until a brand sets it** (`COLOR_ALIASES`) |
 | `success` / `warning` / `danger` / `info` | status solid, each with a `-soft` tint and a `-fg` text-on-solid |
 | `chart-1` … `chart-8` | categorical chart series, in assignment order (`CHART_ROLES`) |
 

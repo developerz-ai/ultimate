@@ -21,12 +21,12 @@
   // On the list's inline-END edge, beside its border. A shadow's x offset is physical, so RTL —
   // where that edge is the left one — gets the mirrored sign, as `Switch.module.scss` does.
   .tab[aria-selected='true'] {
-    box-shadow: inset calc(-1 * #{t.stroke(thick)}) 0 0 0 t.role('accent');
+    box-shadow: inset calc(-1 * #{t.stroke(thick)}) 0 0 0 t.role('nav-active');
   }
 }
 
 [dir='rtl'] .orientation-vertical .tab[aria-selected='true'] {
-  box-shadow: inset t.stroke(thick) 0 0 0 t.role('accent');
+  box-shadow: inset t.stroke(thick) 0 0 0 t.role('nav-active');
 }
 
 .list {
@@ -39,7 +39,7 @@
 
 .tab {
   display: inline-block;
-  @include t.focus-ring('accent', t.stroke(thick), calc(-1 * #{t.stroke(thick)}));
+  @include t.focus-ring('focus', t.stroke(thick), calc(-1 * #{t.stroke(thick)}));
   @include t.transition(color, box-shadow, background);
   padding-block: t.space(2);
   padding-inline: t.space(3);
@@ -63,9 +63,9 @@
 
   &[aria-selected='true'],
   &[aria-current='page'] {
-    color: t.role('accent');
+    color: t.role('nav-active');
     // Inset shadow instead of a border, so the tab does not shift on select.
-    box-shadow: inset 0 calc(-1 * #{t.stroke(thick)}) 0 0 t.role('accent');
+    box-shadow: inset 0 calc(-1 * #{t.stroke(thick)}) 0 0 t.role('nav-active');
   }
 }
 
@@ -73,7 +73,7 @@
   min-inline-size: 0;
 
   &:focus-visible {
-    outline: t.stroke(thick) solid t.role('accent');
+    outline: t.stroke(thick) solid t.role('focus');
     outline-offset: t.stroke(thick);
   }
 }

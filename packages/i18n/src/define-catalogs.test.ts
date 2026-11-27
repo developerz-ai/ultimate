@@ -77,13 +77,21 @@ describe('defineCatalogs', () => {
 
   test('a framework key an app has not translated MISSES in that locale, never in English', () => {
     // The golden rule, at the one place that could break it: registering the English framework
-    // catalog under `es` is a fallback chain with no name — `isMiss` reads false, so nothing
-    // downstream can see the gap, and the page ships half in Spanish and half in English.
-    defineCatalogs({ default: 'es', locales: { en, es } });
+    // catalog under a locale it is not written in is a fallback chain with no name — `isMiss` reads
+    // false, so nothing downstream can see the gap, and the page ships half in one language and
+    // half in English. `de` is a language the framework does not translate itself into.
+    defineCatalogs({ default: 'de', locales: { en, de: es } });
 
-    expect(isMiss(translatorFor('es')('common.save'))).toBe(true);
+    expect(isMiss(translatorFor('de')('common.save'))).toBe(true);
     // …and `en` still has them, because that IS the locale the framework catalog is written in.
     expect(translatorFor('en')('common.save')).toBe('Save');
+  });
+
+  test('a locale the framework ships is answered in that language, under the app', () => {
+    defineCatalogs({ default: 'es', locales: { en, es } });
+
+    expect(translatorFor('es')('common.save')).toBe('Guardar');
+    expect(translatorFor('es')('errors.notFound.title')).toBe('No hay nada');
   });
 
   test('configures the supported set and the fallback from the same call', () => {

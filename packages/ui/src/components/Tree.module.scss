@@ -51,7 +51,7 @@
 .link:focus-visible,
 .summary:focus-visible,
 .item[role='treeitem']:focus-visible > .row {
-  outline: t.stroke(thick) solid t.role('accent');
+  outline: t.stroke(thick) solid t.role('focus');
   outline-offset: calc(-1 * #{t.stroke(thick)});
 }
 

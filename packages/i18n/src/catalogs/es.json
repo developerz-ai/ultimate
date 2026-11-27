@@ -1,0 +1,767 @@
+{
+  "common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "create": "Crear",
+    "search": "Buscar",
+    "filter": "Filtrar",
+    "close": "Cerrar",
+    "retry": "Reintentar",
+    "loading": "Cargando…",
+    "empty": "Aún no hay nada aquí.",
+    "confirm": "¿Seguro?",
+    "yes": "Sí",
+    "no": "No",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "signedInAs": "Sesión iniciada como {email}"
+  },
+  "errors": {
+    "notFound": {
+      "title": "Página no encontrada",
+      "body": "Esta dirección no lleva a ninguna parte.",
+      "action": "Volver a un lugar seguro"
+    },
+    "badRequest": {
+      "title": "La solicitud no funcionó",
+      "body": "Algo no estaba bien, así que no pasó nada.",
+      "action": "Volver a un lugar seguro"
+    },
+    "forbidden": {
+      "title": "No permitido",
+      "body": "Tu cuenta no puede hacer esto. Pide a un administrador el permiso {permission}.",
+      "action": "Volver"
+    },
+    "unauthorized": {
+      "title": "Inicia sesión",
+      "body": "Esta página requiere una cuenta.",
+      "action": "Iniciar sesión"
+    },
+    "serverError": {
+      "title": "Algo falló de nuestro lado",
+      "body": "El error quedó registrado como {traceId}.",
+      "action": "Recargar"
+    },
+    "offline": {
+      "title": "Estás sin conexión",
+      "body": "Los cambios se guardan en este dispositivo y se sincronizan al reconectar.",
+      "action": "Reintentar ahora"
+    },
+    "rateLimited": {
+      "title": "Demasiadas solicitudes",
+      "body": "Vuelve a intentarlo en {seconds} segundos.",
+      "action": "Esperar"
+    },
+    "validation": {
+      "title": "Revisa los campos marcados",
+      "count": "{count} campo necesita atención",
+      "count_plural": "{count} campos necesitan atención"
+    },
+    "unavailable": {
+      "title": "Fuera de servicio un momento",
+      "body": "Ahora mismo no aceptamos solicitudes. Vuelve a intentarlo en breve.",
+      "action": "Reintentar"
+    },
+    "page": {
+      "builtWith": "Hecho con Ultimate",
+      "code": "código",
+      "request": "solicitud"
+    }
+  },
+  "validation": {
+    "required": "Obligatorio",
+    "tooShort": "Usa al menos {min} caracteres",
+    "tooLong": "Usa como máximo {max} caracteres",
+    "notEmail": "Introduce un correo electrónico válido",
+    "notUrl": "Introduce una URL válida",
+    "notNumber": "Introduce un número",
+    "outOfRange": "Introduce un valor entre {min} y {max}",
+    "mismatch": "Los valores no coinciden"
+  },
+  "auth": {
+    "signIn": {
+      "title": "Iniciar sesión",
+      "submit": "Iniciar sesión",
+      "email": "Correo electrónico",
+      "password": "Contraseña",
+      "forgot": "¿Olvidaste tu contraseña?",
+      "noAccount": "¿No tienes cuenta?",
+      "createAccount": "Crea una",
+      "magicLink": "Envíame un enlace de acceso",
+      "failed": "El correo y la contraseña no coinciden."
+    },
+    "signUp": {
+      "title": "Crea tu cuenta",
+      "submit": "Crear cuenta",
+      "name": "Nombre",
+      "haveAccount": "¿Ya tienes cuenta?",
+      "terms": "Al continuar aceptas los {termsLink}.",
+      "taken": "Ese correo ya está registrado."
+    },
+    "resetPassword": {
+      "title": "Restablece tu contraseña",
+      "submit": "Enviar enlace",
+      "sent": "Revisa {email}: te enviamos un enlace para restablecerla.",
+      "newPassword": "Nueva contraseña",
+      "expired": "El enlace caducó. Solicita uno nuevo."
+    },
+    "verifyEmail": {
+      "title": "Verifica tu correo",
+      "body": "Enviamos un código a {email}.",
+      "submit": "Verificar",
+      "resend": "Reenviar código"
+    },
+    "twoFactor": {
+      "title": "Código de verificación en dos pasos",
+      "body": "Introduce el código de 6 dígitos de tu app de autenticación.",
+      "submit": "Verificar",
+      "recovery": "Usar un código de recuperación"
+    },
+    "signOut": "Cerrar sesión",
+    "session": {
+      "expired": "Tu sesión caducó. Vuelve a iniciar sesión.",
+      "current": "Este dispositivo"
+    }
+  },
+  "pagination": {
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "first": "Primera",
+    "last": "Última",
+    "page": "Página {page} de {pages}",
+    "showing": "Mostrando {from}–{to} de {total}",
+    "perPage": "{count} por página",
+    "result": "{count} resultado",
+    "result_plural": "{count} resultados",
+    "loadMore": "Cargar más",
+    "noMore": "No hay nada más."
+  },
+  "admin": {
+    "a11y": {
+      "skip-to-content": "Saltar al contenido"
+    },
+    "actions": {
+      "label": "Acciones",
+      "confirm": {
+        "body": "Escribe {token} para confirmar. No pasará nada hasta que coincida."
+      },
+      "none": "Esta cuenta no tiene ningún recurso disponible.",
+      "unknown": "Este panel no declara esa acción.",
+      "back": "Volver a la fila",
+      "subject": {
+        "row": "Se ejecuta sobre {id}.",
+        "app": "Se ejecuta una vez, para toda la aplicación."
+      }
+    },
+    "ai": {
+      "disabled": "Los paneles de IA están desactivados en este admin.",
+      "no-runner": "No hay ningún motor de IA conectado, así que este panel no tiene a quién preguntar.",
+      "anomaly": {
+        "title": "Anomalías",
+        "description": "Filas que no se parecen al resto de la tabla."
+      },
+      "nl-query": {
+        "title": "Pregunta a los datos",
+        "description": "Una pregunta en lenguaje natural, respondida con una consulta de solo lectura."
+      },
+      "forecast": {
+        "title": "Previsión",
+        "description": "Hacia dónde va esta serie, a partir de las filas ya guardadas."
+      }
+    },
+    "audit": {
+      "title": "Registro de auditoría",
+      "empty": "Ninguna entrada del registro coincide.",
+      "empty-row": "Aún no se ha hecho nada con esta fila.",
+      "filter": {
+        "entity": "Entidad",
+        "actor": "Actor",
+        "outcome": "Resultado",
+        "since": "Desde",
+        "until": "Antes de",
+        "changes": "Solo cambios y rechazos"
+      },
+      "outcome": {
+        "allowed": "Permitido",
+        "denied": "Denegado",
+        "failed": "Fallido"
+      },
+      "older": "Entradas anteriores"
+    },
+    "brand": {
+      "name": "Admin"
+    },
+    "dashboard": {
+      "title": "Panel",
+      "records": {
+        "title": "Registros",
+        "label": "Registros por recurso",
+        "resource": "Recurso",
+        "total": "registros en total",
+        "approximate": "~{figure}"
+      },
+      "access": {
+        "title": "Acceso",
+        "allowed": "{allowed} de {total} permitidos",
+        "open": "Abrir la lista"
+      }
+    },
+    "denied": {
+      "body": "A esta cuenta le falta {permission} ({reason})."
+    },
+    "detail": {
+      "edit": "Editar",
+      "not-found": {
+        "cause": "No hay ningún {entity} con ese id.",
+        "fix": "Vuelve a la lista y abre una fila que aún exista."
+      },
+      "delete": "Eliminar"
+    },
+    "error": {
+      "action-failed": "La acción falló antes de terminar.",
+      "confirmation-required": "Es destructivo: escribe primero el código de confirmación.",
+      "invalid-input": "Algunos campos no cumplen el esquema de la entidad.",
+      "operation-not-offered": "Este recurso no ofrece esa operación.",
+      "row-missing": "Ninguna fila tiene ese id.",
+      "secret-required": "Hace falta un valor: esta columna está sellada y no tiene valor por defecto.",
+      "action-not-applicable": "Esta acción no se aplica a la fila en su estado actual.",
+      "row-out-of-scope": "Con este cambio la fila quedaría fuera de las que esta cuenta puede ver.",
+      "batch-not-offered": "Esta acción no se ejecuta sobre una selección de filas.",
+      "row-changed": "Alguien cambió esta fila después de que la abrieras. Tus valores se conservan sobre la fila actual: revísalos y guarda de nuevo."
+    },
+    "filter": {
+      "any": "Cualquiera",
+      "apply": "Filtrar",
+      "clear": "Quitar filtros",
+      "find": "Buscar…",
+      "from": "{field}, desde",
+      "to": "{field}, hasta"
+    },
+    "form": {
+      "cancel": "Cancelar",
+      "create": "Nuevo: {entity}",
+      "edit": "Editar {entity}",
+      "issues": "Revisa los campos marcados",
+      "save": "Guardar",
+      "secret-unchanged": "Déjalo vacío para conservar el valor guardado."
+    },
+    "group": {
+      "data": "Datos",
+      "jobs": "Tareas"
+    },
+    "jobs": {
+      "title": "Tareas",
+      "scoped": "Las colas, los workers y el rendimiento son de todas las organizaciones, así que solo los ve el operador de la plataforma. Las tareas de tu organización:",
+      "ms": "{ms} ms",
+      "seconds": "{seconds} s",
+      "tile": {
+        "ready": "Listas",
+        "running": "En ejecución",
+        "delayed": "Aplazadas",
+        "suspended": "Suspendidas",
+        "dead": "Muertas",
+        "workers": "Workers",
+        "oldestReady": "La más antigua lista"
+      },
+      "range": {
+        "label": "Periodo",
+        "1h": "Última hora",
+        "24h": "Últimas 24 horas",
+        "7d": "Últimos 7 días",
+        "30d": "Últimos 30 días"
+      },
+      "chart": {
+        "title": "Completadas y fallidas",
+        "label": "Ejecuciones completadas y fallidas, {range}",
+        "done": "completadas",
+        "failed": "fallidas"
+      },
+      "byName": {
+        "caption": "Por nombre de tarea",
+        "name": "Tarea",
+        "volume": "Ejecuciones",
+        "failureRate": "Tasa de fallos",
+        "meanMs": "Duración media",
+        "empty": "Ninguna tarea terminó en este periodo."
+      },
+      "scope": {
+        "all": "Todas",
+        "ready": "Listas",
+        "delayed": "Aplazadas",
+        "running": "En ejecución",
+        "suspended": "Suspendidas",
+        "done": "Completadas",
+        "failed": "Fallidas",
+        "dead": "Muertas",
+        "cancelled": "Canceladas"
+      },
+      "section": {
+        "run": "Ejecución",
+        "failure": "Fallo",
+        "work": "Entrada, progreso y pasos",
+        "trace": "Tenant y traza"
+      },
+      "hint": {
+        "id": "Pega los primeros caracteres de un id de tarea."
+      }
+    },
+    "list": {
+      "empty": "Aún no hay nada aquí.",
+      "open": "Abrir"
+    },
+    "lookup": {
+      "title": "Buscar {entity}",
+      "placeholder": "Buscar por nombre"
+    },
+    "nav": {
+      "label": "Secciones"
+    },
+    "operation": {
+      "list": "listó",
+      "detail": "leyó",
+      "search": "buscó",
+      "create": "creó",
+      "update": "actualizó",
+      "delete": "eliminó",
+      "page": "abrió una página"
+    },
+    "permission": {
+      "read": "Ver todas las pantallas del admin",
+      "write": "Crear y actualizar filas",
+      "destroy": "Eliminar filas",
+      "impersonate": "Actuar como otra cuenta"
+    },
+    "policy": {
+      "all-granted": "se conceden todos los permisos necesarios",
+      "granted": "la lista de concesiones incluye este permiso",
+      "missing": "no hay ninguna política registrada para este permiso",
+      "not-granted": "la lista de concesiones no incluye este permiso"
+    },
+    "scope": {
+      "label": "Ámbitos",
+      "all": "Todos"
+    },
+    "search": {
+      "title": "Búsqueda",
+      "label": "Buscar",
+      "placeholder": "Buscar en todas las entidades",
+      "skipped": {
+        "forbidden": "esta cuenta no puede buscar en esa entidad",
+        "no-text-fields": "esa entidad no tiene ningún campo de texto donde buscar",
+        "no-repo": "esa entidad no tiene un repo asociado",
+        "failed": "el repo de esa entidad falló al buscar"
+      }
+    },
+    "value": {
+      "empty": "—",
+      "true": "Sí",
+      "false": "No",
+      "sealed": "Sellado",
+      "currency": "Moneda"
+    },
+    "actor": {
+      "anonymous": "sin sesión",
+      "signedIn": "{id} — roles: {roles}"
+    },
+    "backToApp": "← Volver a la aplicación",
+    "matrix": {
+      "operation": "Operación",
+      "permissions": "Permisos necesarios",
+      "verdict": "Veredicto",
+      "allowed": "permitido",
+      "deniedBy": "denegado —"
+    },
+    "section": {
+      "other": "Otros"
+    },
+    "related": {
+      "all": "Ver todo"
+    },
+    "batch": {
+      "action": "Acción",
+      "over": "Ejecutar sobre",
+      "checked": "Las filas marcadas",
+      "all": "Todas las filas de esta lista",
+      "run": "Ejecutar",
+      "select": "Seleccionar",
+      "select-row": "Seleccionar {id}",
+      "done": "Hecho",
+      "refused": "Rechazado",
+      "failed": "Fallido",
+      "queued": "En cola",
+      "remaining": "Pendiente",
+      "continue": "Ejecutar sobre las {count} siguientes",
+      "back": "Volver a la lista",
+      "subject": {
+        "checked": "Se ejecuta sobre {count} filas marcadas.",
+        "all": "Se ejecuta sobre todas las filas de esta lista.",
+        "count": "Se ejecuta sobre {count} filas."
+      },
+      "matching": "Se ejecutó una vez sobre todas las filas coincidentes"
+    },
+    "x_jobs": {
+      "title": "Ejecuciones de tareas",
+      "field": {
+        "id": "Id",
+        "name": "Tarea",
+        "queue": "Cola",
+        "state": "Estado",
+        "attempt": "Intento",
+        "maxAttempts": "Intentos máximos",
+        "runAt": "Se ejecuta a las",
+        "createdAt": "En cola desde",
+        "updatedAt": "Actualizada",
+        "tenantId": "Tenant",
+        "lastError": "Último error",
+        "lastErrorStack": "Pila",
+        "progress": "Progreso",
+        "input": "Entrada",
+        "steps": "Pasos",
+        "traceparent": "Traza",
+        "enqueuedBy": "Encolada por",
+        "claimedBy": "Tomada por"
+      },
+      "column": {
+        "completed": "Progreso",
+        "error": "Último error"
+      }
+    },
+    "x_job_queues": {
+      "title": "Colas",
+      "field": {
+        "name": "Cola",
+        "ready": "Listas",
+        "delayed": "Aplazadas",
+        "running": "En ejecución",
+        "suspended": "Suspendidas",
+        "failed": "Fallidas",
+        "dead": "Muertas",
+        "oldestReadyMs": "La más antigua lista (ms)",
+        "paused": "En pausa",
+        "pausedAt": "En pausa desde"
+      },
+      "column": {
+        "oldest": "La más antigua lista",
+        "jobs": "Tareas"
+      }
+    },
+    "x_job_tasks": {
+      "title": "Tareas programadas",
+      "field": {
+        "name": "Tarea",
+        "cron": "Programación",
+        "tz": "Zona horaria",
+        "catchUp": "Recuperación",
+        "enqueues": "Colas",
+        "lastFireAt": "Último disparo",
+        "nextFireAt": "Próximo disparo",
+        "paused": "En pausa"
+      }
+    },
+    "x_job_workers": {
+      "title": "Workers",
+      "field": {
+        "id": "Worker",
+        "host": "Host",
+        "queues": "Colas",
+        "concurrency": "Huecos",
+        "inFlight": "En curso",
+        "startedAt": "Iniciado",
+        "heartbeatAt": "Latido"
+      },
+      "column": {
+        "heartbeat": "Último latido",
+        "running": "Tareas en ejecución"
+      }
+    },
+    "action": {
+      "job": {
+        "retry": "Reintentar",
+        "retry-from-step": "Reintentar desde un paso",
+        "run-now": "Ejecutar ahora",
+        "cancel": "Cancelar",
+        "remove": "Quitar",
+        "queue": {
+          "pause": "Pausar la cola",
+          "resume": "Reanudar la cola"
+        },
+        "task": {
+          "pause": "Pausar la tarea",
+          "resume": "Reanudar la tarea",
+          "run-now": "Ejecutar ahora"
+        }
+      }
+    },
+    "input": {
+      "job": {
+        "retry-from-step": {
+          "step": "Paso"
+        }
+      }
+    },
+    "errors": {
+      "title": "Errores",
+      "detail": {
+        "title": "Grupo de errores"
+      },
+      "status": {
+        "open": "Abierto",
+        "resolved": "Resuelto",
+        "ignored": "Ignorado"
+      },
+      "field": {
+        "code": "Código",
+        "source": "Origen",
+        "operation": "Operación",
+        "status": "Estado",
+        "count": "Apariciones",
+        "first-seen": "Primera vez",
+        "last-seen": "Última vez",
+        "release": "Versión",
+        "environment": "Entorno",
+        "request": "Solicitud",
+        "trace": "Traza"
+      },
+      "filter": {
+        "status": "Filtrar errores por estado"
+      },
+      "empty": "Ningún grupo de errores coincide con este filtro.",
+      "count": "{count} aparición",
+      "count_plural": "{count} apariciones",
+      "missing": "Este grupo de errores ya no existe.",
+      "back": "Volver a los errores"
+    }
+  },
+  "dev": {
+    "panel": {
+      "routes": {
+        "title": "Rutas",
+        "question": "¿qué handler sirve esto?"
+      },
+      "timeline": {
+        "title": "Cronología",
+        "question": "¿en qué se fue el tiempo de esta solicitud?",
+        "requests": "Solicitudes recientes",
+        "spans": "Tramos, en el reloj de la solicitud",
+        "byKind": "Tiempo por tipo",
+        "ms": "{ms} ms",
+        "empty": "Aún no se ha trazado ninguna solicitud: abre una página de la aplicación y recarga esta pestaña.",
+        "kind": {
+          "http": "http",
+          "render": "render",
+          "action": "acción",
+          "policy": "política",
+          "sql": "sql",
+          "cache": "caché",
+          "job": "tarea"
+        },
+        "nPlusOne": {
+          "title": "Sentencias repetidas",
+          "fix": "solución:",
+          "clean": "ninguna sentencia superó el umbral de repetición del detector en esta solicitud",
+          "unwired": "este proceso no tiene ningún detector de N+1: x dev conecta uno"
+        }
+      },
+      "live": {
+        "title": "En vivo",
+        "question": "¿qué recibe cada suscriptor y por qué?"
+      },
+      "jobs": {
+        "title": "Tareas",
+        "question": "¿avanza la cola y qué paso falló?",
+        "chart": {
+          "label": "Ejecuciones recientes por estado",
+          "total": "ejecuciones recientes",
+          "state": "Estado",
+          "runs": "Ejecuciones"
+        },
+        "state": {
+          "ok": "completada",
+          "running": "en ejecución",
+          "failed": "fallida",
+          "dead": "muerta"
+        }
+      },
+      "db": {
+        "title": "BD",
+        "question": "¿qué hay en la tabla y coincide el esquema con las migraciones?"
+      },
+      "mail": {
+        "title": "Correo",
+        "question": "¿cómo se veía ese correo, en ese idioma?"
+      },
+      "cache": {
+        "title": "Caché",
+        "question": "¿qué invalidó qué, y por qué sigue obsoleto?"
+      },
+      "policy": {
+        "title": "Políticas",
+        "question": "¿puede este actor hacer eso, y por qué?"
+      },
+      "manifest": {
+        "title": "Manifiesto",
+        "question": "¿está al día el x.manifest.json confirmado?"
+      },
+      "services": {
+        "title": "Servicios",
+        "question": "¿con qué servicios habla este proceso, y falló algo al cargar?"
+      },
+      "boundaries": {
+        "title": "Límites",
+        "question": "¿algún archivo importa cruzando un límite que el build rechazará?"
+      }
+    },
+    "live": {
+      "no-sync-node": "no hay ningún nodo de sincronización: los datos de suscriptores necesitan un proceso x dev en marcha"
+    },
+    "cache": {
+      "no-invalidations-yet": "aún no se ha registrado ninguna invalidación; el grafo de arriba sigue siendo real"
+    }
+  },
+  "time": {
+    "cron": {
+      "everyMinute": "cada minuto",
+      "everyNMinutes": "cada {n} minutos",
+      "everyHour": "cada hora",
+      "everyNHours": "cada {n} horas",
+      "at": "a las {time}",
+      "onDaysOfMonth": "el día {days}",
+      "onWeekdays": "los {days}",
+      "inMonths": "en {months}",
+      "everyDay": "cada día",
+      "and": "y",
+      "invalid": "no es una expresión cron válida"
+    },
+    "relative": {
+      "now": "ahora mismo"
+    }
+  },
+  "ui": {
+    "breadcrumb": "Ruta de navegación",
+    "cancel": "Cancelar",
+    "chart": {
+      "none": "Sin datos"
+    },
+    "close": "Cerrar",
+    "confirm": "Confirmar",
+    "copied": "Copiado",
+    "copy": "Copiar",
+    "date": {
+      "open": "Elegir una fecha",
+      "previousMonth": "Mes anterior",
+      "nextMonth": "Mes siguiente"
+    },
+    "dismiss": "Descartar",
+    "empty": "Aún no hay nada aquí.",
+    "error": {
+      "code": "Código de error",
+      "cause": "Qué salió mal",
+      "fix": "Cómo solucionarlo",
+      "title": "Algo salió mal"
+    },
+    "first": "Primera",
+    "language": "Idioma",
+    "list": {
+      "toEnd": "Volver al final"
+    },
+    "live": {
+      "live": "En vivo",
+      "reconnecting": "Reconectando",
+      "paused": "En pausa",
+      "offline": "Sin conexión"
+    },
+    "load": {
+      "more": "Cargar más",
+      "end": "No hay nada más."
+    },
+    "loading": "Cargando…",
+    "menu": "Menú",
+    "more": "Más",
+    "navigation": "Navegación",
+    "next": "Siguiente",
+    "optional": "Opcional",
+    "page": "Página",
+    "previous": "Anterior",
+    "required": "Obligatorio",
+    "results": {
+      "empty": "Sin resultados"
+    },
+    "range": {
+      "open": "Elegir fechas",
+      "from": "Desde",
+      "to": "Hasta",
+      "apply": "Aplicar",
+      "custom": "Periodo personalizado",
+      "invalid": "Ese periodo no es válido, así que se muestra el predeterminado."
+    },
+    "refresh": {
+      "pull": "Desliza para actualizar",
+      "release": "Suelta para actualizar",
+      "busy": "Actualizando…"
+    },
+    "retry": "Reintentar",
+    "select": {
+      "none": "Nada seleccionado",
+      "more": "Mostrando {shown} de {total}: escribe para filtrar",
+      "remove": "Quitar {label}",
+      "clear": "Borrar"
+    },
+    "selection": {
+      "page": "Seleccionar todas las filas de esta página",
+      "bar": "Selección",
+      "count": "{count} seleccionadas",
+      "matching": "Seleccionar las {count} coincidentes",
+      "clear": "Quitar la selección"
+    },
+    "shortcuts": "Atajos de teclado",
+    "skip": "Saltar al contenido",
+    "sort": {
+      "ascending": "Orden ascendente",
+      "descending": "Orden descendente",
+      "handle": "Mover",
+      "target": "Mover a",
+      "lift": "Levantado, posición {position} de {total} en {group}. Las flechas lo mueven, Espacio lo suelta y Escape lo devuelve.",
+      "moved": "Posición {position} de {total} en {group}.",
+      "dropped": "Soltado en la posición {position} de {total} en {group}.",
+      "cancelled": "Sin mover: de vuelta en la posición {position} de {total} en {group}.",
+      "up": "Subir",
+      "down": "Bajar"
+    },
+    "step": "Paso {current} de {total}: {label}",
+    "suggestions": "{count} sugerencias",
+    "theme": {
+      "light": "Claro",
+      "dark": "Oscuro",
+      "system": "Sistema",
+      "label": "Tema"
+    },
+    "tree": {
+      "loading": "Cargando elementos…"
+    },
+    "pane": {
+      "resize": "Cambiar el tamaño de los paneles"
+    },
+    "code": {
+      "region": "Código",
+      "wrap": "Ajustar líneas",
+      "terminal": "Salida del terminal"
+    },
+    "diff": {
+      "region": "Cambios",
+      "added": "Añadido",
+      "removed": "Eliminado",
+      "next": "Siguiente cambio",
+      "folded": "{count} líneas más ocultas"
+    },
+    "log": {
+      "region": "Registro",
+      "filter": "Filtrar líneas",
+      "level": "Nivel",
+      "all": "Todos los niveles",
+      "follow": "Seguir el final",
+      "capped": "Mostrando las últimas {count} líneas"
+    }
+  }
+}
