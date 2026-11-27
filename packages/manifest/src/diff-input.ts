@@ -1,7 +1,7 @@
 // An input schema's change, classified (`diffActions`, `diffQueries`, `diffJobs`): byte-identical
-// is no change; ADDING optional top-level properties to a closed object schema, or ADDING values to
-// an `enum`, is `additive`, since every payload the old schema accepted the new one accepts;
-// anything else is `breaking`.
+// is no change, and so is an `enum` reordered; ADDING optional top-level properties to a closed
+// object schema, or ADDING values to an `enum` in a positive position, is `additive`, since every
+// payload the old schema accepted the new one accepts; anything else is `breaking`.
 //
 // Deliberately shallow: only the top level is compared, so an optional property added INSIDE a
 // nested object still reads as breaking — over-reporting is the safe side of a contract check.
@@ -27,7 +27,7 @@ export function onlyAddsOptionalProperties(before: unknown, after: unknown): boo
   if (canonicalJson(beforeRest) !== canonicalJson(afterRest)) return false;
   // No property removed or changed.
   for (const [name, schema] of Object.entries(beforeProps)) {
-    if (!(name in afterProps)) return false;
+    if (!Object.hasOwn(afterProps, name)) return false;
     if (canonicalJson(schema) !== canonicalJson(afterProps[name])) return false;
   }
   // Nothing newly required — an old property or a new one.
@@ -35,31 +35,62 @@ export function onlyAddsOptionalProperties(before: unknown, after: unknown): boo
   return names(afterRequired).every((name) => wasRequired.has(name));
 }
 
-/**
- * True when `after` is `before` with values ADDED to one or more `enum` lists and nothing else
- * changed: every payload the old schema accepted, the new one accepts (a webhook topic, a status a
- * filter takes). A removed value, or any other difference, is not this.
- */
-export function onlyWidensEnums(before: unknown, after: unknown): boolean {
-  if (Array.isArray(before) || Array.isArray(after)) {
-    if (!Array.isArray(before) || !Array.isArray(after) || before.length !== after.length)
-      return false;
-    return before.every((item, index) => onlyWidensEnums(item, after[index]));
+/** How `after` compares to `before` under {@link enumWidening}. */
+export type EnumWidening = 'same' | 'wider' | 'other';
+
+/** Keywords whose value is a schema (or a list of schemas) a payload must satisfy, not exclude. */
+const SCHEMA_KEYWORDS = new Set(['items', 'additionalProperties', 'prefixItems', 'anyOf', 'allOf']);
+/** Keywords whose value maps names to schemas, each one a positive position too. */
+const SCHEMA_MAP_KEYWORDS = new Set(['properties', 'patternProperties']);
+
+const joined = (results: readonly EnumWidening[]): EnumWidening =>
+  results.includes('other') ? 'other' : results.includes('wider') ? 'wider' : 'same';
+
+const ownKeys = (value: Record<string, unknown>): string[] => Object.keys(value).sort();
+
+const sameKeys = (before: Record<string, unknown>, after: Record<string, unknown>): boolean =>
+  canonicalJson(ownKeys(before)) === canonicalJson(ownKeys(after));
+
+/** A schema, or a list of schemas, compared position by position. */
+const schemaOrList = (before: unknown, after: unknown): EnumWidening => {
+  if (Array.isArray(before) && Array.isArray(after)) {
+    if (before.length !== after.length) return 'other';
+    return joined(before.map((item, index) => enumWidening(item, after[index])));
   }
-  if (!isJsonObject(before) || !isJsonObject(after))
-    return canonicalJson(before) === canonicalJson(after);
-  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  for (const key of keys) {
+  return enumWidening(before, after);
+};
+
+/**
+ * Whether `after` is `before` with values ADDED to `enum` lists and nothing else changed. Only a
+ * positive position is followed — `properties`, `items`, `anyOf`, `allOf` and their like — where
+ * accepting more at the node accepts more overall. `oneOf`, `not`, `if`, `const` and every other
+ * keyword must match exactly: widening inside one can refuse a payload the old schema took. An
+ * enum holding the same values in another order is `same`.
+ */
+export function enumWidening(before: unknown, after: unknown): EnumWidening {
+  if (!isJsonObject(before) || !isJsonObject(after)) {
+    return canonicalJson(before) === canonicalJson(after) ? 'same' : 'other';
+  }
+  if (!sameKeys(before, after)) return 'other';
+  const results: EnumWidening[] = [];
+  for (const key of ownKeys(before)) {
     const was = before[key];
     const now = after[key];
     if (key === 'enum' && Array.isArray(was) && Array.isArray(now)) {
+      const old = new Set(was.map((value) => canonicalJson(value)));
       const offered = new Set(now.map((value) => canonicalJson(value)));
-      if (!was.every((value) => offered.has(canonicalJson(value)))) return false;
-      continue;
+      if (![...old].every((value) => offered.has(value))) return 'other';
+      results.push(offered.size > old.size ? 'wider' : 'same');
+    } else if (SCHEMA_KEYWORDS.has(key)) {
+      results.push(schemaOrList(was, now));
+    } else if (SCHEMA_MAP_KEYWORDS.has(key) && isJsonObject(was) && isJsonObject(now)) {
+      if (!sameKeys(was, now)) return 'other';
+      results.push(joined(ownKeys(was).map((name) => enumWidening(was[name], now[name]))));
+    } else {
+      results.push(canonicalJson(was) === canonicalJson(now) ? 'same' : 'other');
     }
-    if (!(key in before) || !(key in after) || !onlyWidensEnums(was, now)) return false;
   }
-  return true;
+  return joined(results);
 }
 
 /** The change between two input schemas at `path`, or none. */
@@ -73,7 +104,9 @@ export function diffInput(
   if (onlyAddsOptionalProperties(before, after)) {
     return [{ kind: 'additive', path, detail: 'input gained optional properties' }];
   }
-  if (onlyWidensEnums(before, after)) {
+  const widening = enumWidening(before, after);
+  if (widening === 'same') return [];
+  if (widening === 'wider') {
     return [{ kind: 'additive', path, detail: 'input accepts more enum values' }];
   }
   return [{ kind: 'breaking', path, detail: breakingDetail }];
