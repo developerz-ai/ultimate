@@ -500,6 +500,33 @@ export const syncAccount = job({
 | a proven wake is proven again | every `reproveEveryMs` (10 s) one notification per channel that wakes no loop. A session that stops delivering with no re-dial (half-open) announces nothing; not back within `verifyTimeoutMs` (5 s) of the SEND, the wake is un-proven, `jobs.wake.lost` (`warn`) is logged and the loops return to the 2 s poll until a notification crosses again (`jobs.wake.live`). A pool that has not sent the proof by then is no verdict: a saturated pool cannot be told from a dead session, so the wake stays proven and the proof is sent again, with its own window, once the pool answers. `startQueueWake`, `packages/jobs/src/queue-wake.ts`, `As of 2026-11` |
 | a queue pause | read by the claim statement itself, so it holds from each worker's next claim; a resume announces the queue |
 
+### A tenant's own job — `jobStatusFor` and `cancelJobFor`
+
+The operator surface takes an id and no tenant. An end user's status page or cancel button takes these two (`As of 2026-11-27`), from the app's own `query` and `action` under its own policy — functions, not a factory: who may read or cancel is policy.
+
+```ts
+import type { JobDriver } from '@ultimat3/jobs';
+import { cancelJobFor, jobStatusFor } from '@ultimat3/jobs';
+
+declare const driver: JobDriver;
+declare const jobId: string;
+declare const orgId: string;
+declare const actorId: string;
+
+const status = await jobStatusFor(driver, { jobId, tenantId: orgId, name: 'posts.export' });
+const after = await cancelJobFor(driver, { jobId, tenantId: orgId, reason: `by ${actorId}` });
+```
+
+| Rule | |
+|---|---|
+| what `JobStatus` carries | `id`, `name`, `state`, `attempt`, `maxAttempts`, `progress`, `runAt`, `createdAt`, `updatedAt` — never `input`, `lastError`, its stack, `traceparent` or `enqueuedBy` |
+| another tenant's job, a `tenant: 'none'` job, a missing id | all `undefined`: the fence is in the store (`JobDriver.tenantJobs` — Postgres, Redis and memory), one lookup, one answer |
+| `name` | part of the fence when given: an export endpoint answers for exports only |
+| `cancelJobFor` | cancels a LIVE job only and answers it as it now stands (`cancelled`, or how it had already ended); another tenant's job is a no-op answering `undefined`, never `X_JOB_NOT_CANCELLABLE` |
+| a hand-rolled driver with no `tenantJobs` | `X_JOB_INTROSPECTION_UNSUPPORTED` |
+
+The worked recipe: the reference app's `postsExportStatus` query and `cancelPostsExport` action (`examples/dummy/apps/web/app/posts/export-job.ts`) — `requestPostsExport` answers the `jobId`, an id the org does not own is one 404, `X_POSTS_EXPORT_NOT_FOUND`, whether it exists or not.
+
 ## Exports and imports — `exportRows()` and `importRows()`
 
 **A bulk file in either direction is a job.** `exportRows()` streams a paged read to object
@@ -933,7 +960,7 @@ Draining a worker mid-job does **not** finish the current step (`As of 2026-09-0
 | `/_x` dev panel | queue depth per queue, in-flight, failed, step timeline per job, and the whole `x_backfills` ledger with a live count |
 | `x jobs list --json` | one row per job: state, queue, attempts, `runAt`, idempotency key — plus the `backfill()` passes **in flight**, with rows so far and cursor |
 | `x jobs show <id> --json` | machine-readable state, step results, next retry, dead-letter reason, and this run's ledger row under `backfill` when the job is a backfill |
-| `x db backfill --list --json` | the whole ledger: one row per pass, newest first → [CLI reference](CLI-Reference#x-db) |
+| `x db backfill --list --json` | the whole ledger: one row per pass, newest first → [CLI reference](CLI-Reference-Data#x-db) |
 | MCP dev tools | `jobs.inspect` (definitions, retry policy, steps) and `queue.depth` (pending/running/failed per queue) — scope `dev:read`, never reachable in `ROLE=web` |
 | OpenTelemetry | one span per job, one child span per step, trace linked to the enqueuing request |
 | Metrics | `queue_depth{queue}`, `queue_demand{queue}` (what the worker HPA reads), `jobs_total{queue,outcome}`, `jobs_retried_total{job,code}` (one per retried attempt; `code` is the thrown `X_*`, or `uncoded`), `job_leases_lost_total{queue}` → [Observability](Observability) |

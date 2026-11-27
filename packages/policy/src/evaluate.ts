@@ -114,6 +114,38 @@ export const evaluate = <I, R = unknown>(
   };
 };
 
+/** What a batch caller supplies: one input, one actor, and every row the rule decides about. */
+export interface EvaluateEachArgs<I, R = unknown> {
+  readonly input: I;
+  readonly actor: Actor | null;
+  readonly rows: readonly R[];
+  readonly ctx?: Ctx;
+}
+
+/**
+ * `evaluate()` once per row, in row order: one evaluation and one `policy.decision` event each.
+ * Never a second authz path — no shortcut decides the batch once, because a row-level rule's
+ * verdict on one row says nothing about the next. A predicate that throws propagates: the caller
+ * gets no list at all, never a partial one it could read as "these were allowed".
+ */
+export const evaluateEach = <I, R = unknown>(
+  policy: Policy<I, R>,
+  args: EvaluateEachArgs<I, R>,
+  options?: EvaluateOptions,
+): readonly PolicyEvaluation[] =>
+  args.rows.map((row) =>
+    evaluate(
+      policy,
+      {
+        input: args.input,
+        actor: args.actor,
+        row,
+        ...(args.ctx === undefined ? {} : { ctx: args.ctx }),
+      },
+      options,
+    ),
+  );
+
 export const reasonOf = (decision: PolicyDecision): string | null =>
   decision.allowed ? null : decision.reason;
 

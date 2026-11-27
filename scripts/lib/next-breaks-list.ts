@@ -30,6 +30,11 @@ export interface ParkedBreak {
 
 const P11 = 'docs/plans/2026/11/11/101-full-stack-efficiency-sweeps';
 const P14 = 'docs/plans/2026/11/14/101-finished-and-self-maintained';
+const P27 = 'docs/plans/2026/11/27/101-finish-ultimate-close-issues';
+const P27_BREAKS: BreakSource = {
+  path: `${P27}/10-next-breaks.md`,
+  anchor: "## This plan's breaks",
+};
 const OD10: BreakSource = {
   path: `${P11}/90-owner-decisions.md`,
   anchor: '| OD10 | Breaking items parked for `next`',
@@ -251,6 +256,30 @@ export const PARKED_BREAKS: readonly ParkedBreak[] = [
       { path: 'packages/admin/src/dev/panel-policy.ts', symbol: 'policyPanel' },
       { path: 'packages/admin/src/dev/panel-routes.ts', symbol: 'routesPanel' },
       { path: 'packages/admin/src/dev/panel-timeline.ts', symbol: 'timelinePanel' },
+    ],
+  },
+  {
+    ids: '#1280',
+    title: 'a live cursor without a matching signature cold-starts',
+    change:
+      'a resume whose cursor carries no `sig` is a cold start (a new `ResumeReason`) instead of a counted delta; `onUnsignedCursor` and `unsignedCursors` go',
+    sources: [P27_BREAKS, { path: KNOWN_GAPS, anchor: 'flips on `next` (#1280)' }],
+  },
+  {
+    ids: '#1281',
+    title: 'an undeclared input key is refused',
+    change:
+      'an action or query input naming a key its schema does not declare is `X_INPUT_INVALID`, naming the nearest declared key, instead of a logged `X_INPUT_UNKNOWN_KEY`',
+    sources: [P27_BREAKS, { path: KNOWN_GAPS, anchor: 'flips on `next` (#1281)' }],
+  },
+  {
+    ids: 'device v',
+    title: 'a device hello must carry `v`',
+    change:
+      'a hello with no `v` is closed with `X_DEVICE_WIRE_VERSION` instead of read as version 1',
+    sources: [
+      { path: `${P27}/10-next-breaks.md`, anchor: '| device hello without `v` |' },
+      { path: KNOWN_GAPS, anchor: 'Requiring `v` flips on `next`' },
     ],
   },
 ];

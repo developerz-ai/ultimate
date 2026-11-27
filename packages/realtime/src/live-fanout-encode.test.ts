@@ -7,6 +7,7 @@ import { systemClock, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import type { ChangeEvent } from './changefeed';
 import { makeCursor } from './cursor';
+import { cursorVerdict } from './cursor-sign';
 import type { LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { type FanoutDeps, fanoutChange, patchFrame } from './live-fanout';
@@ -15,11 +16,14 @@ import type { BridgeResult } from './matcher-bridge';
 import { type QueryEntry, queryEntry } from './query-window';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 import { SubscriberGate } from './subscriber-gate';
-import { encode } from './sync-protocol';
+import { decode, encode } from './sync-protocol';
 
 class RawWs implements WsLike {
   readonly raw: string[] = [];
+  /** Bun's `send` answers `0` for a frame it dropped. */
+  refuse = false;
   send(data: string): number {
+    if (this.refuse) return 0;
     this.raw.push(data);
     return data.length;
   }
@@ -92,6 +96,12 @@ function seat(entry: QueryEntry, sid: string, actorId: string): RawWs {
   return ws;
 }
 
+/** The sig of the cursor a fanout left this subscriber on: what its frame must have carried. */
+function seatedSig(entry: QueryEntry, sid: string): string {
+  const sig = entry.subscribers.get(sid)?.cursor.sig;
+  return sig ?? expect.unreachable(`subscriber ${sid} was seated on an unsigned cursor`);
+}
+
 describe('a patch every subscriber may see whole is encoded once', () => {
   test('each subscriber gets the bytes its own per-subscriber frame would have been', async () => {
     const { entry, deps } = rig(() => true);
@@ -107,8 +117,31 @@ describe('a patch every subscriber may see whole is encoded once', () => {
       stringify.mockRestore();
     }
     for (const { sid, ws } of seats) {
-      expect(ws.raw).toEqual([encode(patchFrame(sid, patched.patches, '2', []))]);
+      const sig = seatedSig(entry, sid);
+      expect(ws.raw).toEqual([encode(patchFrame(sid, patched.patches, '2', [], sig))]);
     }
+  });
+
+  test('the frame carries the sig of the cursor it seats, and that cursor verifies', async () => {
+    const { entry, deps } = rig(() => true);
+    const ws = seat(entry, 'a', 'alice');
+    await fanoutChange(deps, entry, change);
+    const seatedOn = entry.subscribers.get('a')?.cursor;
+    if (!seatedOn) return expect.unreachable('alice is seated');
+    const who = { sid: 'a', actor: userActor({ id: 'alice', orgId: 'o1' }) };
+    expect(cursorVerdict(seatedOn, who)).toBe('signed');
+    expect(seatedOn.lsn).toBe('2');
+    const frame = decode(ws.raw[0] ?? '');
+    expect(frame.type === 'patch' ? frame.sig : null).toBe(seatedSig(entry, 'a'));
+  });
+
+  test('a frame that never left seats nothing: the cursor keeps the position it had', async () => {
+    const { entry, deps } = rig(() => true);
+    const ws = seat(entry, 'a', 'alice');
+    const before = entry.subscribers.get('a')?.cursor;
+    ws.refuse = true;
+    expect((await fanoutChange(deps, entry, change)).sent).toBe(0);
+    expect(entry.subscribers.get('a')?.cursor).toBe(before);
   });
 
   test('a write named on the frame is spelled as the unshared frame spells it', () => {
@@ -117,14 +150,26 @@ describe('a patch every subscriber may see whole is encoded once', () => {
     expect(text).toBe(encode(patchFrame('sid-1', patched.patches, '00ff', writes)));
   });
 
+  test('a sig is spelled as the unshared frame spells it, with and without writes', () => {
+    const list = JSON.stringify(patched.patches);
+    for (const writes of [[], ['w:1']]) {
+      expect(encodePatchFrame('sid-1', list, '00ff', writes, 'h1:ab:cd')).toBe(
+        encode(patchFrame('sid-1', patched.patches, '00ff', writes, 'h1:ab:cd')),
+      );
+    }
+  });
+
   test('a subscriber whose gate rewrote the list is encoded on its own', async () => {
     const { entry, deps } = rig(({ actor }) => actor?.id === 'alice');
     const alice = seat(entry, 'a', 'alice');
     const bob = seat(entry, 'b', 'bob');
     expect((await fanoutChange(deps, entry, change)).sent).toBe(2);
-    expect(alice.raw).toEqual([encode(patchFrame('a', patched.patches, '2', []))]);
+    expect(alice.raw).toEqual([
+      encode(patchFrame('a', patched.patches, '2', [], seatedSig(entry, 'a'))),
+    ]);
     // Bob held p1 and may no longer see it: his list is a withdrawal, never alice's update.
     const withdrawn = [{ op: 'delete', id: 'p1', row: null, lsn: '1' }] as const;
-    expect(bob.raw).toEqual([encode(patchFrame('b', withdrawn, '2', []))]);
+    expect(bob.raw).toEqual([encode(patchFrame('b', withdrawn, '2', [], seatedSig(entry, 'b')))]);
+    expect(seatedSig(entry, 'b')).not.toBe(seatedSig(entry, 'a'));
   });
 });

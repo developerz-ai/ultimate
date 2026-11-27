@@ -1,16 +1,16 @@
 plan: 101-finish-ultimate-close-issues
 title: "Finish Ultimate: close every open issue, ship what downstream apps need, motion + effects + agent kit"
-status: not_started        # not_started | in_progress | blocked | complete | superseded
+status: in_progress        # not_started | in_progress | blocked | complete | superseded
 created_by: sebi
-worked_by: ""              # executor fills with their git user.name
+worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
 percent: 0
-current_focus: "01-maintainer-actions.md, then sweep 1 (02-bug-closures.md)"
+current_focus: "PR 1 (feat/101-bugs-and-gaps): slices 02, 03, 04 and 05 testing half in one PR — owner ruling 2026-11-27: big PRs, up to 14 agents"
 slices:
   - file: 01-maintainer-actions.md
     tier: 0
     sweep: "0"
-    status: not_started
+    status: in_progress
     percent: 0
   - file: 02-bug-closures.md
     tier: 0

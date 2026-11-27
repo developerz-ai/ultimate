@@ -11,6 +11,21 @@ import { CursorStaleError } from './page-errors';
 export const CURSOR_ID_LIMIT = 512;
 
 /**
+ * The longest `sig` the wire reads. The node mints 44 characters (`cursor-sign.ts`); the ceiling is
+ * here, not there, because the decoder is a page module and the signer must never be one.
+ */
+export const CURSOR_SIG_MAX = 64;
+
+/** What a `sig` may be spelled with. Anything else is dropped where the frame is decoded. */
+const CURSOR_SIG = /^[a-z0-9:]+$/;
+
+/** A wire value as a `sig`, or nothing: a malformed one is DROPPED, never a refused frame. */
+export function wireSig(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length > CURSOR_SIG_MAX) return undefined;
+  return CURSOR_SIG.test(value) ? value : undefined;
+}
+
+/**
  * What a resume decides from, and nothing else. `digest` and `count` were here until 2026-08-24
  * and were written by every snapshot, encoded and validated on every `subscribe` frame, and read
  * by nothing — the same shape `verifyDigest()` was deleted for one release earlier, one field
@@ -26,6 +41,14 @@ export interface LiveCursor {
   /** Last-seen row ids, truncated at `CURSOR_ID_LIMIT`. */
   readonly ids: readonly string[];
   readonly at: number;
+  /**
+   * The node's signature over `{ qid, lsn, ids, subscriber }` — never `at`, which is the client's
+   * clock. Minted and verified by the sync node alone (`cursor-sign.ts`, server-only); a client
+   * stores the one its last frame carried and echoes it, and never computes one. `makeCursor` and
+   * `advance` build a cursor WITHOUT it, so a sig cannot outlive the ids it was taken over.
+   * Optional and additive, no `PROTOCOL_VERSION` bump: a node that mints none is resumed as before.
+   */
+  readonly sig?: string;
 }
 
 export interface ReconnectBudget {

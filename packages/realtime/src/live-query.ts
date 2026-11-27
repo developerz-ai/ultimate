@@ -10,6 +10,7 @@ import { type Clock, systemClock, uuidV7 } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
 import type { ChangeEvent } from './changefeed';
 import { type LiveCursor, makeCursor } from './cursor';
+import { CursorTrust, signCursor } from './cursor-sign';
 import { LiveQueryUnknownError } from './errors';
 import type { JsonValue } from './json';
 import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
@@ -44,6 +45,8 @@ export class LiveQueryRegistry {
   readonly #options: LiveQueryRegistryOptions;
   readonly #clock: Clock;
   readonly #gate: SubscriberGate;
+  /** Whether a resume may be decided from the cursor a client sent (`cursor-sign.ts`). */
+  readonly #trust: CursorTrust;
   /** What one lane needs, and nothing this class holds beyond it. */
   readonly #fanout: FanoutDeps;
   #lastLsn = '';
@@ -58,6 +61,7 @@ export class LiveQueryRegistry {
     this.#options = options;
     this.#clock = options.clock ?? systemClock;
     this.#gate = new SubscriberGate(options);
+    this.#trust = new CursorTrust(options);
     this.#entries = new LiveEntries(options);
     // The book owns the caps because it is the only thing that can answer them in O(1).
     this.#book = new SubscriptionBook(options);
@@ -73,6 +77,16 @@ export class LiveQueryRegistry {
   /** `live.gate_failed` for this node: gates that raised instead of deciding. Never a denial. */
   get gateFailures(): number {
     return this.#gate.gateFailures;
+  }
+
+  /** `live.cursors_unsigned`: resumes from a cursor with no sig — a client older than #1280. */
+  get unsignedCursors(): number {
+    return this.#trust.unsignedCursors;
+  }
+
+  /** `live.cursors_refused`: cursors whose sig was not their own, each answered a cold start. */
+  get cursorsRefused(): number {
+    return this.#trust.cursorsRefused;
   }
 
   /** `live.changes_stale`: changes at or below a window's own lsn, refused rather than folded. */
@@ -232,8 +246,17 @@ export class LiveQueryRegistry {
     //
     // Nor is ANY cursor a position in a window known to have missed a change: the ring still
     // answers a delta for it, and that delta is the hole. A stale entry serves cold starts only.
-    if (args.cursor && args.cursor.qid === qid && !entry.stale) {
-      const who = { sid, actor: args.socket.actor };
+    //
+    // Nor is a cursor whose `sig` is not its own: its ids are read as rows this subscriber HOLDS,
+    // and a forged one is handed that row's `delete`. Asked last, so only a cursor that would
+    // otherwise resume is counted. One with no sig is a client older than the signature: resumed.
+    const who: Subscriber = { sid, actor: args.socket.actor };
+    if (
+      args.cursor &&
+      args.cursor.qid === qid &&
+      !entry.stale &&
+      this.#trust.admits(args.cursor, who)
+    ) {
       const resumed = await resumeOnto(
         {
           source: this.#options.source,
@@ -256,8 +279,8 @@ export class LiveQueryRegistry {
     }
 
     await pay();
-    const fresh = await this.#read(entry, { sid, actor: args.socket.actor });
-    const cursor = makeCursor(qid, fresh.lsn, fresh.rows, now);
+    const fresh = await this.#read(entry, who);
+    const cursor = signCursor(makeCursor(qid, fresh.lsn, fresh.rows, now), who);
     const subscription = this.#attachUnlessGone(entry, args.socket, sid, cursor);
     return { subscription, frame: snapshotFrame(entry, sid, fresh.rows, cursor) };
   }

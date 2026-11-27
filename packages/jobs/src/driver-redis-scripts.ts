@@ -12,7 +12,7 @@ import { JOB_EXPIRED, LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
  * The live states as a Lua set, the four `LIVE_STATES` names — the idempotency namespace holds a
  * key only while one of them does, exactly as `x_jobs_name_tenant_idempotency_live_idx` does.
  */
-const LIVE = `local LIVE = { ready = true, delayed = true, running = true, suspended = true }`;
+export const LIVE = `local LIVE = { ready = true, delayed = true, running = true, suspended = true }`;
 
 /**
  * "Now" for a script: the instant the driver bound, or `''` for the SERVER's own (`TIME`) — what
@@ -32,7 +32,7 @@ end
  * (`0`: kept), and an ended set (`dead:<queue>`/`failed:<queue>`, by time) sheds members older
  * than that — the window pg's `jobs-retention.ts` sweeps. `set` is `nil` for `done`, which has none.
  */
-const ENDED = `
+export const ENDED = `
 local function ended(P, id, nk, runId, ttl, set, now)
   if ttl <= 0 then return end
   redis.call('PEXPIRE', P .. ':job:' .. id, ttl)

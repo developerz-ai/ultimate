@@ -17,6 +17,9 @@ const cursor = {
   lsn: '0000000000000009',
   ids: ['p1', 'p2'],
   at: 1_700_000_000_000,
+  // Additive: the node's signature, in the shape `keyedFingerprint` mints. It rides in BOTH
+  // directions — down on a snapshot, back up on the `subscribe` that resumes from it.
+  sig: 'h1:0a1b2c3d:00112233445566778899aabbccddeeff',
 };
 
 const fixtures: Record<FrameKind, Frame> = {
@@ -52,6 +55,8 @@ const fixtures: Record<FrameKind, Frame> = {
     patches: [{ op: 'update', id: 'p1', row: { likes: 3 }, lsn: '000000000000000a' }],
     lsn: '000000000000000a',
     writes: ['d'.repeat(32)],
+    // Additive: the signature of the cursor these patches leave the subscriber on.
+    sig: 'h1:0a1b2c3d:ffeeddccbbaa99887766554433221100',
   },
   ack: {
     type: 'ack',
@@ -161,6 +166,46 @@ describe('sync-protocol', () => {
     );
     const flood = { ...unnamed, writes: Array(FRAME_LIMITS.patches + 1).fill('d'.repeat(32)) };
     expect(() => decode(JSON.stringify(flood))).toThrow(/over the limit/);
+  });
+
+  // #1280. Optional in both directions, so no version: a peer one deploy behind neither sends a
+  // sig nor reads one, and a malformed one costs the cursor its signature, never the frame.
+  test('a sig rides a cursor and a patch, reads without one, and is dropped when malformed', () => {
+    const patch = fixtures.patch as Extract<Frame, { type: 'patch' }>;
+    const { sig: _patchSig, ...unsignedPatch } = patch;
+    const { sig: _cursorSig, ...unsignedCursor } = cursor;
+    const unsignedSnapshot = { ...fixtures.snapshot, cursor: unsignedCursor };
+    const subscribe = fixtures.subscribe as Extract<Frame, { type: 'subscribe' }>;
+    const unsignedSubscribe = {
+      ...subscribe,
+      target: { ...subscribe.target, cursor: unsignedCursor },
+    };
+
+    expect(decode(encode(patch))).toHaveProperty('sig', patch.sig);
+    expect(decode(encode(fixtures.snapshot))).toHaveProperty('cursor.sig', cursor.sig);
+    expect(decode(encode(fixtures.subscribe))).toHaveProperty('target.cursor.sig', cursor.sig);
+    // What an older peer sends: no key at all, and none invented.
+    expect(decode(JSON.stringify(unsignedPatch))).toEqual(unsignedPatch);
+    expect(decode(JSON.stringify(unsignedSnapshot))).toEqual(unsignedSnapshot);
+
+    const malformed = [7, null, '', {}, ['h1'], 'h'.repeat(65), 'h1:AB:cd', 'h1:ab cd', 'h1:\n'];
+    for (const sig of malformed) {
+      expect(decode(JSON.stringify({ ...unsignedPatch, sig }))).toEqual(unsignedPatch);
+      expect(
+        decode(JSON.stringify({ ...unsignedSnapshot, cursor: { ...unsignedCursor, sig } })),
+      ).toEqual(unsignedSnapshot);
+      const sent = {
+        ...unsignedSubscribe,
+        target: { ...unsignedSubscribe.target, cursor: { ...unsignedCursor, sig } },
+      };
+      expect(decode(JSON.stringify(sent))).toEqual(unsignedSubscribe);
+    }
+    // The ceiling itself is readable: 64 characters of the sig alphabet.
+    const longest = `h1:${'a'.repeat(61)}`;
+    expect(decode(JSON.stringify({ ...unsignedPatch, sig: longest }))).toHaveProperty(
+      'sig',
+      longest,
+    );
   });
 
   test('a snapshot names its writes the same way, and reads without them', () => {
@@ -282,6 +327,7 @@ describe('sync-protocol', () => {
       'ids',
       'lsn',
       'qid',
+      'sig',
     ]);
   });
 

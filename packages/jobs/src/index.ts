@@ -239,6 +239,9 @@ export {
 export type { EnqueueManyOptions } from './job-enqueue-many';
 export { MAX_ENQUEUE_BATCH } from './job-enqueue-many';
 export type { JobLease } from './job-lease';
+export type { CancelJobForInput, JobStatus } from './job-status';
+export { cancelJobFor, jobStatusFor } from './job-status';
+export type { TenantJobQuery } from './job-status-port';
 export type { JobsRetentionOptions } from './jobs-retention';
 export { jobsPurgeTarget } from './jobs-retention';
 export type { HeldLease, LeaseStore, MemoryLeaseStore, MemoryLeaseStoreOptions } from './leases';

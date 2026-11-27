@@ -7,6 +7,7 @@
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, toValidationIssues, validateAsync } from '@ultimat3/schema';
 import { QueryInputInvalidError } from './errors';
+import { reportUnknownInputKeys } from './validate-unknown-keys';
 
 /**
  * `toValidationIssues`, never the raw `result.issues`: a conforming library's issue may carry the
@@ -16,9 +17,17 @@ export async function parseQueryInput(
   schema: StandardSchemaV1,
   raw: unknown,
   name: string,
+  callerInput = false,
 ): Promise<unknown> {
   const result = await validateAsync(schema, raw);
-  if (result.issues === undefined) return result.value;
+  if (result.issues === undefined) {
+    // #1281: after the parse, never instead of it — the answer is unchanged, the warning says what
+    // it dropped. `callerInput` is `read.ts`'s enforced build alone: `parsedQueryInput` parses the
+    // same input again to KEY a live window, and an `unenforced` build re-reads input a caller
+    // already sent, so either warning would be the same report twice.
+    if (callerInput) reportUnknownInputKeys(schema, raw, name);
+    return result.value;
+  }
   const issues = toValidationIssues(result.issues);
   throw new QueryInputInvalidError(
     name,

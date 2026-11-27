@@ -369,7 +369,9 @@ describe('unit · one engine, everywhere', () => {
     expect(here).toContain('driftFindings(pass.drift)');
     // The holder's half runs the same two calls, on the connection only it may open.
     const dev = await Bun.file(join(import.meta.dir, 'dev-db-migrate.ts')).text();
-    expect(dev).toContain('acceptCreatedTables(await checkDrift({ migrations }), migrations)');
+    expect(dev).toContain(
+      'acceptCreatedTables(await checkDrift({ migrations, client }), migrations)',
+    );
   });
 });
 

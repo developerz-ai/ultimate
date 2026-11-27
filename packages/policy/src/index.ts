@@ -14,8 +14,13 @@ export {
   policyForbidden,
   policyMissing,
 } from './errors';
-export type { EvaluateArgs, EvaluateOptions, PolicyEvaluation } from './evaluate';
-export { codeOf, evaluate, explain, reasonOf } from './evaluate';
+export type {
+  EvaluateArgs,
+  EvaluateEachArgs,
+  EvaluateOptions,
+  PolicyEvaluation,
+} from './evaluate';
+export { codeOf, evaluate, evaluateEach, explain, reasonOf } from './evaluate';
 export { actorHas, actorPermissions } from './grant-index';
 export type {
   ActorStageSubject,

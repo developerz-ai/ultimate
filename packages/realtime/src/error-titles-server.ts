@@ -16,6 +16,7 @@ export const REALTIME_SERVER_OWNED_ERROR_CODES = [
   'X_REALTIME_PRODUCER_CONFLICT',
   'X_REPLICATION_SLOT_INVALIDATED',
   'X_REPLICATION_SLOT_RECREATED',
+  'X_DEVICE_WIRE_VERSION',
 ] as const;
 
 export type RealtimeServerErrorCode = (typeof REALTIME_SERVER_OWNED_ERROR_CODES)[number];
@@ -30,6 +31,7 @@ export const REALTIME_SERVER_ERROR_TITLES: Readonly<Record<RealtimeServerErrorCo
   X_REALTIME_PRODUCER_CONFLICT: 'two kinds of producer carry one table on the change bus',
   X_REPLICATION_SLOT_INVALIDATED: 'the replication slot was invalidated',
   X_REPLICATION_SLOT_RECREATED: 'the replication slot was recreated',
+  X_DEVICE_WIRE_VERSION: 'a device spoke a wire version this agent does not',
 };
 
 // One unconditional call, as in `error-titles.ts`: a second claimant throws X_ERROR_CODE_DUPLICATE.

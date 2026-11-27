@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "maxFrameBytes": 262144,
+  "fixtures": [
+    {
+      "name": "beat",
+      "direction": "device-to-node",
+      "text": "{\"type\":\"beat\"}",
+      "valid": true
+    },
+    {
+      "name": "frame",
+      "direction": "device-to-node",
+      "text": "{\"type\":\"frame\",\"frame\":{\"temp\":21}}",
+      "valid": true
+    },
+    {
+      "name": "frame-null-payload",
+      "direction": "device-to-node",
+      "text": "{\"type\":\"frame\",\"frame\":null}",
+      "valid": true
+    },
+    {
+      "name": "response",
+      "direction": "device-to-node",
+      "text": "{\"type\":\"response\",\"id\":\"r_1-A\",\"frame\":{\"ok\":true}}",
+      "valid": true
+    },
+    {
+      "name": "not-json",
+      "direction": "device-to-node",
+      "text": "beat",
+      "valid": false
+    },
+    {
+      "name": "not-an-object",
+      "direction": "device-to-node",
+      "text": "[1,2]",
+      "valid": false
+    },
+    {
+      "name": "unknown-type",
+      "direction": "device-to-node",
+      "text": "{\"type\":\"hello\"}",
+      "valid": false
+    },
+    {
+      "name": "frame-without-payload",
+      "direction": "device-to-node",
+      "text": "{\"type\":\"frame\"}",
+      "valid": false
+    },
+    {
+      "name": "response-without-id",
+      "direction": "device-to-node",
+      "text": "{\"type\":\"response\",\"frame\":1}",
+      "valid": false
+    },
+    {
+      "name": "response-id-not-token-safe",
+      "direction": "device-to-node",
+      "text": "{\"type\":\"response\",\"id\":\"a b\",\"frame\":1}",
+      "valid": false
+    },
+    {
+      "name": "response-id-too-long",
+      "direction": "device-to-node",
+      "text": "{\"type\":\"response\",\"id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"frame\":1}",
+      "valid": false
+    },
+    {
+      "name": "hello",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"hello\",\"v\":1,\"heartbeatMs\":10000,\"maxFrameBytes\":262144}",
+      "valid": true
+    },
+    {
+      "name": "hello-without-v-reads-as-1",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"hello\",\"heartbeatMs\":10000,\"maxFrameBytes\":262144}",
+      "valid": true
+    },
+    {
+      "name": "hello-newer-version-decodes",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"hello\",\"v\":2,\"heartbeatMs\":10000,\"maxFrameBytes\":262144}",
+      "valid": true
+    },
+    {
+      "name": "hello-v-not-a-number",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"hello\",\"v\":\"1\",\"heartbeatMs\":1,\"maxFrameBytes\":1}",
+      "valid": false
+    },
+    {
+      "name": "hello-v-zero",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"hello\",\"v\":0,\"heartbeatMs\":1,\"maxFrameBytes\":1}",
+      "valid": false
+    },
+    {
+      "name": "hello-v-fractional",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"hello\",\"v\":1.5,\"heartbeatMs\":1,\"maxFrameBytes\":1}",
+      "valid": false
+    },
+    {
+      "name": "hello-without-heartbeat",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"hello\",\"v\":1,\"maxFrameBytes\":1}",
+      "valid": false
+    },
+    {
+      "name": "request",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"request\",\"id\":\"q-7\",\"frame\":{\"cmd\":\"status\"}}",
+      "valid": true
+    },
+    {
+      "name": "request-without-id",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"request\",\"frame\":1}",
+      "valid": false
+    },
+    {
+      "name": "frame",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"frame\",\"frame\":\"ack\"}",
+      "valid": true
+    },
+    {
+      "name": "frame-without-payload",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"frame\"}",
+      "valid": false
+    },
+    {
+      "name": "error",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"error\",\"code\":\"X_FRAME_RATE_LIMIT\"}",
+      "valid": true
+    },
+    {
+      "name": "error-code-not-a-string",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"error\",\"code\":7}",
+      "valid": false
+    },
+    {
+      "name": "reconnect",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"reconnect\",\"v\":3,\"afterMs\":2500,\"reason\":\"drain\"}",
+      "valid": true
+    },
+    {
+      "name": "reconnect-unknown-reason",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"reconnect\",\"v\":3,\"afterMs\":1,\"reason\":\"nap\"}",
+      "valid": false
+    },
+    {
+      "name": "reconnect-without-delay",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"reconnect\",\"v\":3,\"reason\":\"drain\"}",
+      "valid": false
+    },
+    {
+      "name": "unknown-type",
+      "direction": "node-to-device",
+      "text": "{\"type\":\"mutate\"}",
+      "valid": false
+    },
+    {
+      "name": "not-json",
+      "direction": "node-to-device",
+      "text": "{",
+      "valid": false
+    }
+  ]
+}

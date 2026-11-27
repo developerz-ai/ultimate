@@ -3,10 +3,11 @@
 
 import type { Actor, Clock } from '@ultimat3/core';
 import type { ReconnectBudget, ResumeSource } from './cursor';
+import type { CursorTrustOptions } from './cursor-sign';
 import type { SubscriberGateOptions } from './subscriber-gate';
 import type { Scheduler } from './thundering-herd';
 
-export interface LiveQueryRegistryOptions extends SubscriberGateOptions {
+export interface LiveQueryRegistryOptions extends SubscriberGateOptions, CursorTrustOptions {
   readonly source: ResumeSource;
   readonly budget?: ReconnectBudget;
   readonly clock?: Clock;

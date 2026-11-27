@@ -7,6 +7,7 @@ import { type Actor, frozenClock, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import type { LiveCursor } from './cursor';
+import { signCursor } from './cursor-sign';
 import type { JsonValue, LiveRow } from './json';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
@@ -36,6 +37,13 @@ const socket = (who = 'carol'): SyncSocket => {
     clock,
   });
 };
+
+/**
+ * The same ids at another position, as the node that seated them there would have signed it: every
+ * node signs under the one app secret, and a cursor edited under its old sig is a cold start.
+ */
+const mintedAt = (cursor: LiveCursor, lsn: string): LiveCursor =>
+  signCursor({ ...cursor, lsn }, { sid: 'elsewhere', actor: actor('carol') });
 
 /** The table every node reads. A write lands here whether or not a node hears the change. */
 interface Table {
@@ -220,10 +228,10 @@ describe('a node that has received no change', () => {
     const mine = await fresh.resume(own.cursor);
     expect(mine.type === 'patch' && mine.patches.map((patch) => patch.id)).toEqual(['p2']);
     // A cursor another node minted AT that patch has it, and everything after it is retained.
-    const theirs = await fresh.resume({ ...own.cursor, lsn: change.lsn });
+    const theirs = await fresh.resume(mintedAt(own.cursor, change.lsn));
     expect(theirs.type === 'patch' && theirs.patches).toEqual([]);
     // One from before it is a history this node never held.
-    expect((await fresh.resume({ ...own.cursor, lsn: formatLsn(0x80) })).type).toBe('snapshot');
+    expect((await fresh.resume(mintedAt(own.cursor, formatLsn(0x80)))).type).toBe('snapshot');
   });
 
   test('two fresh nodes never mint the same position', async () => {

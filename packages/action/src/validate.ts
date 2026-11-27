@@ -7,6 +7,7 @@
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, toValidationIssues, validateAsync } from '@ultimat3/schema';
 import { InputInvalidError, OutputInvalidError } from './errors';
+import { reportUnknownInputKeys } from './validate-unknown-keys';
 
 /**
  * The refusal carries the issue list as well as the line, and the two are ONE value rendered twice:
@@ -36,6 +37,9 @@ export async function parseActionInput<S extends StandardSchemaV1>(
       result.issuesTruncated === true,
     );
   }
+  // After the parse, never instead of it: the answer is the parse's, and the warning only says
+  // what it dropped (#1281). `raw`, because the parsed value no longer carries the key.
+  reportUnknownInputKeys(schema, raw, actionName);
   return result.value;
 }
 

@@ -101,6 +101,8 @@ export {
 export type { Infer } from './t';
 export { t } from './t';
 export { isIanaZoneName } from './time-zone-name';
+export type { UnknownKey } from './unknown-keys';
+export { unknownKeys } from './unknown-keys';
 export type { NumberSchema, ObjectSchema, StringSchema, TNamespace } from './validators';
 export { literalSchema, objectSchema } from './validators';
 export type { WireJsonSchema } from './wire-schema';

@@ -3907,7 +3907,7 @@ bunx @ultimat3/cli@latest upgrade --json    # an app below 30.0.0, whose own CLI
 
 A repository with pins and no `app.config.ts` hops too: no `x verify` can run, so it runs the `typecheck` and `test` scripts it declares, and `data.proof` (`verify`, `scripts`, `none`) says what `done` rests on.
 
-Refusals name their own fix: `X_UPGRADE_MIXED_PINS` (`x upgrade --to <the lowest pins' next major> --json`), `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_PIN_UNREADABLE`, `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_UPGRADE_INSTALL_FAILED`. `data.bun.manual[]` lists what only you can move: a digest-pinned image, an expression. `data.guards.differs[]` offers `x g guard <name> --force`, and your guard is never touched. A hop below 30.0.0 reports `X_BUDGET_UNMEASURED` until `x build --target static --json` has run. Field by field: [CLI reference](CLI-Reference#x-upgrade).
+Refusals name their own fix: `X_UPGRADE_MIXED_PINS` (`x upgrade --to <the lowest pins' next major> --json`), `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_PIN_UNREADABLE`, `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_UPGRADE_INSTALL_FAILED`. `data.bun.manual[]` lists what only you can move: a digest-pinned image, an expression. `data.guards.differs[]` offers `x g guard <name> --force`, and your guard is never touched. A hop below 30.0.0 reports `X_BUDGET_UNMEASURED` until `x build --target static --json` has run. Field by field: [CLI reference](CLI-Reference-Tools#x-upgrade).
 
 ## Breaking-change classes and how each is detected
 

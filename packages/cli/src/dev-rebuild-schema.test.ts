@@ -16,29 +16,12 @@ const drift: Finding = {
 
 describe('schemaAheadFindings', () => {
   test('a drifted schema is X_DB_DRIFT with the gen-and-migrate instruction', async () => {
-    const [finding] = await schemaAheadFindings(
-      '/app',
-      async () => [drift],
-      async () => true,
-    );
+    const [finding] = await schemaAheadFindings('/app', async () => [drift]);
     expect(finding?.code).toBe('X_DB_DRIFT');
     expect(finding?.cause).toBe(`entities are ahead of the migrations: ${drift.cause}`);
     expect(finding?.fix).toBe('x db gen "describe the change" && x db migrate');
     expect(finding?.at).toBe('packages/db/src');
     expect(SCHEMA_AHEAD_FIX).toContain('x db migrate');
-  });
-
-  // `database.rowSecurity` on the embedded database: this process serves as `x_app` and cannot
-  // run a migration as `x_migrator`, so the printed fix is the one that works — stop, migrate, start.
-  test('where x dev cannot apply the pass itself, the fix stops it first', async () => {
-    const [finding] = await schemaAheadFindings(
-      '/app',
-      async () => [drift],
-      async () => false,
-    );
-    expect(finding?.fix).toBe(
-      'x db gen "describe the change" && x stop --json && x db migrate && x dev',
-    );
   });
 
   test('a schema the migrations recorded says nothing', async () => {
@@ -70,7 +53,7 @@ describe('ledgerFindings', () => {
   // `x db gen` beside a running dev: the files are ahead of the database, every read of the new
   // column is a 500, and the banner said `✓ dev ready`.
   test('a migration on disk the ledger lacks is X_APP_MIGRATIONS_UNAPPLIED, fix x db migrate', async () => {
-    const findings = await ledgerFindings('/app', async () => true, {
+    const findings = await ledgerFindings('/app', {
       database: () => true,
       migrations: async () => [posts, notes],
       ledger: async () => [applied(posts)],
@@ -81,18 +64,8 @@ describe('ledgerFindings', () => {
     expect(findings[0]?.fix).toBe('x db migrate');
   });
 
-  test('where x dev cannot apply the pass itself, the fix stops it first', async () => {
-    const [finding] = await ledgerFindings('/app', async () => false, {
-      database: () => true,
-      migrations: async () => [posts],
-      ledger: async () => undefined,
-    });
-    expect(finding?.code).toBe('X_APP_MIGRATIONS_UNAPPLIED');
-    expect(finding?.fix).toBe('x stop --json && x db migrate && x dev');
-  });
-
   test('an applied migration edited since is X_MIGRATION_CONFLICT', async () => {
-    const findings = await ledgerFindings('/app', async () => true, {
+    const findings = await ledgerFindings('/app', {
       database: () => true,
       migrations: async () => [posts],
       ledger: async () => [applied(posts, 'applied-under-another-text')],
@@ -106,28 +79,23 @@ describe('ledgerFindings', () => {
       migrations: async () => [posts],
       ledger: async () => [applied(posts)],
     };
-    expect(await ledgerFindings('/app', async () => true, current)).toEqual([]);
+    expect(await ledgerFindings('/app', current)).toEqual([]);
     const empty = {
       database: () => true,
       migrations: async () => [],
       ledger: () => expect.unreachable('no migration, so no ledger read'),
     };
-    expect(await ledgerFindings('/app', async () => true, empty)).toEqual([]);
+    expect(await ledgerFindings('/app', empty)).toEqual([]);
     // No database in this process (a generation built by a test or a tool): nothing to compare.
     const none = { ...empty, database: () => false, migrations: async () => [posts] };
-    expect(await ledgerFindings('/app', async () => true, none)).toEqual([]);
+    expect(await ledgerFindings('/app', none)).toEqual([]);
   });
 
   test('schemaAheadFindings reports it beside a clean source check', async () => {
     const behind = async () => [
       { code: 'X_APP_MIGRATIONS_UNAPPLIED', cause: 'one behind', fix: 'x db migrate' },
     ];
-    const findings = await schemaAheadFindings(
-      '/app',
-      async () => [],
-      async () => true,
-      behind,
-    );
+    const findings = await schemaAheadFindings('/app', async () => [], behind);
     expect(findings.map((finding) => finding.code)).toEqual(['X_APP_MIGRATIONS_UNAPPLIED']);
   });
 });

@@ -23,6 +23,7 @@ import { type MailConfig, type MailSectionInput, mailIssues, mergeMail } from '.
 import { type Input, lastSaid, layered } from './config-merge';
 import type { NavigationConfig, NavigationSectionInput } from './config-navigation';
 import { mergeNavigation, navigationIssues } from './config-navigation';
+import * as outboundSection from './config-outbound';
 import type { PwaConfig, PwaOfflineConfig } from './config-pwa';
 import { PWA_FIX, PWA_PUSH_FIX, pwaIssues, pwaPushIssues } from './config-pwa';
 import { removedKeyFix, removedKeyIssue, removedKeysIn } from './config-removed';
@@ -130,12 +131,8 @@ export interface DatabaseConfig {
  * place. It was also the second exported type called `CacheTier` in the tree; the other is
  * `@ultimat3/cache`'s tier INTERFACE, which is the one every implementation names.
  *
- * No `driver` and no `urlEnv` either, deleted 2026-08-22 and for the same reason one rung further
- * up: `tiers` is what BUILDS the ladder (`packages/cli/src/dev-cache.ts`), so `driver: 'redis'`
- * beside `tiers: ['request-memo', 'lru']` was a second selector that selected nothing — the shape
- * `examples/dummy/app.config.ts` shipped. `urlEnv` was `database.urlEnv` verbatim: the Redis tier
- * reads the literal `REDIS_URL`, so `urlEnv: 'MY_REDIS'` made nothing read `MY_REDIS`. Which rungs
- * exist is `cache.tiers` and only that; a rung the environment cannot supply refuses the boot.
+ * No `driver` and no `urlEnv` either (deleted 2026-08-22): selectors that selected nothing. Which
+ * rungs exist is `cache.tiers` and only that; a rung the environment cannot supply refuses the boot.
  */
 export interface CacheConfig {
   /** At least 1: the rungs refuse a lease of no length, so 0 is refused here rather than at boot. */
@@ -240,6 +237,7 @@ export interface AppConfig {
   readonly clientErrors: clientErrors.ClientErrorsConfig;
   readonly failureCapture: failureCapture.FailureCaptureConfig;
   readonly time: timeSection.AppTimeConfig;
+  readonly outbound: outboundSection.OutboundConfig;
 }
 
 /**
@@ -261,7 +259,8 @@ export interface AppConfigInput
     assetsSection.AssetsSectionInput,
     clientErrors.ClientErrorsSectionInput,
     failureCapture.FailureCaptureSectionInput,
-    timeSection.TimeSectionInput {
+    timeSection.TimeSectionInput,
+    outboundSection.OutboundSectionInput {
   readonly name: string;
   readonly theme?: Input<ThemeConfig> | undefined;
   readonly auth?: Input<AuthConfig> | undefined;
@@ -361,6 +360,7 @@ function validate(config: AppConfig): void {
   clientErrors.clientErrorsIssues(config, issues);
   failureCapture.failureCaptureIssues(config, issues);
   timeSection.timeIssues(config, issues);
+  outboundSection.outboundIssues(config, issues);
 
   if (cacheTierIssues(config.cache.tiers, issues)) tierFix.push(CACHE_TIER_FIX);
 
@@ -451,6 +451,7 @@ function merge(name: string, layers: readonly AppConfigOverlay[]): AppConfig {
     ...clientErrors.mergeClientErrors(layers),
     ...failureCapture.mergeFailureCapture(layers),
     ...timeSection.mergeTime(layers),
+    ...outboundSection.mergeOutbound(layers),
   };
 }
 

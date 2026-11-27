@@ -431,6 +431,44 @@ describe('a verification identifier is normalised at both ends of the flow', () 
   });
 });
 
+describe('the recipient is not the store key', () => {
+  test('mail goes to `to`, the row is keyed by the identifier, `to` is not normalised', async () => {
+    const rt = runtime();
+    const { token } = await issueVerification(rt, {
+      purpose: 'email-verify',
+      identifier: 'org-1|Ada@Example.test',
+      to: 'Ada@Example.test',
+      locale: 'en',
+    });
+    expect(rt.mail.sent[0]?.to).toBe('Ada@Example.test');
+    expect(rt.store.written.get('email-verify:org-1|ada@example.test')).toBeDefined();
+    const row = await consumeVerification(rt, {
+      purpose: 'email-verify',
+      identifier: 'org-1|Ada@Example.test',
+      token,
+    });
+    expect(row.identifier).toBe('org-1|ada@example.test');
+  });
+
+  test('a blank `to` is refused before any row is written or mail sent', async () => {
+    const rt = runtime();
+    for (const to of ['', '   ']) {
+      const error = await caught(() =>
+        issueVerification(rt, {
+          purpose: 'email-verify',
+          identifier: 'a@example.com',
+          to,
+          locale: 'en',
+        }),
+      );
+      expect(error.code).toBe('X_CONFIG_INVALID');
+      expect(error.meta?.['option']).toBe('verification.to');
+    }
+    expect(rt.store.written.size).toBe(0);
+    expect(rt.mail.sent).toHaveLength(0);
+  });
+});
+
 /**
  * The ttl is the whole life of a mailed credential, and it was read straight into a `Date` with
  * the store write already behind it. `new Date(now + NaN)` is an Invalid Date, `.toISOString()`

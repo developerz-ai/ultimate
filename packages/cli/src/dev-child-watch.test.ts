@@ -11,6 +11,7 @@ import {
   isDevDrainMessage,
   pidAlive,
   signalExitCode,
+  stopDevServing,
   supervisorPid,
   watchDevChild,
 } from './dev-child-watch';
@@ -166,5 +167,33 @@ describe('unit · hardExit', () => {
     expect(exits).toEqual([143]);
     jest.advanceTimersByTime(100);
     expect(exits).toEqual([143]);
+  });
+});
+
+describe('unit · stopDevServing', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('begins the drain it names at once, and exits 1 when that drain never ends', () => {
+    const exits: number[] = [];
+    const drains: string[] = [];
+    stopDevServing(
+      'row-security-lost',
+      (code) => exits.push(code),
+      (signal) => {
+        drains.push(signal);
+        // The drain that waits on a database turn nobody will give back.
+        return new Promise<void>(() => undefined);
+      },
+      () => 20,
+    );
+    expect(drains).toEqual(['row-security-lost']);
+    expect(exits).toEqual([]);
+    jest.advanceTimersByTime(20);
+    expect(exits).toEqual([1]);
   });
 });

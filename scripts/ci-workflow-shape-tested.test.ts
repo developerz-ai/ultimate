@@ -21,8 +21,9 @@ const record = (value: unknown): Readonly<Record<string, unknown>> =>
  * it: both run on a pull request too, on the same bytes, and neither asks anything of `main`.
  * `PATH_SKIPPED` are reused the same way, and skipped too when `changes` proved the diff prose.
  */
-const REUSED = ['gate', 'reference-app-verify', 'packages'] as const;
+const REUSED = ['gate', 'reference-app-verify'] as const;
 const PATH_SKIPPED = [
+  'packages',
   'fault-drills',
   'scaffold-smoke',
   'container',
@@ -79,9 +80,10 @@ describe('unit · ci.yml · a push a green PR run already tested', () => {
   });
 
   // A red shard must still reach the merge: a part it never wrote is named there, never skipped.
-  test('packages-merge folds when a shard is red, and is skipped only by tested', () => {
-    expect([...needsOf(job('packages-merge'))].sort()).toEqual(['packages', 'tested']);
-    expect(job('packages-merge').if).toBe(expr(`!cancelled() && ${REUSE_IF}`));
+  // Skipped exactly when its shards are: by `tested`, or by `changes` proving the diff prose.
+  test('packages-merge folds when a shard is red, and is skipped only when its shards are', () => {
+    expect([...needsOf(job('packages-merge'))].sort()).toEqual(['changes', 'packages', 'tested']);
+    expect(job('packages-merge').if).toBe(expr(`!cancelled() && ${REUSE_IF} && ${PATH_IF}`));
   });
 
   test('a red or cancelled tested job runs everything: the reuse condition is evaluated past it', () => {

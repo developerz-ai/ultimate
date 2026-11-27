@@ -1,7 +1,7 @@
 # @ultimat3/realtime — agent notes
 
 Tier 3 package. Channels, live queries, local-first sync. One protocol for all three.
-A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../../docs/history/realtime-rules.md).
+`†`: full text in [`docs/history/realtime-rules.md`](../../docs/history/realtime-rules.md).
 
 ## Boundary
 
@@ -95,6 +95,8 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
   a non-positive or non-finite value takes the default (`query-window.test.ts`).
 - The retained change window stores **pre-policy** patches; resume re-filters them per subscriber,
   outside the lane, against the live window.
+- **`cursor.ids` is trusted only under the node's `sig`** (`cursor-sign.ts`, SERVER-only):
+  mismatch = cold start; none = legacy, counted.
 - **`desynced` is a mark with a reader**: the next delivery re-snapshots out of the shared window,
   then clears it; `result.refill` is checked BEFORE the mark. A quiet query's three other readers
   (drain, a landed read, `repairMarked`): `docs/history/realtime.md` (2026-11-09). A bus
@@ -276,7 +278,7 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
   per socket; the engine reaps ports on the longer of its own and the node's.
 - **There is ONE `backoffDelay`, `@ultimat3/core`'s, counted from 1** — `policyDelay()` passes a
   `ReconnectBackoff` (core's `RetryPolicy` minus `attempts`/`timeBudgetMs`) to it; `bun run flight-copies` refuses a second curve.
-- Never a bare `Error`. Never `any`. Never `Date.now()` — take a `Clock` (`monotonic()` for durations).
+- Never `Date.now()` — take a `Clock` (`monotonic()` for durations).
 
 ## The page boot
 
@@ -300,15 +302,13 @@ side: `client*.ts`, `socket-*.ts`, `sync-worker.ts`, `record-*.ts`, `page-*.ts`,
 ## Commands
 
 ```
-bun test ./packages/realtime/   # from the REPO ROOT; the ./ keeps examples/dummy out
-bun run typecheck
+bun test ./packages/realtime/ # REPO ROOT; ./ keeps examples/dummy out
 ```
 
-
-Changing a frame shape means a fixture in `sync-protocol.test.ts` (the round-trip test fails
+Changing a frame shape means a fixture in `sync-protocol.test.ts` (the round trip fails
 without one) and bumping `PROTOCOL_VERSION` **when an old frame becomes unreadable in either
 direction**. `decode` is a whitelist: an additive optional field, or removing a field read through
 `list()`, is free; removing a field read through `str()`/`num()` (which throw) is a bump.
 
-Why each rule is shaped so, and browser bytes per hook (re-measure before quoting):
+Why, and bytes per hook (re-measure):
 [`docs/history/realtime.md`](../../docs/history/realtime.md).

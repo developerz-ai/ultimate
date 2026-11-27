@@ -93,7 +93,10 @@ export function applyFrame(frame: Frame, target: ClientFrameTarget): void {
         // is a tier-1 channel frame's, so it never rewinds one.
         if (registration.cursor && frame.lsn !== '') {
           const next = advance(registration.cursor, frame.patches, frame.lsn, target.now());
-          registration.cursor = next;
+          // The node's sig for the cursor this patch leaves it on, stored as sent and never
+          // computed here. `advance` carries none over, so a patch without one clears it: the
+          // old sig covered the old position, and echoed beside the new one it reads as forged.
+          registration.cursor = frame.sig === undefined ? next : { ...next, sig: frame.sig };
         }
         registration.state = 'live';
         // The writes the frame names settle in the window's own batch, as a `records` frame's do.

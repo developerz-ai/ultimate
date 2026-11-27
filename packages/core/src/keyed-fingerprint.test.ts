@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { fingerprint } from './canonical-json';
 import { configureCursorSigning, resetCursorSigning } from './cursor';
-import { compareFingerprint, keyedFingerprint } from './keyed-fingerprint';
+import {
+  compareFingerprint,
+  KEYED_FINGERPRINT_KEY_CACHE_MAX,
+  keyedFingerprint,
+  keyedFingerprintKeyCacheSize,
+} from './keyed-fingerprint';
 
 const INPUT = { accountNumber: '0123456789', bank: 'bancolombia' };
 const PURPOSE = 'test.purpose';
@@ -57,5 +62,36 @@ describe('compareFingerprint', () => {
     configureCursorSigning('secret-b');
     expect(compareFingerprint(stored, INPUT, PURPOSE)).toBe('unverifiable');
     expect(compareFingerprint('h9:whatever', INPUT, PURPOSE)).toBe('unverifiable');
+  });
+});
+
+describe('the derived-key cache', () => {
+  test('a rotation yields the new key at once, and the old secret reads again after rotating back', () => {
+    configureCursorSigning('secret-a');
+    const a = keyedFingerprint(INPUT, PURPOSE);
+    expect(keyedFingerprint(INPUT, PURPOSE)).toBe(a);
+    configureCursorSigning('secret-b');
+    const b = keyedFingerprint(INPUT, PURPOSE);
+    expect(b).not.toBe(a);
+    expect(b.split(':')[1]).not.toBe(a.split(':')[1]);
+    expect(compareFingerprint(a, INPUT, PURPOSE)).toBe('unverifiable');
+    configureCursorSigning('secret-a');
+    expect(keyedFingerprint(INPUT, PURPOSE)).toBe(a);
+  });
+
+  test('is bounded however many purposes are asked for', () => {
+    configureCursorSigning('secret-a');
+    for (let i = 0; i < KEYED_FINGERPRINT_KEY_CACHE_MAX * 3; i++) keyedFingerprint(INPUT, `p${i}`);
+    expect(keyedFingerprintKeyCacheSize()).toBeLessThanOrEqual(KEYED_FINGERPRINT_KEY_CACHE_MAX);
+    expect(keyedFingerprint(INPUT, 'p0')).toMatch(/^h1:[0-9a-f]{8}:[0-9a-f]{32}$/);
+  });
+
+  test('a rotation drops every key derived under the old secret', () => {
+    configureCursorSigning('secret-a');
+    keyedFingerprint(INPUT, 'one');
+    keyedFingerprint(INPUT, 'two');
+    configureCursorSigning('secret-b');
+    keyedFingerprint(INPUT, 'one');
+    expect(keyedFingerprintKeyCacheSize()).toBe(1);
   });
 });

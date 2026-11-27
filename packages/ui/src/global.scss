@@ -50,6 +50,7 @@
   overflow-y: auto;
 
   @include t.custom-scrollbar;
+  overscroll-behavior: contain;
   @include t.scrim-backdrop($blur: t.rem(2px));
 
   &[open] {

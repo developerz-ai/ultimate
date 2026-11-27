@@ -42,6 +42,7 @@ import { LeaseLostError } from './errors';
 import { JobNotFoundError, JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
 import type { JobIntrospection } from './introspection';
 import { MAX_ERROR_STACK_LENGTH } from './introspection';
+import { memoryTenantJobs } from './job-status-memory';
 import type { LeaseStore } from './leases';
 import { memoryLeaseStore } from './leases';
 import { isFinalAttempt } from './retry';
@@ -237,6 +238,7 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
     leases,
     settleDebt,
     introspect,
+    tenantJobs: memoryTenantJobs(introspect),
     wake(queue) {
       signalEnqueued(queue);
       return Promise.resolve();

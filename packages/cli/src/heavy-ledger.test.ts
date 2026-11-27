@@ -225,7 +225,12 @@ describe.skipIf(NO_FLOCK)('reserve', () => {
     expect(events(dir)).toEqual(['+ 10 first']);
     rmSync(busyWhile);
     await third.until('held');
-    expect(events(dir)).toEqual(['+ 10 first', '+ 10 second', '+ 10 third']);
+    // Admission order is the ledger's own: each child appends to `events` after `reserve()` returns,
+    // so that file orders their appends, not their admissions (#1239).
+    const admitted = readLedger(dir, await tryLock()).holds.toSorted(
+      (a, b) => a.at - b.at || a.file.localeCompare(b.file),
+    );
+    expect(admitted.map((entry) => entry.label)).toEqual(['first', 'second', 'third']);
     for (const one of [first, second, third]) one.child.kill('SIGKILL');
     await Promise.all([first.child.exited, second.child.exited, third.child.exited]);
   }, 30_000);

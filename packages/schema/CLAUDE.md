@@ -162,6 +162,9 @@ Gotchas:
   present on output. Object key optionality is derived from that — don't hand-roll it.
 - `AnySchema = Schema<unknown, unknown>` is the general constraint. Never `any`.
 - Unknown object keys are dropped by design; JSON Schema says `additionalProperties: false`.
+  `unknown-keys.ts` (`unknownKeys(node, value)`) names what was dropped, for action's and
+  query's `X_INPUT_UNKNOWN_KEY` warning (#1281); refusing them waits for `next`. It reads the IR
+  only, never a `Check`, so it cannot change an answer.
 - **An object parse reads every declared field with `Object.hasOwn` and answers a null-prototype
   object** — the same two halves `recordSchema` has. A raw `value[key]` read `toString` off the
   PROTOTYPE, so a field named after one was unsatisfiable for every input and its `.default()`

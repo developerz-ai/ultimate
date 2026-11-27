@@ -68,6 +68,7 @@ re-screen each redirect. All of it is in this one option.
   transport's message (`//…@`), and the proxy is never recorded.
 - With no `proxy`, Bun's own `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` still apply, as for any `fetch`.
 - **Which proxy, and rotating them, is app code** (axiom 8): a resolver over your own inventory.
+- `proxy: null` dials direct, past the app-wide proxy below.
 
 ```ts
 import { outbound } from '@ultimat3/core/outbound';
@@ -83,6 +84,60 @@ await outbound({
   proxy: () => proxies[next++ % proxies.length],
 });
 ```
+
+### The app-wide proxy: `outbound` in `app.config.ts`
+
+A deploy behind an egress gateway declares it once; every `outbound()` call with no `proxy` of its
+own goes through it — the framework's senders included (APNs, FCM, Web Push, OAuth, MCP, webhooks,
+CDN purge), with no call-site change. `As of 2026-11`.
+
+```ts
+import type { EnvSchema } from '@ultimat3/core';
+import { defineConfig, defineEnv } from '@ultimat3/core';
+
+export const envSchema = {
+  // http(s)://user:pass@egress:3128 — a credential: the environment's, never a literal here.
+  EGRESS_PROXY: { type: 'url', required: false, secret: true, description: 'The egress proxy.' },
+} satisfies EnvSchema;
+export const env = defineEnv(envSchema);
+
+export const config = defineConfig({
+  name: 'shop',
+  outbound: {
+    proxy: env.EGRESS_PROXY,
+    direct: ['otel-collector.observability', 'svc.cluster.local'],
+  },
+});
+```
+
+| A call's `proxy` | Goes through |
+|---|---|
+| unset | `outbound.proxy` — unless the hop's host is loopback or a `direct` host |
+| a URL, `{ url, headers }` or a resolver | that, as above: the call's own choice always wins |
+| `null` | nothing: direct |
+
+- **Never proxied:** `localhost`, `*.localhost`, a loopback literal, and each `outbound.direct` entry
+  with every name under it, per label (`cluster.local` covers `a.svc.cluster.local`, never
+  `notcluster.local`). Asked per hop with the NAMED host, so a redirect is judged again.
+- `direct` entries are bare host names or IP literals: a scheme, path, port or `*` is
+  `X_CONFIG_INVALID`. So is a `proxy` that is not an `http:`/`https:` URL — refused at
+  `defineConfig`, the credential never echoed; one installed by hand is still refused per hop
+  (`X_OUTBOUND_PROXY_INVALID`).
+- Installed by the container boot (`configureOutboundProxy`, `@ultimat3/core/outbound`), released at
+  stop; an app never calls it. The boot logs `ultimate outbound proxy` with the URL's userinfo as
+  `***`.
+
+Transports that are not `outbound()` ask the same answer through `ambientProxyFor(url)`
+(`@ultimat3/core/outbound`) and hand it to Bun's `fetch` as `init.proxy`:
+
+| Transport | Takes `outbound.proxy` |
+|---|---|
+| `@ultimat3/ai`'s Anthropic and OpenAI-format providers (`baseUrl` included) | yes, same direct-host rule |
+| `@ultimat3/storage`'s signed S3 requests: a PUT with metadata, `Cache-Control`, SSE or object lock; ranged and streamed reads; multipart; copies; retention reads | yes, same direct-host rule |
+| `@ultimat3/storage`'s plain S3 calls on `Bun.S3Client` (`put`, `get`, `exists`, `delete`, `list`, `stat`) | **no.** `Bun.S3Client` takes no `proxy` option (measured, Bun 1.4.4): it ignores one, and honours only the process-wide `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY`. An egress-locked deploy using S3 sets those as well, with `NO_PROXY` naming the `direct` hosts |
+| `@ultimat3/mail`'s SMTP driver (`Bun.connect`) | **no**: SMTP, not HTTP |
+| `@ultimat3/scraping`'s browser (CDP) | **no**: the session's own `proxy` (`egress`) |
+| core's OTLP exporter, the `x` CLI | **no**, on purpose: in-cluster collector, this machine |
 
 ## `deps.fetch`: the transport
 
@@ -197,5 +252,5 @@ Manual use: `const ticket = gate.admit()`, then `succeeded(ticket)`, `failed(tic
 |---|---|
 | `@ultimat3/jobs` webhook delivery | the job's signal outlives the drain on purpose, and a 3xx is an answer, never a hop |
 | `@ultimat3/scraping`'s HTTP leg | session-bound: browser cookies and a hop chain it owns |
-| `@ultimat3/ai` provider calls | own retry across providers, in-band stream errors |
+| `@ultimat3/ai` provider calls | own retry across providers, in-band stream errors; the app-wide proxy still applies (`ambientProxyFor`) |
 | core's OTLP exporter, `x` CLI transports | an exporter must not log through itself; the CLI dials this machine |

@@ -46,4 +46,12 @@ describe('unit · FRAMEWORK_ENV', () => {
       use: 'switch',
     });
   });
+
+  // The OTel spec's two service-identity names: the boot reads them (`serve-boot-telemetry.ts`),
+  // and a deploy sets them on purpose — the contract, never caught by the `OTEL_` switch prefix.
+  test('the service identity names are the contract, read by the boot', () => {
+    for (const name of ['OTEL_SERVICE_NAME', 'OTEL_RESOURCE_ATTRIBUTES']) {
+      expect(frameworkEnvEntry(name)).toEqual({ name, owner: 'cli', use: 'contract' });
+    }
+  });
 });

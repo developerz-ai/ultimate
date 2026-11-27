@@ -1,0 +1,64 @@
+name: codeql
+
+# CodeQL code scanning, as an advanced setup in this file rather than the repository's "default
+# setup". Default setup ran on every push and pull request whatever it touched — 112 runs in three
+# and a half days, ~7 minutes each, docs-only pushes included — and nothing in the tree said so.
+# Here it skips a diff of prose alone (`paths-ignore`, the same on both events, so `main` and a pull
+# request watch the same paths), a newer push to a pull request cancels the older run, and the
+# weekly schedule default setup kept stays.
+#
+# Default setup must be OFF for this file's uploads to be accepted: the two conflict. The switch is
+# a repository setting this file cannot flip (`gh api -X PATCH
+# repos/developerz-ai/ultimate/code-scanning/default-setup -f state=not-configured`), run once this
+# file is on main.
+#
+# Languages: `javascript-typescript` (every package, script and app) and `actions` (these
+# workflows). `build-mode: none` for both — neither needs a build to be extracted.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'wiki/**'
+      - '**/*.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'wiki/**'
+      - '**/*.md'
+  schedule:
+    - cron: '13 4 * * 1'
+  workflow_dispatch:
+
+# A pull request's newer push supersedes its older run; a push to main never cancels anything — it
+# is keyed by SHA there, ci.yml's rule and reason.
+concurrency:
+  group: codeql-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          category: /language:${{ matrix.language }}

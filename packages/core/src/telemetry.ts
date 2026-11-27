@@ -3,6 +3,7 @@
 // app with none pays nothing — and trace context is serialised explicitly (`traceparent`) so a
 // trace survives HTTP -> job -> live query.
 
+import { DEFAULT_APP_VERSION } from './app-version';
 import { asyncContext } from './async-context';
 import { type Clock, systemClock } from './clock';
 import { tryUseContext } from './context';
@@ -145,9 +146,23 @@ const activeSpan = asyncContext<Span>('the active span');
 let clock: Clock = systemClock;
 let enabled = true;
 let sampler: Sampler | undefined;
-let resource: SpanResource = Object.freeze({ serviceName: 'ultimate', serviceVersion: '0.0.1' });
+/**
+ * Unconfigured: OTel's own `unknown_service`, and the build `APP_VERSION` calls an unnamed one. It
+ * was `ultimate`/`0.0.1`, which made every app in one collector the same service at one version
+ * (#1361). The boot names it (`serve-boot-telemetry.ts`); core never reads the env for it.
+ */
+const UNNAMED: SpanResource = Object.freeze({
+  serviceName: 'unknown_service',
+  serviceVersion: DEFAULT_APP_VERSION,
+});
+let resource: SpanResource = UNNAMED;
 
-export function configureTelemetry(options: TelemetryOptions): void {
+/**
+ * Returns the release: it puts back what THIS call replaced and nothing else, so a boot's stop
+ * hands the process the identity it found (an installer's shape: `installBuildId`).
+ */
+export function configureTelemetry(options: TelemetryOptions): () => void {
+  const before = { clock, enabled, sampler, resource };
   if (options.clock !== undefined) clock = options.clock;
   if (options.enabled !== undefined) enabled = options.enabled;
   if (options.sampler !== undefined) sampler = options.sampler;
@@ -157,12 +172,21 @@ export function configureTelemetry(options: TelemetryOptions): void {
       serviceVersion: options.serviceVersion ?? resource.serviceVersion,
     });
   }
+  return () => {
+    if (options.clock !== undefined) clock = before.clock;
+    if (options.enabled !== undefined) enabled = before.enabled;
+    if (options.sampler !== undefined) sampler = before.sampler;
+    if (options.serviceName !== undefined || options.serviceVersion !== undefined) {
+      resource = before.resource;
+    }
+  };
 }
 
 export function resetTelemetry(): void {
   clock = systemClock;
   enabled = true;
   sampler = undefined;
+  resource = UNNAMED;
   resetDefaultSampler();
 }
 

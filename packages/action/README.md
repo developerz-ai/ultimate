@@ -407,6 +407,57 @@ aborted transaction (`X_DB_TRANSACTION_ABORTED`). Busting at the handler's retur
 concurrent read refill the cache from the pre-commit rows, which then stayed for the TTL. With no
 transaction open the bust runs when the handler returns, as it always did.
 
+**An undeclared input key is reported, not refused** (#1281). After a good parse, a key the input
+schema does not declare is logged once per action and path set as `input.unknown_key`
+(`X_INPUT_UNKNOWN_KEY`, naming the nearest declared key) and added to the call's span on every
+call. The answer is byte-identical; refusing the key waits on `next`.
+
+### `decide(rows)` — the action's own policy, per row
+
+A handler acting on many rows asks the rule it was declared with, once per row:
+
+```ts
+import { action, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+
+interface Post {
+  readonly id: string;
+  readonly authorId: string;
+}
+declare function findPosts(ids: readonly string[]): Promise<Post[]>;
+declare function archive(posts: readonly Post[]): Promise<void>;
+
+export const archivePosts = action({
+  input: t.object({ ids: t.array(t.string) }),
+  output: t.object({ archived: t.array(t.string), refused: t.array(t.string) }),
+  // `row: null` is the CALL (may this actor archive at all); a row is that row.
+  policy: can<unknown, Post>(
+    'post:archive',
+    ({ actor, row }) => row === null || row.authorId === actor?.id,
+  ),
+  async handle({ input, decide }) {
+    const { allowed, denied } = decide(await findPosts(input.ids));
+    await archive(allowed);
+    return {
+      archived: allowed.map((post) => post.id),
+      refused: denied.map(({ row }) => row.id),
+    };
+  },
+});
+```
+
+| Rule | Why |
+|---|---|
+| `decide(rows) → { allowed, denied: [{ row, code, reason }] }`, both in row order | the split is data; skip-denied vs abort-all is the handler's convention, never the framework's |
+| the action's OWN policy, bound by `invoke` — rows are the only parameter | a handler has no way to name another rule (a type error, and ignored at runtime) |
+| judged on the call's surface (`PRIMITIVE_POLICY_SURFACES`, the table `guardPrimitive` reads); one `policy.decision` event per row, through `evaluateEach` → `evaluate` | no second authz path, and an audit sees every row |
+| only `allowed: true` allows; a predicate that throws fails the call, no list returned | fail closed: a garbage decision or a throw never moves a row into `allowed` |
+| a `null`/`undefined` row is denied (`X_FORBIDDEN`) without asking the policy | `row: null` is the call-level question, so a lookup that found nothing would borrow the call's allow |
+| on `handle` only — `row()` and every stage before the parse have none | the input stage has not been judged yet |
+
+Every surface (HTTP, MCP, `.job()`, `.as()`, a direct call) reaches `handle` through `invoke`, so
+every one gets the same `decide`. `mutator`'s `server(ctx, input)` does not receive it.
+
 Registering an action without `policy:` throws `X_ACTION_POLICY_MISSING`; there is
 no bypass flag. A look-alike that never came out of `action()` is `X_ACTION_FOREIGN`.
 

@@ -12,7 +12,12 @@ name: deploy-docs-site
 # job, and holds the triggers to the two below.
 #
 # Triggered as deploy-social-demo.yml is: by ci.yml FINISHING green on main, for exactly the
-# commit it judged, or by hand. Never by a push or a pull request of its own.
+# commit it judged, or by hand. Never by a push or a pull request of its own. And, as it does, it
+# publishes only when a path the site is built from changed since the last green run of this
+# workflow, whose commit its `run-name` carries (`scripts/lib/ci/deploy-due.ts`); every doubt and
+# every dispatch publish.
+run-name: deploy-docs-site ${{ github.event.workflow_run.head_sha || github.sha }}
+
 on:
   # Not the insecure shape: every job is gated on `workflow_run.event == 'push'`
   # from this repository, so no fork's pull request reaches it.
@@ -45,6 +50,8 @@ jobs:
         github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      due: ${{ steps.due.outputs.due }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -104,10 +111,37 @@ jobs:
 
       - uses: ./.github/actions/setup
 
+      # Did anything the site is built from change since the last green publish? Fail-open: every
+      # `gh` failure is "no baseline" or "no comparison", and both publish.
+      - name: does a path the site is built from differ from the last publish
+        id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.on-main.outputs.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT" = workflow_dispatch ]; then
+            echo "a dispatch always publishes"; echo "due=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          base="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy-docs-site.yml --branch main \
+            --status success --limit 20 --json displayTitle \
+            --jq '[.[].displayTitle | capture("(?<sha>[0-9a-f]{40})$").sha][0] // empty' || true)"
+          compare="$RUNNER_TEMP/compare.json"
+          if [ -n "$base" ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/compare/${base}...${SHA}" \
+              --jq '{status, files: [.files[]?.filename]}' > "$compare" || rm -f "$compare"
+          fi
+          bun run scripts/lib/ci/deploy-due.ts --app docs "$compare" > "$RUNNER_TEMP/due.json"
+          echo "last publish: ${base:-none}; $(jq -r '.summary' "$RUNNER_TEMP/due.json")"
+          jq -r '.data.shipped[:20][] | "  " + .' "$RUNNER_TEMP/due.json"
+          echo "due=$(jq -r '.data.due' "$RUNNER_TEMP/due.json")" >> "$GITHUB_OUTPUT"
+
       # `ULTIMATE_ENV=production`: robots.txt and llms.txt fail closed everywhere else, so a build
       # without it would tell every crawler to skip the site this exists to get indexed. CNAME is
       # what Pages serves the custom domain from; the host is the origin's.
       - name: x build --target static, at the production origin
+        if: steps.due.outputs.due != 'false'
         working-directory: dummy/docs-site
         env:
           SITE_ORIGIN: ${{ vars.DOCS_SITE_ORIGIN }}
@@ -120,12 +154,13 @@ jobs:
           printf '%s\n' "${host%%/*}" > "${RUNNER_TEMP}/docs-site/CNAME"
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: steps.due.outputs.due != 'false'
         with:
           path: ${{ runner.temp }}/docs-site
 
   deploy:
     needs: build
-    if: vars.DOCS_SITE_ORIGIN != ''
+    if: vars.DOCS_SITE_ORIGIN != '' && needs.build.outputs.due != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

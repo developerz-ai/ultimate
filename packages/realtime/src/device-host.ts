@@ -15,6 +15,7 @@ import {
   type BusRequest,
   bytesOverLimit,
   DEVICE_FRAME_MAX_BYTES,
+  DEVICE_WIRE_VERSION,
   type DeviceOutbound,
   decodeDeviceFrame,
 } from './device-wire';
@@ -107,6 +108,7 @@ export class DeviceHost implements DeviceBusHandlers {
     this.#byDevice.set(key, socketId);
     this.#send(ws, {
       type: 'hello',
+      v: DEVICE_WIRE_VERSION,
       heartbeatMs: this.#options.heartbeatMs,
       maxFrameBytes: DEVICE_FRAME_MAX_BYTES,
     });

@@ -100,7 +100,7 @@ class — stay on `.`.
 |---|---|---|
 | tier 1 | `./server` | `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry`; `publishChannelEvent` — a channel event from a job or an action, on the bus the boot installed |
 | a bus driver | `./adapter` | `Transport` and its parts (`TransportHandler`, `TransportSet`, `TransportSetEntry`, `TransportSubscription`), the errors a driver throws (`TransportUnavailableError`, also on `.`; `TransportProtocolError`, only on this entry), and `installChannelTransport` — the boot's installer and `@ultimat3/testing`'s seam, on no other entry. The offline stores (`LocalStore` / `openLocalStore` / `pageLocalStore` / `memoryLocalStore()`, `QueueStore` / `memoryQueueStore()`, `RecordStoreOptions`, `SignalFactory`) are on `.`: no `runtime.ts` field takes one. An app hands its bus to `transport` in `apps/<app>/runtime.ts`, never to the installer |
-| tier 2 | `./server` | `LiveQueryRegistry`, `memoryChangeFeed()`, `postgresChangeFeed()`, `selectChangeFeed`, `changeFeedReplicator`, `postgresAdvisoryLock()`, `matcherFor` |
+| tier 2 | `./server` | `LiveQueryRegistry`, its resume-cursor events `CursorDistrusted` / `CursorTrustOptions` (`onUnsignedCursor`, `onCursorRefused`), `memoryChangeFeed()`, `postgresChangeFeed()`, `selectChangeFeed`, `changeFeedReplicator`, `postgresAdvisoryLock()`, `matcherFor` |
 | replication | `./server` | `parsePgUrl`, `bunPgStream`, `entityRow`, `changeLsn`, `commitPositionOf` |
 | the in-process change source | `./server` | `startLiveReplicator` — a repository's own writes (core's `entity.row` / `entity.bulk` bus events, subscribed) as `ChangeEvent`s, for the embedded database `x dev` runs on (PGlite has no walsender). `ChangeEvent.table` is the entity's TABLE on it as on the WAL decoder and `recordPublisher`, so an `entity(name, { table })` reaches channels and live windows (25.0.0). Moved from `@ultimat3/testing`, which no longer re-exports it |
 | fanout | `./server` | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
@@ -413,6 +413,7 @@ answer nothing, and the entry would be born reading no table.
 | the source names ANOTHER org | `X_TENANCY_ACTOR_MISMATCH`, as over HTTP — it was answered, until 2026-10 |
 | a subscriber with no org reads a tenant-scoped table | `X_TENANCY_ACTOR_ORG_REQUIRED`, as over HTTP |
 | a reconnect presents a cursor minted in another org's window | a cold start: one snapshot, never a replay of that window's patches |
+| a reconnect presents a cursor whose `sig` is not its own | a cold start, for the same reason: `holds` is the node's word ([below](#limits-stated-plainly)) |
 | the actor changes org mid-connection | `reauthorize` re-seats the subscription on its new tenant's window and sends that snapshot |
 
 The read's actor is `serviceActor({ id: 'live-window', orgId })` — the shape a job run gets. Never
@@ -789,6 +790,26 @@ made it — a key already queued collapses as always, and nothing queued is ever
   every subscriber learned the id and the instant of every *other* tenant's row as it was deleted,
   on a query whose `visible` rule had never let them see one. A subscriber that holds the row is
   told it is gone; one that does not gets nothing, counted as `rowsDenied`.
+- **`holds` is the node's word, not the client's: a live cursor is signed** (`As of 2026-11`,
+  #1280). `holds` is read off `cursor.ids`, and on a resume the cursor is client data — a forged id
+  was handed that row's `delete`, which says the row exists and when it went. Every cursor the node
+  hands out carries `sig` (`cursor-sign.ts`, server-only): a keyed fingerprint, under the app's
+  signing secret, of the window, the lsn, the ids and the subscriber's actor and tenant. It rides
+  down in `snapshot.cursor.sig` and on each `patch.sig`; the client stores the last one and echoes
+  it on `subscribe`, and never computes one. On a resume:
+
+  | The cursor's `sig` | The resume | Counted as |
+  |---|---|---|
+  | this cursor's, for this subscriber | decided from the cursor, ids trusted — so a row really held and revoked while away is still withdrawn | — |
+  | present, and not this cursor's — edited ids or lsn, another subscriber's, another window's, a rotated secret | a **cold start**: one snapshot, nothing replayed | `registry.cursorsRefused`, `onCursorRefused` |
+  | absent — a client built before the signature | as before 2026-11, ids trusted | `registry.unsignedCursors`, `onUnsignedCursor` |
+
+  The absent row is the gap that stays open on `main` and closes on `next`, where an unsigned
+  cursor cold-starts too; `unsignedCursors` falling to zero says no such client is left. The ids
+  are never intersected with what the policy admits now — that is the fix that loses the withdraw.
+  A subscriber's own OLDER cursor still verifies: it is a position it really held. Signing costs
+  one keyed fingerprint per subscriber per patch frame (≈ 11 µs, measured 2026-11-27); the id
+  digest is cached per ids array, so an update re-signs only the lsn.
 - **`postgresChangeFeed()` decodes `pgoutput` off a real slot** — its own Postgres v3 client
   (SCRAM-SHA-256, in-band TLS, CopyBoth), no driver dependency. It preflights `wal_level`, the
   publication, every entity's replica identity and the slot — in that order, because the identity
@@ -975,7 +996,7 @@ onRequest })` is the Bun client. Every rule (credential, caps, frame limit, beat
 | `device-hooks.ts` | `onOpen` / `onClose`, beside the socket path, one lane per socket |
 | `device-ledger.ts` | the open sockets in the bus's shared set, so a dead node's still close |
 | `device-bus.ts` | where a device is and how a request reaches it and comes back |
-| `device-wire.ts` | both hops' frames and the frame limit |
+| `device-wire.ts` | both hops' frames, the frame limit and `DEVICE_WIRE_VERSION` — the node's `hello` carries it as `v`, and an agent older than the node refuses with `X_DEVICE_WIRE_VERSION` (`DeviceWireVersionError`) rather than misread a frame |
 | `device-agent.ts` | the device's half, on Bun |
 | `device-errors.ts` | its refusals |
 | `device-declarer.ts` | the file that called `deviceSocket()`, so `x dev` refuses another module taking a path |
@@ -990,7 +1011,7 @@ onRequest })` is the Bun client. Every rule (credential, caps, frame limit, beat
 `X_LIVE_SERVER_RENDER` · `X_LIVE_QUERY_UNKNOWN` ·
 `X_LIVE_REPLICA_IDENTITY` ·
 `X_SOCKET_UNAUTHENTICATED` · `X_SOCKET_AUTH_UNAVAILABLE` ·
-`X_DEVICE_OFFLINE` · `X_DEVICE_REQUEST_TIMEOUT` · `X_DEVICE_FRAME_TOO_LARGE` · `X_NOT_IMPLEMENTED` ·
+`X_DEVICE_OFFLINE` · `X_DEVICE_REQUEST_TIMEOUT` · `X_DEVICE_FRAME_TOO_LARGE` · `X_DEVICE_WIRE_VERSION` · `X_NOT_IMPLEMENTED` ·
 `X_TIMEOUT`
 
 `X_NOT_IMPLEMENTED` and `X_TIMEOUT` are **borrowed** from `@ultimat3/core`, which owns and titles

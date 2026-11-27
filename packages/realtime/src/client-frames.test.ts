@@ -101,6 +101,76 @@ describe('a patch frame', () => {
   });
 });
 
+// #1280: the node signs the cursor each frame leaves a subscriber on, and a resume echoes it. The
+// page stores what it was sent and computes nothing — it holds no key to compute one with.
+describe("a frame's sig", () => {
+  const rows: readonly PostRow[] = [{ id: 'p1', likedByMe: false, likeCount: 2 }];
+  const patch = (lsn: string, sig?: string): PatchFrame => ({
+    type: 'patch',
+    v: PROTOCOL_VERSION,
+    sid: '',
+    lsn,
+    patches: [{ op: 'update', id: 'p1', row: { likeCount: 3 }, lsn }],
+    ...(sig === undefined ? {} : { sig }),
+  });
+
+  function subscribed(): {
+    cursor: () => ReturnType<ReturnType<LiveClient['subscribeLive']>['cursor']>;
+    deliver: (frame: PatchFrame) => void;
+    resubscribed: () => unknown;
+  } {
+    const { client, socket, clock } = pageHarness();
+    socket.open();
+    const handle = client.subscribeLive<PostRow>(liveFeed, { orgId: 'org-1' });
+    const sid = querySid(socket, 'add');
+    socket.deliver({
+      type: 'snapshot',
+      v: PROTOCOL_VERSION,
+      sid,
+      rows,
+      cursor: { ...makeCursor('liveFeed', LSN_0, rows, clock.now().getTime()), sig: 'h1:aa:snap' },
+    });
+    return {
+      cursor: handle.cursor,
+      deliver: (frame) => socket.deliver({ ...frame, sid }),
+      resubscribed: () => {
+        socket.sent.length = 0;
+        client.connect();
+        socket.open();
+        const frame = socket.frames().find((sent) => sent.type === 'subscribe');
+        return frame?.type === 'subscribe' && frame.target.kind === 'query'
+          ? frame.target.cursor
+          : expect.unreachable('a reconnect re-subscribes with its cursor');
+      },
+    };
+  }
+
+  test("a snapshot's sig is kept with its cursor", () => {
+    expect(subscribed().cursor()?.sig).toBe('h1:aa:snap');
+  });
+
+  test("a patch's sig replaces it, and is what the next subscribe echoes", () => {
+    const page = subscribed();
+    page.deliver(patch(LSN_1, 'h1:aa:patch'));
+    expect(page.cursor()).toMatchObject({ lsn: LSN_1, sig: 'h1:aa:patch' });
+    expect(page.resubscribed()).toMatchObject({ lsn: LSN_1, ids: ['p1'], sig: 'h1:aa:patch' });
+  });
+
+  test('a patch without a sig clears it: the old one covered the old position', () => {
+    const page = subscribed();
+    page.deliver(patch(LSN_1));
+    expect(page.cursor()?.lsn).toBe(LSN_1);
+    expect(page.cursor()).not.toHaveProperty('sig');
+    expect(page.resubscribed()).not.toHaveProperty('sig');
+  });
+
+  test('a channel frame, which moves no cursor, leaves the sig it found', () => {
+    const page = subscribed();
+    page.deliver(patch('', 'h1:aa:ignored'));
+    expect(page.cursor()).toMatchObject({ lsn: LSN_0, sig: 'h1:aa:snap' });
+  });
+});
+
 describe('an ack carrying an error', () => {
   test('fails the ONE subscription it names, and no other', () => {
     const { client, socket } = pageHarness();

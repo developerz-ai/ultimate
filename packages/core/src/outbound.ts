@@ -15,6 +15,7 @@ import { isUltimateError } from './errors';
 import { finiteCount } from './finite-option';
 import type { AttemptAnswer, AttemptCall } from './outbound-attempt';
 import { runAttempt } from './outbound-attempt';
+import { ambientOutboundProxy } from './outbound-default-proxy';
 import type { OutboundSite } from './outbound-errors';
 import { isCallerBound, outboundBodyInvalid, outboundRetryUnsafe } from './outbound-errors';
 import { redactedPath } from './outbound-hops';
@@ -87,7 +88,8 @@ function prepare(request: OutboundRequest, deps: OutboundDeps): AttemptCall {
     local: isLocal({ env: deps.env, fallback: 'production' }),
     fetch: send,
     resolve: deps.resolve,
-    proxy: request.proxy,
+    // Unsaid is the app-wide proxy (`outbound.proxy`, installed by the boot); `null` is direct.
+    proxy: request.proxy === undefined ? ambientOutboundProxy() : (request.proxy ?? undefined),
     endsAt: now() + deadlineMs,
     deadlineMs,
     idleMs: finiteCount('outbound()', 'idleMs', request.idleMs ?? OUTBOUND_IDLE_MS, 1),

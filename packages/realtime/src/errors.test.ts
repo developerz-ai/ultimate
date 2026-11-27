@@ -80,6 +80,8 @@ const ADDED_SINCE = [
   'X_REPLICATION_SLOT_RECREATED',
   // Plan 101 R7: an offline queue at its optional ceiling refuses a new write, never drops one.
   'X_OFFLINE_QUEUE_FULL',
+  // Plan 101 (2026-11-27): a device hello at a wire version this agent does not speak.
+  'X_DEVICE_WIRE_VERSION',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */

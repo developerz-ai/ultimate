@@ -3,26 +3,25 @@
 // so the command asks the holder instead of opening `.x/pgdata` a second time. Loopback Host and
 // peer, same-origin: the `/_x/db` doors.
 
-import { NotImplementedError, renderThrowable, UltimateError } from '@ultimat3/core';
+import { renderThrowable, UltimateError } from '@ultimat3/core';
 import type { DriftDifference } from '@ultimat3/db';
-import { checkDrift, db, migrate } from '@ultimat3/db';
+import { checkDrift, migrate } from '@ultimat3/db';
 import type { CatalogDescription } from '@ultimat3/db/schema-dump';
 import { introspectCatalog } from '@ultimat3/db/schema-dump';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { jsonResponse } from '@ultimat3/http';
-import { loadAppConfig } from './app-config-load';
 import { acceptCreatedTables } from './db-accept-created';
 import { DEV_LEDGER_PATH, DEV_MIGRATE_PATH, DEV_ROLLBACK_PATH } from './db-dev-wire';
 import { frameworkStorageDrift } from './db-object-drift';
 import { assertSameOrigin, hostRefusal } from './dev-dashboard-guard';
+import { devMigratorPass } from './dev-db-migrator-hold';
 import { ledgerInDev, rollbackInDev, stepsOf } from './dev-db-rollback';
 import { ledgerMoved } from './dev-db-settled';
 import { readMigrations } from './migrations';
-import { rowSecurityDeclared } from './row-security-boot';
 import { stopRunStartFix } from './stop-run-start';
 
 /** The command that works when this process cannot apply: the embedded database to itself. */
-export const MIGRATE_ALONE_FIX = stopRunStartFix(['db', 'migrate']);
+const MIGRATE_ALONE_FIX = stopRunStartFix(['db', 'migrate']);
 
 /** One applied pass as it crosses the wire: `runMigrations`' report, and the live catalog. */
 export interface DevMigrateData {
@@ -39,49 +38,35 @@ export interface DevMigrateData {
 type Env = Readonly<Record<string, string | undefined>>;
 
 /**
- * With `database.rowSecurity`, this process serves as `x_app` and a migration must run as
- * `x_migrator` from the bootstrap session — one embedded session cannot be both while it serves.
- */
-export async function devCanMigrate(root: string): Promise<boolean> {
-  return !rowSecurityDeclared(await loadAppConfig(root));
-}
-
-/** Refused where this process serves as `x_app`; `fix` is the command run alone, start to start. */
-async function assertDevCanMigrate(root: string, fix: string): Promise<void> {
-  if (await devCanMigrate(root)) return;
-  throw new NotImplementedError({
-    cause:
-      'this x dev serves the embedded database as x_app (database.rowSecurity), and migrations run as x_migrator — one embedded session cannot hold both',
-    fix,
-  });
-}
-
-/**
  * `serve.ts`'s `runMigrations` over the client this process already holds: the same file list,
  * the same ledger, the same post-condition. No boot and no `stop()` — the database is `x dev`'s.
+ * Where it serves as `x_app`, the whole pass is one hold of the session (`devMigratorPass`).
  */
 export async function migrateInDev(root: string, env: Env): Promise<DevMigrateData> {
-  await assertDevCanMigrate(root, MIGRATE_ALONE_FIX);
   const migrations = await readMigrations(root);
-  const report = await migrate({
-    migrations,
-    ...(env['APP_VERSION'] === undefined ? {} : { appVersion: env['APP_VERSION'] }),
+  return devMigratorPass(root, env, async ({ client, lock, bootstrap }) => {
+    const report = await migrate({
+      migrations,
+      client,
+      lock,
+      ...(env['APP_VERSION'] === undefined ? {} : { appVersion: env['APP_VERSION'] }),
+    });
+    // As `runMigrations` reads them: after the migrate step, as the bootstrap user. One at a
+    // time — under the hold they share one session with no turn queue between them.
+    await bootstrap();
+    const drift = acceptCreatedTables(await checkDrift({ migrations, client }), migrations);
+    const catalog = await introspectCatalog({ client });
+    const storage = await frameworkStorageDrift(client);
+    return {
+      applied: report.applied.map((entry) => entry.id),
+      skipped: report.skipped.length,
+      appVersion: report.appVersion,
+      durationMs: report.durationMs,
+      drift: drift.differences,
+      catalog,
+      storage,
+    };
   });
-  const drift = acceptCreatedTables(await checkDrift({ migrations }), migrations);
-  const client = db();
-  const [catalog, storage] = await Promise.all([
-    introspectCatalog({ client }),
-    frameworkStorageDrift(client),
-  ]);
-  return {
-    applied: report.applied.map((entry) => entry.id),
-    skipped: report.skipped.length,
-    appVersion: report.appVersion,
-    durationMs: report.durationMs,
-    drift: drift.differences,
-    catalog,
-    storage,
-  };
 }
 
 /** The refusal as the command re-throws it: the code, cause and fix of whatever stopped the pass. */
@@ -143,10 +128,6 @@ export function devMigrateRoutes(input: DevMigrateRouteInput): readonly Route[] 
     ),
     door(input, DEV_ROLLBACK_PATH, 'dev._x.db.rollback', async (request) => {
       const steps = stepsOf(request.url.searchParams.get('steps'));
-      await assertDevCanMigrate(
-        root,
-        stopRunStartFix(['db', 'rollback', '--steps', String(steps)]),
-      );
       return rollbackInDev(root, env, steps).finally(ledgerMoved);
     }),
     // A read, behind the same doors and the same verb: nothing under `/_x/db` answers a GET.

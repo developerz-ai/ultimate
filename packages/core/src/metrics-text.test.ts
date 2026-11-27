@@ -18,7 +18,7 @@ describe('metricsText', () => {
     expect(text).toContain('# TYPE text_requests_total counter');
     expect(text).toContain('text_requests_total{route="/posts"} 3');
     expect(text).toContain('text_connections 12');
-    expect(text).toContain('target_info{service_name="ultimate",service_version=');
+    expect(text).toContain('target_info{service_name="unknown_service",service_version=');
   });
 
   test('target_info carries framework_version beside the service identity', () => {

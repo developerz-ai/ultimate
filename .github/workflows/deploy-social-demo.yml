@@ -14,9 +14,14 @@ name: deploy-social-demo
 # separate workflow on the same push is not a dependency (the `main-protection` ruleset requires only `verify`). A
 # `workflow_run` of ci.yml starts after the verdict exists, for exactly the commit it judged.
 #
-# No `paths:` filter — `workflow_run` has none, so every green ci.yml run on main publishes. That
-# trades a rebuild on a docs-only push (layer-cached) for never shipping a stale framework: the
-# demo links every package through workspace symlinks, and the old filter had to list them all.
+# No `paths:` filter — `workflow_run` has none, so every green ci.yml run on main starts this. It
+# PUBLISHES only when a path the image ships changed since the last green run of this workflow
+# (`scripts/lib/ci/deploy-due.ts`: everything ships but what the image's .dockerignore drops, prose
+# and tooling — so a new directory ships, and the framework is never stale). The baseline is the
+# commit named in that run's title (`run-name`, below); none, a compare that fails, a capped file
+# list, a commit not ahead of it and every dispatch publish. A skipped publish skips `served` too.
+run-name: deploy-social-demo ${{ github.event.workflow_run.head_sha || github.sha }}
+
 on:
   # Not the insecure shape: every job is gated on `workflow_run.event == 'push'`
   # from this repository, so no fork's pull request reaches it.
@@ -75,6 +80,7 @@ jobs:
     outputs:
       short: ${{ steps.built.outputs.short }}
       latest: ${{ steps.tip.outputs.latest }}
+      due: ${{ steps.due.outputs.due }}
     environment:
       name: social-demo
       url: https://social-media.ultimate.demo.developerz.ai
@@ -169,18 +175,55 @@ jobs:
           echo "::error::${CHECK} concluded '${conclusion:-no verdict}' for ${SHA} (${REUSED_BY}: '${reused:-no verdict}', ${CHECK%% (*}: '${under:-none}') — not publishing. Dispatch this only for a commit ci.yml has passed."
           exit 1
 
+      # Bun alone, never the setup composite: `bun install` would run every dependency's install
+      # script in the job that logs in to the registry below. `deploy-due.ts` imports nothing. No
+      # cache either: nothing a cache restores reaches the job that pushes the image.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.4'
+          no-cache: true
+
+      # Did anything the image ships change since the last green publish? Fail-open: every `gh`
+      # failure is "no baseline" or "no comparison", and both publish.
+      - name: does a shipped path differ from the last publish
+        id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.built.outputs.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT" = workflow_dispatch ]; then
+            echo "a dispatch always publishes"; echo "due=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          base="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy-social-demo.yml --branch main \
+            --status success --limit 20 --json displayTitle \
+            --jq '[.[].displayTitle | capture("(?<sha>[0-9a-f]{40})$").sha][0] // empty' || true)"
+          compare="$RUNNER_TEMP/compare.json"
+          if [ -n "$base" ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/compare/${base}...${SHA}" \
+              --jq '{status, files: [.files[]?.filename]}' > "$compare" || rm -f "$compare"
+          fi
+          bun run scripts/lib/ci/deploy-due.ts --app social "$compare" > "$RUNNER_TEMP/due.json"
+          echo "last publish: ${base:-none}; $(jq -r '.summary' "$RUNNER_TEMP/due.json")"
+          jq -r '.data.shipped[:20][] | "  " + .' "$RUNNER_TEMP/due.json"
+          echo "due=$(jq -r '.data.due' "$RUNNER_TEMP/due.json")" >> "$GITHUB_OUTPUT"
+
       # Third-party actions are SHA-pinned — the rule and its reason are in
       # .github/actions/setup/action.yml. This workflow holds a registry credential.
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.due.outputs.due != 'false'
 
       # The DO API token is used as both username and password — that is what the registry expects.
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        if: steps.due.outputs.due != 'false'
         with:
           registry: registry.digitalocean.com
           username: ${{ secrets.DOCR_TOKEN }}
           password: ${{ secrets.DOCR_TOKEN }}
 
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        if: steps.due.outputs.due != 'false'
         with:
           # Root context: the demo imports the framework packages from this tree, not from npm.
           context: .
@@ -200,6 +243,7 @@ jobs:
           sbom: false
 
       - name: prove the pushed tags resolve
+        if: steps.due.outputs.due != 'false'
         env:
           SHORT: ${{ steps.built.outputs.short }}
           SHA: ${{ steps.built.outputs.sha }}
@@ -217,10 +261,11 @@ jobs:
   # X_DEPLOY_BUILD_MISMATCH, and the daily `health` brief reads a red workflow. Only for main's tip:
   # the updater rolls the newest `sha-<7>`, so an older commit's build is never expected to answer.
   # `--timeout 10m` covers the updater's poll (about two minutes) and the roll behind it. No
-  # DATABASE_URL here, so the queue grade is skipped and says so: HTTP alone.
+  # DATABASE_URL here, so the queue grade is skipped and says so: HTTP alone. Not after a skipped
+  # publish: no new tag exists, and the demo rightly still serves the last one.
   served:
     needs: build
-    if: needs.build.outputs.latest == 'true'
+    if: needs.build.outputs.latest == 'true' && needs.build.outputs.due != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -78,6 +78,8 @@ export const SECTION_PACKAGE: Readonly<Record<string, string>> = {
   drain: 'core',
   // why: `AppConfig.health` is what core's `/readyz` answers on; no package is named `health`.
   health: 'core',
+  // why: `AppConfig.outbound` is core's app-wide egress proxy (`outbound-default-proxy.ts`), installed by the boot.
+  outbound: 'core',
   // why: `AppConfig.site` is the public origin; the CLI's document and sitemap builders read it.
   site: 'cli',
   // why: `AppConfig.navigation` is the client router's opt-in; the CLI reads it to build and name

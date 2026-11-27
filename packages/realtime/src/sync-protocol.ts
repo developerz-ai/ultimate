@@ -14,7 +14,7 @@ import type {
   ChannelSubscribeTarget,
   ReplayGapFrame,
 } from './channel-wire';
-import type { LiveCursor } from './cursor';
+import { type LiveCursor, wireSig } from './cursor';
 import {
   isParsedJsonObject,
   isRow,
@@ -153,6 +153,13 @@ export interface PatchFrame {
    * it always was — so no `PROTOCOL_VERSION` bump.
    */
   readonly writes?: readonly string[];
+  /**
+   * The node's signature over the cursor this subscriber holds AFTER folding these patches
+   * (`LiveCursor.sig`). The client stores it on its advanced cursor and echoes it on resume; a
+   * patch without one leaves that cursor unsigned. Additive and optional, for the reason `writes`
+   * is; a value that is not a short sig-shaped string is DROPPED, never a refused frame.
+   */
+  readonly sig?: string;
 }
 
 export interface AckFrame {
@@ -285,7 +292,9 @@ export function decode(raw: string | Uint8Array): Frame {
         lsn: str(parsed, 'lsn'),
       } as const;
       const writes = writesOf(parsed, 'patch.writes');
-      return writes.length === 0 ? base : { ...base, writes };
+      const named = writes.length === 0 ? base : { ...base, writes };
+      const sig = wireSig(parsed['sig']);
+      return sig === undefined ? named : { ...named, sig };
     }
     case 'ack':
       return {
@@ -388,7 +397,7 @@ function row(value: unknown): LiveRow {
 
 function cursor(value: unknown): LiveCursor {
   if (!isParsedJsonObject(value)) throw fail('cursor must be an object');
-  return {
+  const base = {
     qid: str(value, 'qid'),
     lsn: str(value, 'lsn'),
     ids: list(value, 'ids', FRAME_LIMITS.cursorIds, 'cursor.ids').map((id) => {
@@ -397,6 +406,10 @@ function cursor(value: unknown): LiveCursor {
     }),
     at: num(value, 'at'),
   };
+  // Dropped when malformed, so the cursor reads as an unsigned one — never refused whole: a sig is
+  // optional, and a frame is not lost over a field an older peer does not send at all.
+  const sig = wireSig(value['sig']);
+  return sig === undefined ? base : { ...base, sig };
 }
 
 function patch(value: unknown): RowPatch {

@@ -15,12 +15,13 @@ import { postExport } from '../policy';
 /**
  * Start an export of every post in the org. The work is `exportPosts`, a job, enqueued in this
  * request's transaction; the answer is where the artifact will land — `manifest.json` under
- * `prefix` once the job has written it. The id is minted here, so one request is one artifact and
- * a retried request (same idempotency key) is the same one.
+ * `prefix` once the job has written it — and the job's id, which `postsExportStatus` watches and
+ * `cancelPostsExport` stops. The id is minted here, so one request is one artifact and a retried
+ * request (same idempotency key) is the same one.
  */
 export const requestPostsExport = action({
   input: t.object({ orgId: t.uuid }),
-  output: t.object({ exportId: t.uuid, prefix: t.string }),
+  output: t.object({ exportId: t.uuid, prefix: t.string, jobId: t.uuid }),
   policy: postExport,
   // Closed: see `publishPost`.
   errors: [],
@@ -28,7 +29,8 @@ export const requestPostsExport = action({
   mcp: { expose: true, description: 'Export every post of the actor’s org as CSV to storage' },
   async handle({ input }) {
     const target = { orgId: input.orgId, exportId: crypto.randomUUID() };
-    await exportPosts.enqueue(target);
-    return { exportId: target.exportId, prefix: postsExportPrefix(target) };
+    const queued = await exportPosts.enqueue(target);
+    // `jobId` is what `postsExportStatus` reads and `cancelPostsExport` stops.
+    return { exportId: target.exportId, prefix: postsExportPrefix(target), jobId: queued.id };
   },
 });

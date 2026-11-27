@@ -58,6 +58,11 @@ export interface IssueVerificationInput {
   readonly purpose: VerificationPurpose;
   /** The email address. Also the store key — one live token per purpose per address. */
   readonly identifier: string;
+  /**
+   * Where the mail goes, when the store key is not an address (a member invite keys on tenant +
+   * address). Default: the normalised `identifier`. Never normalised here — the caller's job.
+   */
+  readonly to?: string | undefined;
   readonly locale: string;
   readonly ttlMs?: number | undefined;
   /** Builds the URL that carries the token. Defaults to the token alone. */
@@ -98,6 +103,9 @@ export async function issueVerification(
   // the case, and each one of them is a password. It is also the address the mail is sent to, so
   // the link goes to the inbox the account is keyed by rather than to whatever a form posted.
   const identifier = purpose.identifier(input.identifier);
+  // Refused above the write, like the TTL: a blank recipient would leave a live row nobody can read.
+  const to = input.to ?? identifier;
+  if (to.trim() === '') throw recipientBlank();
   await runtime.store.putVerification({
     id: randomToken(12),
     purpose: purpose.name,
@@ -109,7 +117,7 @@ export async function issueVerification(
   });
   await runtime.mail.send(
     purpose.template,
-    identifier,
+    to,
     {
       ...(input.data ?? {}),
       link: input.link?.(token) ?? token,
@@ -119,6 +127,14 @@ export async function issueVerification(
   );
   return { token, expiresAt };
 }
+
+const recipientBlank = (): AuthError =>
+  new AuthError({
+    code: 'X_CONFIG_INVALID',
+    cause: 'issueVerification({ to }) is blank, so the mailed credential has nowhere to go',
+    fix: "await issueVerification(runtime, { purpose, identifier: key, to: 'ada@example.com', locale })   // name the address, or omit `to` when the identifier is the address",
+    meta: { option: 'verification.to' },
+  });
 
 /**
  * One error for "no such token", "already used", "expired" and "wrong token". Distinguishing

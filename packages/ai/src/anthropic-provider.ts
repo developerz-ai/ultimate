@@ -2,6 +2,7 @@
 // the one `fetch` it sends, and `parseMessage` for a non-streamed answer. The shared shapes are
 // ./provider's; ./models owns the per-model rules and ./wire the streamed response half.
 
+import { ambientProxyFor } from '@ultimat3/core/outbound';
 import { readAnswerBody } from './answer-body';
 import { anthropicTools } from './anthropic-strict';
 import { billedCall } from './billed';
@@ -233,6 +234,9 @@ export class AnthropicProvider implements Provider {
     }
     const doFetch: AiFetch = this.config.fetch ?? fetch;
     const url = `${this.config.baseUrl ?? 'https://api.anthropic.com'}/v1/messages`;
+    // Not `outbound()` (in-band stream errors, the gateway's own retries), so the app-wide egress
+    // proxy is asked here: an egress-locked deploy reaches the model, a loopback one stays direct.
+    const proxy = ambientProxyFor(url);
     // From here an abort costs the prompt (`stream-bill.ts`): the request is on its way.
     trackSent(request, model);
     const response = await doFetch(url, {
@@ -247,6 +251,7 @@ export class AnthropicProvider implements Provider {
       // Attached only when the caller has one: `exactOptionalPropertyTypes`, and an explicit
       // `signal: undefined` is a different value to some fetch implementations.
       ...(signal === undefined ? {} : { signal }),
+      ...(proxy === undefined ? {} : { proxy }),
     });
     if (!response.ok) {
       // An overflow or the transport's code — `context-overflow.ts` decides, for both wires.

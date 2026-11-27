@@ -4,10 +4,12 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { markListening } from '@ultimat3/core';
+import { CLOSE } from './close-codes';
 import { type DeviceAgent, deviceAgent } from './device-agent';
 import { deviceActor, ORG_A } from './device-fixture';
 import { type DeviceAttachment, type DeviceSocket, deviceSocket } from './device-socket';
 import type { DeviceWsData } from './device-upgrade';
+import { DEVICE_WIRE_VERSION } from './device-wire';
 import { InProcessTransport } from './fanout';
 import type { JsonValue } from './json';
 
@@ -156,5 +158,58 @@ describe('unit · a device agent closed mid-dial', () => {
     await Promise.resolve();
     expect(dials).toBe(0);
     expect(agent.connected).toBe(false);
+  });
+});
+
+describe('unit · a device agent meets a newer wire', () => {
+  const hello = (v: number | undefined) =>
+    JSON.stringify({
+      type: 'hello',
+      ...(v === undefined ? {} : { v }),
+      heartbeatMs: 5,
+      maxFrameBytes: 9,
+    });
+
+  async function against(text: string) {
+    const closes: { code: number | undefined; reason: string | undefined }[] = [];
+    const beats: number[] = [];
+    const socket = {
+      send() {},
+      close(code?: number, reason?: string) {
+        closes.push({ code, reason });
+      },
+      onopen: null as (() => void) | null,
+      onmessage: null as ((event: { readonly data: unknown }) => void) | null,
+      onclose: null as (() => void) | null,
+    };
+    const agent = deviceAgent({
+      url: 'ws://device.test/link',
+      token: () => 't',
+      onRequest: () => null,
+      dial: () => socket,
+      schedule: (_run, ms) => {
+        beats.push(ms);
+        return () => undefined;
+      },
+    });
+    cleanups.push(() => agent.close());
+    await Promise.resolve();
+    await Promise.resolve();
+    socket.onmessage?.({ data: text });
+    return { closes, beats };
+  }
+
+  test('a hello with v above DEVICE_WIRE_VERSION closes with X_DEVICE_WIRE_VERSION, no beat', async () => {
+    const { closes, beats } = await against(hello(DEVICE_WIRE_VERSION + 1));
+    expect(closes).toEqual([{ code: CLOSE.versionSkew, reason: 'X_DEVICE_WIRE_VERSION' }]);
+    expect(beats).toEqual([]);
+  });
+
+  test('a hello at the spoken version, or with no v, beats and stays open', async () => {
+    for (const v of [DEVICE_WIRE_VERSION, undefined]) {
+      const { closes, beats } = await against(hello(v));
+      expect(closes).toEqual([]);
+      expect(beats).toEqual([5]);
+    }
   });
 });

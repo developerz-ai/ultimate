@@ -11,6 +11,7 @@ import {
   type ResumeSource,
   resumeFrom,
 } from './cursor';
+import { signCursor } from './cursor-sign';
 import type { RowPatch } from './json';
 import type { SnapshotResult } from './live-contract';
 import { type NamedWrite, patchFrame, snapshotFrame } from './live-fanout';
@@ -31,8 +32,9 @@ export interface ResumeOntoDeps {
 
 /**
  * The frame a resuming subscriber needs and the cursor it is seated under. The caller has already
- * established that `cursor` names THIS window: a cursor is client data, and one minted for another
- * window is a cold start, never a replay of a ring this window does not own.
+ * established that `cursor` names THIS window — a cursor is client data, and one minted for another
+ * window is a cold start, never a replay of a ring this window does not own — and that its `sig`,
+ * when it carries one, is this cursor's and this subscriber's (`CursorTrust.admits`).
  */
 export async function resumeOnto(
   deps: ResumeOntoDeps,
@@ -52,10 +54,8 @@ export async function resumeOnto(
     // behind a row this subscriber was given. Out of the ring's window there is nothing to name,
     // and a write left unnamed settles on its own HTTP answer.
     const named = retainedWrites(deps.source.since(entry.qid, cursor.lsn) ?? []);
-    return {
-      cursor: resumed.cursor,
-      frame: snapshotFrame(entry, who.sid, resumed.rows, resumed.cursor, named),
-    };
+    const fresh = signCursor(resumed.cursor, who);
+    return { cursor: fresh, frame: snapshotFrame(entry, who.sid, resumed.rows, fresh, named) };
   }
   // The gate decides about whole rows out of the shared window, and an entry nothing has read
   // yet has none — every patch would meet an empty window and be withheld. Filling is
@@ -76,9 +76,10 @@ export async function resumeOnto(
   // takes the "the subscriber holds this row" branch, and delivers a `delete` frame carrying
   // another tenant's row id and the instant it went. The leak that branch closes, re-opened
   // one layer up. `live-fanout.ts` advances over `allowed` for exactly this reason.
-  const seated = advance(cursor, patches, resumed.cursor.lsn, now);
+  // Signed where it is seated: the sig the client sent covered the cursor it sent, not this one.
+  const seated = signCursor(advance(cursor, patches, resumed.cursor.lsn, now), who);
   const { bare, writes } = namedWrites(patches);
-  return { cursor: seated, frame: patchFrame(who.sid, bare, seated.lsn, writes) };
+  return { cursor: seated, frame: patchFrame(who.sid, bare, seated.lsn, writes, seated.sig) };
 }
 
 /**

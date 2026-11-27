@@ -83,6 +83,24 @@ export interface DriverRepo<Row> {
     patch: Readonly<Record<string, unknown>>,
     advance?: DriverAdvance,
   ): Promise<number>;
+  /**
+   * OPTIONAL, detected by presence (no capability to declare, so `capabilities: DRIVER_CAPABILITIES`
+   * stays valid). The compare-and-set a JUDGED update writes through — an entity with an invariant
+   * or a same-tenant reference, and no `version`. Atomically, with no other write between the
+   * comparison and the set: when the rows `filter` matches are exactly `expected` (as `select`
+   * answered them — same rows, every stored value equal; in code, `Bun.deepEquals`), set `patch`
+   * (and `advance`, as `update` does) on every one and answer `true`; otherwise write NOTHING and
+   * answer `false`. The kit re-reads, re-judges and retries a lost set, then refuses
+   * `X_DB_SERIALIZATION_FAILURE`. Absent, the kit writes through `update` and a concurrent writer
+   * between its judge and its write can leave a row no invariant would pass — warned once per
+   * driver (`driver-kit-unchecked-warning.ts`).
+   */
+  updateChecked?(
+    filter: DriverFilter,
+    expected: readonly Row[],
+    patch: Readonly<Record<string, unknown>>,
+    advance?: DriverAdvance,
+  ): Promise<boolean>;
   delete(filter: DriverFilter): Promise<number>;
   /** `'upsert'`. The plan is `bulk-write.ts`'s — target, overwritten columns — already judged. */
   upsert?(rows: readonly Row[], plan: UpsertPlan, write: DriverWrite): Promise<readonly Row[]>;

@@ -179,6 +179,8 @@ export const OFF_SOCKET: Pins = {
     'X_QUERY_ETAG_INVALID',
     'X_QUERY_TIMEOUT_INVALID',
     'X_QUERY_MAX_PAGE_INVALID',
+    // A log-only warning (action's and query's input parse): the call answers as it did.
+    'X_INPUT_UNKNOWN_KEY',
   ],
   // tier 3 — the sync node's own vocabulary, answered on a WebSocket frame that carries a
   // `kind` and not a status; the HTTP upgrade has none of these. Revisit the day a frame kind
@@ -210,6 +212,7 @@ export const OFF_SOCKET: Pins = {
     'X_REPLICATION_SLOT_INVALIDATED',
     'X_REPLICATION_SLOT_RECREATED',
     'X_OFFLINE_QUEUE_FULL',
+    'X_DEVICE_WIRE_VERSION',
   ],
   // tier 4 — a test double's script running out, raised inside `bun test` by `scriptedProvider`,
   // which no served app installs.

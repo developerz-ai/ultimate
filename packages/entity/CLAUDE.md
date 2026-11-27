@@ -163,6 +163,12 @@ A rule marked `†` has its full text in [`docs/history/entity-rules.md`](../../
 - **Custom stores: `defineDriver` from `@ultimat3/entity/adapter` only** — scoped plan in, rows
   re-checked, `X_DRIVER_UNSUPPORTED` per capability; the store owns its schema, `x db`/drift are
   Postgres-only. README "Custom drivers". **One row identity: `rowKey`** (`row-key.ts`).
+  **A judged unversioned update writes through the store's OPTIONAL `updateChecked`** (CAS on the
+  rows judged; lost → re-read, re-judge, `MAX_CHECKED_RETRIES`, then `X_DB_SERIALIZATION_FAILURE`,
+  `driver-kit-checked-update.ts`; `updateMany`'s rollback restores only a row still as written,
+  else keeps it and refuses torn, `driver-kit-checked-rollback.ts`); absent → the unconditional
+  `update`, warned once per driver (`driver-kit-unchecked-warning.ts`). Never required: a required
+  method broke every shipped driver (#1379, reverted `2c3d774d1`).
 - **`shared: '<why>'` is the one way an untenanted child of a tenant-owned table says so**
   (`assertShared`, `describe.ts`); the reach check is the CLI's `exercise-static.ts`
   (`X_ENTITY_TENANT_UNDECLARED`), over `EntityDescription.shared`.

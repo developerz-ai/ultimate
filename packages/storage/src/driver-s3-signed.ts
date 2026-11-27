@@ -17,6 +17,7 @@ import {
   systemClock,
   trimTrailingSlashes,
 } from '@ultimat3/core';
+import { ambientProxyFor } from '@ultimat3/core/outbound';
 import type { SignedPart } from './signed-url';
 
 /** The slice of `fetch` this file uses; injected in tests so no socket is ever opened. */
@@ -26,6 +27,8 @@ export type S3FetchLike = (
     readonly method: string;
     readonly headers: Readonly<Record<string, string>>;
     readonly body?: Uint8Array<ArrayBuffer> | undefined;
+    /** The app-wide egress proxy (`outbound.proxy`), when this endpoint takes it. */
+    readonly proxy?: string | undefined;
   },
 ) => Promise<Response>;
 
@@ -284,9 +287,13 @@ export async function sendSigned(
   });
   const send = options.fetch ?? fetch;
   const body = request.body;
+  // Not `outbound()` (the provider's XML refusals, streamed bodies), so the app-wide egress proxy
+  // is asked here; an in-cluster endpoint named in `outbound.direct`, or loopback, stays direct.
+  const proxy = ambientProxyFor(signed.url);
   const response = await send(signed.url, {
     method: signed.method,
     headers: signed.headers,
+    ...(proxy === undefined ? {} : { proxy }),
     // `fetch` takes an ArrayBuffer-backed view; only a view over shared memory is copied.
     ...(body === undefined
       ? {}

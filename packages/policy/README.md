@@ -288,6 +288,30 @@ The flattened grant set is memoised per actor and invalidated the moment the rol
 It is keyed on the actor object, so it lives exactly as long as the request does: `@ultimat3/auth`
 re-reads the user row every request, and a revoked role takes effect on the next one.
 
+## Many rows — `evaluateEach`
+
+```ts
+import type { Actor } from '@ultimat3/core';
+import { can, evaluateEach } from '@ultimat3/policy';
+
+interface Post {
+  readonly authorId: string;
+}
+declare const actor: Actor | null;
+declare const rows: readonly Post[];
+
+const ownPost = can<unknown, Post>('post:edit', ({ actor, row }) => row?.authorId === actor?.id);
+// One evaluation per row, in row order; one `policy.decision` event each.
+export const allowed = evaluateEach(ownPost, { input: {}, actor, rows }, { surface: 'job' })
+  .map((evaluation, index) => (evaluation.allowed ? rows[index] : undefined))
+  .filter((row) => row !== undefined);
+```
+
+`evaluate()` once per row, in row order: one `PolicyEvaluation` and one `policy.decision` event
+each — never one verdict standing for the batch. A predicate that throws propagates, so a caller
+gets no list rather than a partial one. `@ultimat3/action`'s `decide(rows)` is built on it; what to
+do with the denied rows is the caller's, not this package's.
+
 ## Traces
 
 `evaluate()` returns a depth-first trace naming the clause that decided. `/_x` renders

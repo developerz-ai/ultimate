@@ -31,6 +31,7 @@
 
 .list {
   @include t.custom-scrollbar;
+  overscroll-behavior-inline: contain;
   display: flex;
   gap: t.space(1);
   border-block-end: 1px solid t.role('line');

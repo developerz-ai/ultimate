@@ -4,6 +4,9 @@
 // advisory names — the dependency's own, or one it pulls in? When a raised floor closes it,
 // `--write` raises it in place, so an app installs a patched tree with no `overrides` of its own.
 //
+// A range no floor closes is acknowledged by a row of `lib/advisory-acknowledged.ts` until the row
+// expires; past it, or once the row covers nothing, the ledger is the finding.
+//
 // An OPERATOR command `security-channel.yml` runs daily, never a `x verify` step: green may not
 // depend on the network (registry-audit.ts states the same rule).
 //
@@ -12,7 +15,10 @@
 import { quoteArg } from '../packages/cli/src/shell-quote';
 // why: the LEAF modules, never the `@ultimat3/*` barrels, for registry-audit.ts's reason.
 import { mapBounded } from '../packages/core/src/map-bounded';
+import { expiredFinding, staleFindings } from './lib/advisory-ack-findings';
+import { ADVISORY_ACKNOWLEDGED } from './lib/advisory-acknowledged';
 import type {
+  Acknowledgements,
   Advisory,
   Declaration,
   Exposure,
@@ -182,10 +188,11 @@ const named = (verdict: Extract<FloorVerdict, { exposures: unknown }>): string =
     .map((e) => `${e.advisory} in ${e.package}${e.via === undefined ? '' : ` via ${e.via}`}`)
     .join(', ');
 
-function findingOf(verdict: FloorVerdict): Finding | undefined {
+function findingOf(verdict: FloorVerdict, ledger: string): Finding | undefined {
   const { manifest, field, name, range } = verdict.declaration;
   const at = `${manifest} ${field}.${name}`;
-  if (verdict.kind === 'clean') return undefined;
+  if (verdict.kind === 'clean' || verdict.kind === 'acknowledged') return undefined;
+  if (verdict.kind === 'expired') return expiredFinding(verdict, ledger);
   if (verdict.kind === 'unknown') {
     return {
       code: 'X_ADVISORY_UNREACHABLE',
@@ -222,9 +229,11 @@ export interface AdvisoryFloorsResult extends ScriptResult {
   readonly raises: readonly Raise[];
 }
 
+/** `ack` absent reads no ledger: every unfloorable range is a finding. */
 export function advisoryFloorsResult(
   declarations: readonly Declaration[],
   loaded: LoadedWorld,
+  ack?: Acknowledgements,
 ): AdvisoryFloorsResult {
   // A dependency of a dependency that did not answer is unjudged too: its advisories are the ones
   // `decideFloor` would have read through the range, and none read is not none found.
@@ -237,9 +246,13 @@ export function advisoryFloorsResult(
     (declaration): FloorVerdict =>
       unjudged(declaration.name)
         ? { kind: 'unknown', declaration }
-        : decideFloor(declaration, loaded.world),
+        : decideFloor(declaration, loaded.world, ack),
   );
-  const findings = verdicts.flatMap((verdict) => findingOf(verdict) ?? []);
+  const findings = [
+    ...verdicts.flatMap((verdict) => findingOf(verdict, ack?.source ?? '') ?? []),
+    ...staleFindings(verdicts, ack?.rows ?? [], ack?.source ?? ''),
+  ];
+  const acknowledged = verdicts.filter((v) => v.kind === 'acknowledged').length;
   const raises = verdicts.flatMap((v): Raise[] =>
     v.kind === 'raise'
       ? [{ ...v.declaration, from: v.declaration.range, to: v.to, advisories: v.exposures }]
@@ -250,8 +263,8 @@ export function advisoryFloorsResult(
     script: SCRIPT,
     summary:
       findings.length === 0
-        ? `${declarations.length} published dependency range(s) admit no advised version`
-        : `${findings.length} of ${declarations.length} published dependency range(s) admit an advised version; ${raises.length} raisable`,
+        ? `${declarations.length} published dependency range(s) admit no unacknowledged advised version; ${acknowledged} acknowledged`
+        : `${findings.length} finding(s) over ${declarations.length} published dependency range(s); ${raises.length} raisable, ${acknowledged} acknowledged`,
     findings,
     data: { raises },
     raises,
@@ -279,7 +292,13 @@ if (import.meta.main) {
     )
   ).flat();
   const token = process.env['GH_TOKEN'] ?? process.env['GITHUB_TOKEN'];
-  const result = advisoryFloorsResult(declarations, await loadWorld(declarations, fetch, token));
+  // The ledger's day is UTC, the zone its `expires` dates are written in.
+  const today = new Date().toISOString().slice(0, 10);
+  const result = advisoryFloorsResult(declarations, await loadWorld(declarations, fetch, token), {
+    rows: ADVISORY_ACKNOWLEDGED,
+    today,
+    source: await Bun.file(`${root}/scripts/lib/advisory-acknowledged.ts`).text(),
+  });
   if (args.flags.get('write') === true) {
     for (const raise of result.raises) {
       const path = `${root}/${raise.manifest}`;

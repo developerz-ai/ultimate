@@ -302,6 +302,18 @@ What a stub replaces is the BODY, and nothing else:
 `toHaveBeenCalledWith` keeps bun's meaning for a `mock()` or a `spyOn`: only a `stub()` receiver is
 schema-checked. `As of 2026-11`.
 
+## A plan budget, and a race
+
+`expectPlanWithin(sql\`…\`, { maxCost, maxSortRows }, { client?, entities? })` plans a statement with its
+real parameters, read-only, never `analyze`, and throws `X_QUERY_PLAN_OVER_BUDGET` past either
+number (both required, no defaults). With `entities` the fix names the `indexes:` entry. Analyze
+after seeding; one budget per engine (PGlite and Postgres cost plans differently).
+
+`raceActions(calls, { rounds })` runs the calls concurrently and returns `{ settled,
+serializationFailures }` (`40P01` / `40001`, as `X_DB_SERIALIZATION_FAILURE`).
+`expectPartial(result, { allowed, denied })` states a `decide()` answer.
+See [`wiki/Testing.md`](../../wiki/Testing.md#a-plan-budget-and-a-race).
+
 ## An N+1 fails the test it happened in
 
 ```ts

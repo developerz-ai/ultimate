@@ -10,6 +10,8 @@ import { narrowRow } from './columns';
 import { copyColumns } from './copy-plan';
 import { kindOf, valueAt } from './cursor';
 import { byKeys, checkedDelete } from './driver-delete';
+import { type MovedRow, restoreMoved, tornBatch } from './driver-kit-checked-rollback';
+import { checkedUpdate } from './driver-kit-checked-update';
 import type { DriverScope } from './driver-scope';
 import { versionedWrites } from './driver-versioned-write';
 import {
@@ -132,6 +134,22 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       }
       return written;
     }
+    // Unversioned: the judge and the write are one compare-and-set when the store offers it.
+    if (lock === null) {
+      const checked = await checkedUpdate(scope, {
+        op,
+        plan,
+        patch,
+        advance,
+        narrowed,
+        tx,
+        references,
+      });
+      if (sink !== undefined && checked.found.length > 0) {
+        sink(await writtenBack(op, plan, checked.found, tx));
+      }
+      return checked.written;
+    }
     // Every invariant, a SQL-expressible one too: a custom store enforces no CHECK.
     const found = scope.checked(
       op,
@@ -147,29 +165,18 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       entity.$assert(merged);
     }
     await references(results);
-    if (lock !== null) {
-      const written = await versionedWrites(scope, {
-        op,
-        plan,
-        patch,
-        lock,
-        found,
-        results,
-        advance,
-        narrowed,
-        tx,
-        references,
-      });
-      if (sink !== undefined) sink(await writtenBack(op, plan, found, tx));
-      return written;
-    }
-    // The narrowed values the merge produced — the same for every row — so the store holds what
-    // was judged rather than a money `bigint` the row type never carries. The version is the
-    // patch's instant: the store advances it per row.
-    const merged = mergedRow(entity, first, patch) as Record<string, unknown>;
-    const values = Object.fromEntries(namedColumns(patch).map(([key]) => [key, merged[key]]));
-    if (advance !== undefined) values[advance.property] = narrowed[advance.property];
-    const written = await raw.update({ plan, tx }, values, advance);
+    const written = await versionedWrites(scope, {
+      op,
+      plan,
+      patch,
+      lock,
+      found,
+      results,
+      advance,
+      narrowed,
+      tx,
+      references,
+    });
     if (sink !== undefined) sink(await writtenBack(op, plan, found, tx));
     return written;
   };
@@ -305,7 +312,7 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       const cell = (row: unknown) => keyOf(kind, valueAt(row, plan.key));
       const before = new Map(found.map((row) => [cell(row), row]));
       const after = new Map(merged.map((row, at) => [cell(found[at]), row]));
-      const moved: (readonly [Row, Row])[] = [];
+      const moved: MovedRow<Row>[] = [];
       let written = 0;
       try {
         for (const { id, patch } of plan.patches) {
@@ -314,17 +321,13 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
           if (stored === undefined || result === undefined) continue;
           const one = scope.storePlan(op, idPlan(entity, id, options, op));
           const count = await patched(op, one, patch, options);
-          if (count > 0) moved.push([stored, result]);
+          if (count > 0) moved.push({ stored, result, patch });
           written += count;
         }
       } catch (error) {
-        for (const [stored, result] of moved.reverse()) {
-          const where = idPlan(entity, String(valueAt(result, plan.key)), options, op);
-          const values = Object.fromEntries(
-            [...plan.properties, plan.key].map((property) => [property, valueAt(stored, property)]),
-          );
-          await raw.update({ plan: scope.storePlan(op, where, true), tx }, values);
-        }
+        const rollback = { op, key: plan.key, properties: plan.properties, options, tx };
+        const kept = await restoreMoved(scope, moved, rollback);
+        if (kept.length > 0) throw tornBatch(entity.$table, kept, error);
         throw error;
       }
       return written;

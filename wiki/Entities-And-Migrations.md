@@ -1100,7 +1100,7 @@ well as data for one.
 
 | Rule | Detail |
 |---|---|
-| Tier | `reference` ships to production through this same command; `dev` is fixture data and is the default. `x db seed` runs `reference` alone under `ULTIMATE_ENV=production` — naming `--tier dev` (or `ULTIMATE_SEED_TIER=dev`) is both the selection and the consent → [CLI reference](CLI-Reference#x-db) |
+| Tier | `reference` ships to production through this same command; `dev` is fixture data and is the default. `x db seed` runs `reference` alone under `ULTIMATE_ENV=production` — naming `--tier dev` (or `ULTIMATE_SEED_TIER=dev`) is both the selection and the consent → [CLI reference](CLI-Reference-Data#x-db) |
 | Transaction | one per seed, never one around the run: a seed that throws must not roll back the seeds that already landed |
 | `createdAt` | an `upsert` that lands on a stored row does **not** overwrite it. A replay must not move when a row first arrived; `preserve: [...]` names other columns to spare |
 | Tenancy | `upsert` on a tenant-scoped entity needs the tenant column inside `by`, else `X_TENANCY_UNSCOPED` — the same rule `upsertAll` carries. `insert` has no such requirement: `do nothing` writes nothing to a row it does not own |

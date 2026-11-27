@@ -1,12 +1,12 @@
 name: flake-hunt
 
 # Which tests pass only in the order the gate happens to run them? Every night the `unit` and `live`
-# suites run three times each, Bun shuffling file and test order from a recorded seed
+# suites run twice each, Bun shuffling file and test order from a recorded seed
 # (`bun test --randomize --seed`), and each test that fails gets ONE `flake-hunt` issue — found
 # again by its title, so a test red every night collects comments instead of duplicates — naming
 # the seed and the command that replays its round in the same order (`scripts/flake-hunt.ts`).
 #
-# Its own workflow, never a `ci` job and never a gate: six rounds of the two slowest suites cost far
+# Its own workflow, never a `ci` job and never a gate: four rounds of the two slowest suites cost far
 # more than `ci`'s five minutes, and a red night is a lead to read, not a merge to block. Its run
 # conclusion is the `flake-hunt` row of `scripts/health.ts`. Free runners only.
 
@@ -43,7 +43,10 @@ jobs:
       fail-fast: false
       matrix:
         suite: [unit, live]
-        round: [1, 2, 3]
+        # Two rounds since 2026-11-27 (three were ~83 billed minutes a night, ~60 of them `unit`):
+        # every round shuffles under a fresh seed, so the seven nights the `tests-deterministic` row
+        # reads (scripts/finished-github.ts) are still fourteen orders per suite.
+        round: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

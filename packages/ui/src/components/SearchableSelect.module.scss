@@ -73,6 +73,7 @@
 .listbox {
   @include t.surface('surface-raised', 'md');
   @include t.custom-scrollbar;
+  overscroll-behavior: contain;
   position: absolute;
   z-index: t.z(dropdown);
   inset-block-start: 100%;

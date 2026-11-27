@@ -13,6 +13,7 @@ import type { RateLimitDecision } from '@ultimat3/http';
 import { declaredStatusFor } from '@ultimat3/http';
 import { policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import type { ActionDecision } from './action-decide';
 import { streamingDef } from './action-stream';
 import type { ClientMethod, ClientOptions, StreamClientMethod } from './client';
 import type { ContractTest, ContractTestOptions } from './contract-test';
@@ -54,9 +55,18 @@ export interface ActionRateLimitFact {
   readonly windowMs: number;
 }
 
-export interface ActionHandlerArgs<TInput extends StandardSchemaV1> {
+export interface ActionHandlerArgs<TInput extends StandardSchemaV1, TRow = unknown> {
   readonly input: InferOutput<TInput>;
   readonly ctx: Ctx;
+  /**
+   * This action's OWN policy, asked once per row on the surface the call came in on — one
+   * `policy.decision` event per row. Rows only: no parameter names another rule. Only in `handle`,
+   * after the input parse and the call's own guard; `row()` never gets it. What a handler does with
+   * the denied rows (skip them, abort the batch) is its own convention (`action-decide.ts`).
+   * Method syntax on purpose: its bivariant parameter is what keeps an `ActionDef<…, Post>`
+   * assignable to the erased `ActionDef<…, unknown>` every projection reads.
+   */
+  decide(rows: readonly TRow[]): ActionDecision<TRow>;
 }
 
 /** What a row loader gets: the parsed input and the context, never the request. */
@@ -143,7 +153,9 @@ export interface ActionDef<
    * and "row not found" are the same value and neither is evidence of permission.
    */
   row?(args: ActionRowArgs<TInput>): TRow | null | Promise<TRow | null>;
-  handle(args: ActionHandlerArgs<TInput>): Promise<InferOutput<TOutput>> | InferOutput<TOutput>;
+  handle(
+    args: ActionHandlerArgs<TInput, TRow>,
+  ): Promise<InferOutput<TOutput>> | InferOutput<TOutput>;
 }
 
 /**
@@ -160,7 +172,7 @@ export interface StreamActionDef<
 > extends Omit<ActionDef<TInput, TOutput, TRow>, 'handle'> {
   readonly stream: TChunk;
   handle(
-    args: ActionHandlerArgs<TInput>,
+    args: ActionHandlerArgs<TInput, TRow>,
   ): AsyncGenerator<InferInput<TChunk>, InferOutput<TOutput>, undefined>;
 }
 
@@ -263,7 +275,11 @@ export interface AnyActionDef {
   readonly audit?: boolean;
   readonly stream?: StandardSchemaV1;
   row?(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
-  handle(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
+  handle(args: {
+    readonly input: unknown;
+    readonly ctx: Ctx;
+    decide(rows: readonly unknown[]): ActionDecision<unknown>;
+  }): unknown;
 }
 
 export interface AnyAction {

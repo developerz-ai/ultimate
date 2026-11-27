@@ -3,6 +3,7 @@
 // dependency declares — and the smallest raised floor that admits none. Pure: the registry and the
 // advisory database arrive as a `World`, so the decision is pinned by fixtures, never the network.
 
+import type { AcknowledgedAdvisory } from './advisory-acknowledged';
 import { ScriptError } from './script-error';
 
 /** One advisory against one package: `vulnerable` is a range `Bun.semver` reads. */
@@ -50,7 +51,63 @@ export type FloorVerdict =
       readonly kind: 'unfloorable';
       readonly declaration: Declaration;
       readonly exposures: readonly Exposure[];
-    };
+    }
+  | Acknowledged<'acknowledged'>
+  | Acknowledged<'expired'>;
+
+/** Unfloorable, every exposure named by a ledger row: inside its expiry, or past it. */
+interface Acknowledged<Kind extends 'acknowledged' | 'expired'> {
+  readonly kind: Kind;
+  readonly declaration: Declaration;
+  readonly exposures: readonly Exposure[];
+  /** The rows that cover: live ones when acknowledged, the lapsed ones when expired. */
+  readonly rows: readonly AcknowledgedAdvisory[];
+}
+
+/** The ledger and the day it is read on: `today` is `YYYY-MM-DD`, UTC, passed in — never read. */
+export interface Acknowledgements {
+  readonly rows: readonly AcknowledgedAdvisory[];
+  readonly today: string;
+  /** The ledger's text, so a finding's `edit` names the row's line; absent, line 1. */
+  readonly source?: string;
+}
+
+/** Does `row` speak for `exposure` of `declaration`? */
+export const covers = (
+  row: AcknowledgedAdvisory,
+  declaration: Declaration,
+  exposure: Exposure,
+): boolean =>
+  row.manifest === declaration.manifest &&
+  row.dependency === declaration.name &&
+  row.advisories.includes(exposure.advisory) &&
+  row.via.includes(exposure.package);
+
+/**
+ * An unfloorable range, read against the ledger: acknowledged when every exposure has a live row,
+ * expired when every one has a row but some only a lapsed one. One exposure no row names and the
+ * range stays unfloorable — a new advisory is never acknowledged by an old row.
+ */
+function acknowledge(
+  declaration: Declaration,
+  exposures: readonly Exposure[],
+  ack: Acknowledgements | undefined,
+): FloorVerdict {
+  const rows = (ack?.rows ?? []).filter((row) =>
+    exposures.some((exposure) => covers(row, declaration, exposure)),
+  );
+  const live = rows.filter((row) => ack !== undefined && ack.today <= row.expires);
+  const coveredBy = (set: readonly AcknowledgedAdvisory[]): boolean =>
+    exposures.every((exposure) => set.some((row) => covers(row, declaration, exposure)));
+  if (rows.length > 0 && coveredBy(live)) {
+    return { kind: 'acknowledged', declaration, exposures, rows: live };
+  }
+  if (rows.length > 0 && coveredBy(rows)) {
+    const lapsed = rows.filter((row) => !live.includes(row));
+    return { kind: 'expired', declaration, exposures, rows: lapsed };
+  }
+  return { kind: 'unfloorable', declaration, exposures };
+}
 
 /** The three shapes a floor can be raised in without changing what the range means. */
 const RAISABLE = /^([~^]?)(\d+)\.(\d+)\.(\d+)$/;
@@ -83,7 +140,11 @@ const unique = (exposures: readonly Exposure[]): Exposure[] => [
   ...new Map(exposures.map((e) => [`${e.advisory} ${e.package}`, e])).values(),
 ];
 
-export function decideFloor(declaration: Declaration, world: World): FloorVerdict {
+export function decideFloor(
+  declaration: Declaration,
+  world: World,
+  ack?: Acknowledgements,
+): FloorVerdict {
   const facts = world.facts(declaration.name);
   if (facts === undefined) return { kind: 'unknown', declaration };
   const versions = ascending(facts.versions);
@@ -95,7 +156,7 @@ export function decideFloor(declaration: Declaration, world: World): FloorVerdic
   const exposures = exposedIn(declaration.range);
   if (exposures.length === 0) return { kind: 'clean', declaration };
   const shape = RAISABLE.exec(declaration.range);
-  if (shape === null) return { kind: 'unfloorable', declaration, exposures };
+  if (shape === null) return acknowledge(declaration, exposures, ack);
   const [, operator = '', major = '', minor = '', patch = ''] = shape;
   const base = `${major}.${minor}.${patch}`;
   // Same major, and the same minor under 0.x: a caret on 0.y is a minor-wide range, so moving
@@ -109,7 +170,7 @@ export function decideFloor(declaration: Declaration, world: World): FloorVerdic
       return { kind: 'raise', declaration, to: candidate, exposures };
     }
   }
-  return { kind: 'unfloorable', declaration, exposures };
+  return acknowledge(declaration, exposures, ack);
 }
 
 interface RawVulnerability {

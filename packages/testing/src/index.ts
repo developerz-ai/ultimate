@@ -388,6 +388,8 @@ export { recordSteps } from './matchers';
 export type { MockHandler, MockRoute } from './mock-route';
 // The plan and scale sweeps (plan 101 / 40-next-query-plans): every statement the pass sent planned
 // with no index but the declared ones, every reached primitive again at 2 and 8 rows a table.
+export type { ExpectPlanOptions, PlanBudget } from './plan-budget';
+export { expectPlanWithin } from './plan-budget';
 export type { PlanVerdictCode } from './plan-oracle';
 export type { PlanExempt, PlanProof, SentStatement } from './plan-sweep';
 export { QueryPlanUnavailableError, sweepPlans } from './plan-sweep';
@@ -405,6 +407,16 @@ export { gen, HOSTILE_CHARS } from './property-gen';
 // registry into every test in the framework. Every other package this harness touches is imported
 // dynamically inside the fixture that needs it; a helper that must stay synchronous cannot do that,
 // so it gets its own entry point instead.
+// A concurrency test: calls fired together, every lost serialization race listed; a `decide()`
+// answer stated as one split.
+export type {
+  PartialAnswer,
+  PartialExpectation,
+  RaceOptions,
+  RaceReport,
+  SerializationFailure,
+} from './race-actions';
+export { expectPartial, raceActions } from './race-actions';
 export type { RegistryLeak } from './registry-leak-guard';
 export { installRegistryLeakGuard } from './registry-leak-guard';
 export type { ProcessRegistrySnapshot } from './registry-snapshot';

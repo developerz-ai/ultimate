@@ -596,6 +596,7 @@ Two disks may not share one driver **instance**: a driver learns its disk name a
 
 | var | notes |
 |---|---|
+| `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES` | the service identity: name `OTEL_SERVICE_NAME` › `service.name` in the attributes › `app.config.ts`'s `name`; version `service.version` in the attributes › the build id › `APP_VERSION` → [Observability](Observability#the-service-identity) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP/HTTP **JSON** only, port `:4318`. Absent = spans still recorded, exported nowhere. Invalid → `X_OTLP_ENDPOINT_INVALID` |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `..._METRICS_ENDPOINT` | per-signal override |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | anything but `http/json` → `X_OTLP_PROTOCOL_UNSUPPORTED`, naming `:4318`. gRPC (`:4317`) needs HTTP/2 and protobuf and is out of scope |
@@ -672,6 +673,27 @@ export const config = defineConfig({ name: 'my-app', time: { detect: true } });
 | `time.detect` | `boolean` | `false` | **read** by `x dev` and the container's web role: on, every `app/` document carries a 153 B inline script (admitted by its CSP hash) writing `x_timezone_detected` from the browser's `Intl` zone, which `@ultimat3/http` reads as the lowest-ranked zone source. Never on `site/`. A non-boolean → `X_CONFIG_INVALID` |
 
 No default zone is a key here, and none ever is: the process default is `configureTime({ defaultZone })`, and every format call names its zone → [Timezones and dates](Timezones-And-Dates).
+
+## `outbound`
+
+The app-wide egress proxy: every `outbound()` call with no `proxy` of its own goes through it, the framework's senders and the AI providers included → [Outbound HTTP](Outbound-HTTP#the-app-wide-proxy-outbound-in-appconfigts). `As of 2026-11`.
+
+```ts
+import { defineConfig, defineEnv } from '@ultimat3/core';
+
+export const env = defineEnv({
+  EGRESS_PROXY: { type: 'url', required: false, secret: true, description: 'The egress proxy.' },
+});
+export const config = defineConfig({
+  name: 'my-app',
+  outbound: { proxy: env.EGRESS_PROXY, direct: ['svc.cluster.local'] },
+});
+```
+
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `outbound.proxy` | `string` (`http:`/`https:` URL) | unset — every call dials as it says | **read** by the container boot (`configureOutboundProxy`). A call's own `proxy` wins; `proxy: null` dials direct. Any other scheme, or not a URL → `X_CONFIG_INVALID`, the value never echoed. A credential rides the URL: take it from the env, never a literal |
+| `outbound.direct` | `string[]` (bare host names, IP literals) | `[]` | hosts never sent through the proxy, each with every name under it, per label. `localhost`, `*.localhost` and loopback are always direct. A scheme, path, port or `*` → `X_CONFIG_INVALID` |
 
 ## `drain`
 
@@ -793,6 +815,8 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 | `BUILD_ID` | all | set by `x build` | content hash. Never a timestamp, never `latest` |
 | `LOG_LEVEL` | all | no — unset or empty is `info` | `trace \| debug \| info \| warn \| error \| fatal \| silent`, lowercase. Any other value — `DEBUG`, `verbose` — is REFUSED at import (`X_INVARIANT`), never read as `info` |
 | `TRUSTED_PROXY_HOPS` | `web`, `sync` | no — unset trusts no proxy header | how many proxies **append** to `x-forwarded-for` between the client and this process: 1 for a single ingress or ALB, 2 for a CDN in front of one. Decimal digits, 1–64 (`@ultimat3/http`'s `MAX_PROXY_HOPS`); anything else is `X_TRUSTED_PROXY_HOPS_INVALID`, refused rather than defaulted, because reading the header at the wrong index is trusting a value the client typed. Unset means `ctx.ip` is the socket address, `ctx.peer` is `null` and no inbound `x-request-id` is echoed |
+| `OTEL_SERVICE_NAME` | all | no — unset falls to `OTEL_RESOURCE_ATTRIBUTES`, then `name` | `service.name` on every span, log, metric and Sentry event; empty is unset → [Observability](Observability#the-service-identity) |
+| `OTEL_RESOURCE_ATTRIBUTES` | all | no | `key=value,…`, values percent-decoded: its `service.name` is used when `OTEL_SERVICE_NAME` is unset, its `service.version` beats the build id (`BUILD_ID`) and `APP_VERSION`. One malformed pair discards the whole variable, with one warn line |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | all | no | the OTLP collector. There is no `otel` config block for it to override — see [`otel`](#otel) |
 
 Rules:
@@ -905,7 +929,7 @@ x verify --json           # the gate
 
 ## The gate's file — `x.verify.json`
 
-Not configuration of the app: what `x verify` holds it to, committed at the repo root. Every key is in [CLI reference](CLI-Reference#x-verify); the `exercise` key, `As of 31.16.0`:
+Not configuration of the app: what `x verify` holds it to, committed at the repo root. Every key is in [CLI reference](CLI-Reference-Gate#x-verify); the `exercise` key, `As of 31.16.0`:
 
 | Key | Value | Absent |
 |---|---|---|
@@ -916,7 +940,7 @@ Not configuration of the app: what `x verify` holds it to, committed at the repo
 { "exercise": { "unprovenMax": 0, "statementsMax": 100 } }
 ```
 
-`x new` writes exactly that; `x upgrade` writes the figures the hop measured into a file that states none, so the floor only falls; a figure the app already wrote is never changed, even when the pass's constant seed (31.47.0) lands above it → [Upgrading](Upgrading). A malformed value is a `manifest`-step problem naming the shape → [CLI reference](CLI-Reference#x-exercise).
+`x new` writes exactly that; `x upgrade` writes the figures the hop measured into a file that states none, so the floor only falls; a figure the app already wrote is never changed, even when the pass's constant seed (31.47.0) lands above it → [Upgrading](Upgrading). A malformed value is a `manifest`-step problem naming the shape → [CLI reference](CLI-Reference-Gate#x-exercise).
 
 `x config show --json` prints the resolved config — defaults merged, credentials redacted; `--section database` for one key (since 31.17.0) → [CLI reference](CLI-Reference).
 

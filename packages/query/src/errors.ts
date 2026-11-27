@@ -50,6 +50,10 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_LIVE_ORDER_COLLATION:
     'a live query is ordered by a text column the matcher cannot order as Postgres does',
   X_QUERY_LIVE_UNBOUNDED: 'a live query declares no limit, so its window is the whole table',
+  // Warned, never thrown — by this package's `validate-unknown-keys.ts` and by its twin in
+  // `@ultimat3/action` (#1281). Titled HERE because this table is server-only: action's is in the
+  // browser `rpc` chunk, and a log-only code buys a browser nothing for its bytes.
+  X_INPUT_UNKNOWN_KEY: 'an input carried a key its schema does not declare',
 };
 
 /**

@@ -31,6 +31,7 @@ export {
 export { JobNotFoundError, JobNotRequeueableError } from './errors-requeue';
 export type { EventBus, JobEvent, PublishOptions } from './events';
 export { freshDefaultEventBus, installEventBus, resetEventBus } from './events';
+export type { JobStatusRow, TenantJobQuery, TenantJobs } from './job-status-port';
 export type { LeaseStore } from './leases';
 export type { OutboxRecord, OutboxStore } from './outbox';
 export type { DefaultRetry } from './retry-default';

@@ -6,6 +6,7 @@
 import { type Clock, isWriteDigest } from '@ultimat3/core';
 import type { ChangeEvent } from './changefeed';
 import { advance, type LiveCursor, makeCursor, type ResumeSource } from './cursor';
+import { signCursor } from './cursor-sign';
 import type { LiveRow, RowPatch } from './json';
 import type { LiveSubscription } from './live-contract';
 import { encodePatchFrame, samePatches } from './live-patch-encode';
@@ -155,15 +156,18 @@ export async function fanoutChange(
       continue;
     }
     if (allowed.length === 0) continue;
+    // Signed BEFORE the send, because the frame carries the sig of the cursor it leaves this
+    // subscriber on — and seated only once the frame left, as the unsigned cursor always was.
+    const next = signCursor(advance(subscription.cursor, allowed, change.lsn, change.at), who);
     let text: string;
     if (samePatches(allowed, result.patches)) {
       shared ??= JSON.stringify(result.patches);
-      text = encodePatchFrame(subscription.sid, shared, change.lsn, writes);
+      text = encodePatchFrame(subscription.sid, shared, change.lsn, writes, next.sig);
     } else {
-      text = encode(patchFrame(subscription.sid, allowed, change.lsn, writes));
+      text = encode(patchFrame(subscription.sid, allowed, change.lsn, writes, next.sig));
     }
     if (subscription.socket.sendEncoded(text)) {
-      subscription.cursor = advance(subscription.cursor, allowed, change.lsn, change.at);
+      subscription.cursor = next;
       sent += 1;
     } else {
       subscription.socket.markDesynced(subscription.sid);
@@ -270,7 +274,10 @@ async function resnapshot(
     // cannot decide is not one to serve rows to, and the next change tries again.
     return false;
   }
-  const cursor = makeCursor(entry.qid, entry.lsn, rows, deps.clock.now().getTime());
+  const cursor = signCursor(
+    makeCursor(entry.qid, entry.lsn, rows, deps.clock.now().getTime()),
+    who,
+  );
   const frame = snapshotFrame(entry, subscription.sid, rows, cursor, named);
   if (!subscription.socket.send(frame)) return false;
   subscription.cursor = cursor;
@@ -386,14 +393,17 @@ function retain(patch: RowPatch, write: string | null): RowPatch {
 /**
  * The one place a patch frame is built, so a live fanout and a delta resume cannot spell it two
  * ways. `writes` rides only when some keyed write made a patch here: an unkeyed change sends the
- * frame it always sent.
+ * frame it always sent. `sig` is the signature of the cursor these patches leave the subscriber on
+ * (`cursor-sign.ts`), last on the frame — `encodePatchFrame` spells the same order.
  */
 export function patchFrame(
   sid: string,
   patches: readonly RowPatch[],
   lsn: string,
   writes: readonly string[],
+  sig?: string,
 ): Frame {
   const base = { type: 'patch', v: PROTOCOL_VERSION, sid, patches, lsn } as const;
-  return writes.length === 0 ? base : { ...base, writes };
+  const named = writes.length === 0 ? base : { ...base, writes };
+  return sig === undefined ? named : { ...named, sig };
 }

@@ -43,10 +43,13 @@ async function untilGeneration(done: () => boolean, what: string): Promise<void>
 
 afterAll(() => clearLock(join(dev.root, '.x')));
 
-const GADGETS_SQL =
-  'create table gadgets (id uuid primary key, label text not null);\n-- down\ndrop table gadgets;\n';
-const writeGadgets = (): Promise<number> =>
-  Bun.write(join(dev.root, 'packages/db/migrations/0001_gadgets.sql'), GADGETS_SQL);
+// One migration per test: the booted app is shared, so a test that re-applies the migration the
+// other one writes leaves byte-identical SQL behind, and under `--randomize` the pass it waits for
+// never becomes pending (#1285).
+const tableSql = (table: string): string =>
+  `create table ${table} (id uuid primary key, label text not null);\n-- down\ndrop table ${table};\n`;
+const writeMigration = (id: string, table: string): Promise<number> =>
+  Bun.write(join(dev.root, `packages/db/migrations/${id}.sql`), tableSql(table));
 
 /** What `cmd-dev.ts` writes once the server reports its address; `startDev` alone does not. */
 async function writeDevLock(): Promise<void> {
@@ -60,7 +63,7 @@ describe('unit · x db migrate beside a live embedded x dev', () => {
     'the running dev server applies the pass, and its own database holds the table',
     async () => {
       const { server } = dev;
-      await writeGadgets();
+      await writeMigration('0001_gadgets', 'gadgets');
       // `x db gen` beside a running dev leaves exactly this: a file the database has not applied.
       // The watcher's generation says so, where the banner used to stay green over a 500.
       await untilGeneration(unapplied, 'a migration on disk the ledger lacks');
@@ -94,8 +97,8 @@ describe('unit · x db migrate beside a live embedded x dev', () => {
   test(
     'x db rollback is run by the same dev server, and the migration is pending again',
     async () => {
-      // Its own setup, so `-t` runs it alone: applied by the holder (a no-op after the test above).
-      await writeGadgets();
+      // Its own setup, so `-t` runs it alone: applied by the dev server that holds the database.
+      await writeMigration('0002_widgets', 'widgets');
       await writeDevLock();
       await dbCommand.run(ctxFor(['db', 'migrate']));
       await untilGeneration(() => !unapplied(), 'the migration applied before its rollback');
@@ -103,9 +106,9 @@ describe('unit · x db migrate beside a live embedded x dev', () => {
       const result = await dbCommand.run(ctxFor(['db', 'rollback']));
 
       expect(result.findings ?? []).toEqual([]);
-      expect((result.data as { reverted: string[] }).reverted).toEqual(['0001_gadgets']);
+      expect((result.data as { reverted: string[] }).reverted).toEqual(['0002_widgets']);
       // The holder's own database lost the table: its `down` ran there, not in a second opener.
-      const read = (await (await dev.runSql("select to_regclass('gadgets') as t")).json()) as {
+      const read = (await (await dev.runSql("select to_regclass('widgets') as t")).json()) as {
         data: { result: { rows: unknown[][] } | null };
       };
       expect(read.data.result?.rows).toEqual([[null]]);
@@ -114,7 +117,7 @@ describe('unit · x db migrate beside a live embedded x dev', () => {
       // Applied again with the schema dump already on disk: this pass writes no file, so only the
       // door's own request for a generation can clear the finding.
       const again = await dbCommand.run(ctxFor(['db', 'migrate']));
-      expect((again.data as { applied: string[] }).applied).toEqual(['0001_gadgets']);
+      expect((again.data as { applied: string[] }).applied).toEqual(['0002_widgets']);
       await untilGeneration(() => !unapplied(), 'the re-applied migration');
     },
     BOOT_TIMEOUT_MS,
