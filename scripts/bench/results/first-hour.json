@@ -2,288 +2,288 @@
   "version": "latest",
   "box": {
     "os": "linux-x64",
-    "cpu": "Intel(R) Xeon(R) 6975P-C",
+    "cpu": "AMD EPYC 9V45 96-Core Processor",
     "cores": 4,
-    "memoryGb": 15,
+    "memoryGb": 16,
     "bun": "1.4.4",
     "runner": "ubuntu26"
   },
   "runs": [
     {
-      "work": "/tmp/first-hour-9egURH",
-      "resolved": "31.46.0",
+      "work": "/tmp/first-hour-lAJFoB",
+      "resolved": "31.49.0",
       "steps": [
         {
           "name": "scaffold",
           "command": "bun x create-ultimate@latest firsthour --no-git",
-          "ms": 2064,
+          "ms": 3541,
           "status": "ok"
         },
         {
           "name": "setup",
           "command": "bun run setup",
-          "ms": 7767,
+          "ms": 8207,
           "status": "ok"
         },
         {
           "name": "verify",
           "command": "bun run verify --json",
-          "ms": 55517,
+          "ms": 45303,
           "status": "ok"
         },
         {
           "name": "first feature",
           "command": "bun x x g resource note --json",
-          "ms": 744,
+          "ms": 825,
           "status": "ok"
         },
         {
           "name": "feature next steps",
           "command": "bun x x db gen create notes && bun x x db migrate && bun x x verify --only budgets",
-          "ms": 7042,
+          "ms": 7820,
           "status": "ok"
         },
         {
           "name": "setup after feature",
           "command": "bun run setup",
-          "ms": 2218,
+          "ms": 2583,
           "status": "ok"
         },
         {
           "name": "verify after feature",
           "command": "bun run verify --json",
-          "ms": 21730,
+          "ms": 24084,
           "status": "ok"
         }
       ],
       "sizes": {
         "appFiles": 311,
-        "nodeModulesMb": 197,
-        "packages": 107,
+        "nodeModulesMb": 196,
+        "packages": 108,
         "homeBytes": 3856,
         "homeJsBytes": 0,
         "imageMb": null
       }
     },
     {
-      "work": "/tmp/first-hour-KvMQeW",
-      "resolved": "31.46.0",
+      "work": "/tmp/first-hour-UwwHJA",
+      "resolved": "31.49.0",
       "steps": [
         {
           "name": "scaffold",
           "command": "bun x create-ultimate@latest firsthour --no-git",
-          "ms": 1418,
+          "ms": 1761,
           "status": "ok"
         },
         {
           "name": "setup",
           "command": "bun run setup",
-          "ms": 7998,
+          "ms": 8196,
           "status": "ok"
         },
         {
           "name": "verify",
           "command": "bun run verify --json",
-          "ms": 22405,
+          "ms": 29627,
           "status": "ok"
         },
         {
           "name": "first feature",
           "command": "bun x x g resource note --json",
-          "ms": 721,
+          "ms": 748,
           "status": "ok"
         },
         {
           "name": "feature next steps",
           "command": "bun x x db gen create notes && bun x x db migrate && bun x x verify --only budgets",
-          "ms": 7167,
+          "ms": 7734,
           "status": "ok"
         },
         {
           "name": "setup after feature",
           "command": "bun run setup",
-          "ms": 2218,
+          "ms": 2537,
           "status": "ok"
         },
         {
           "name": "verify after feature",
           "command": "bun run verify --json",
-          "ms": 22352,
+          "ms": 22763,
           "status": "ok"
         }
       ],
       "sizes": {
         "appFiles": 311,
-        "nodeModulesMb": 197,
-        "packages": 107,
+        "nodeModulesMb": 196,
+        "packages": 108,
         "homeBytes": 3856,
         "homeJsBytes": 0,
         "imageMb": null
       }
     },
     {
-      "work": "/tmp/first-hour-ynNYvF",
-      "resolved": "31.46.0",
+      "work": "/tmp/first-hour-6bIUWH",
+      "resolved": "31.49.0",
       "steps": [
         {
           "name": "scaffold",
           "command": "bun x create-ultimate@latest firsthour --no-git",
-          "ms": 1367,
+          "ms": 1646,
           "status": "ok"
         },
         {
           "name": "setup",
           "command": "bun run setup",
-          "ms": 7862,
+          "ms": 9054,
           "status": "ok"
         },
         {
           "name": "verify",
           "command": "bun run verify --json",
-          "ms": 22722,
+          "ms": 28132,
           "status": "ok"
         },
         {
           "name": "first feature",
           "command": "bun x x g resource note --json",
-          "ms": 751,
+          "ms": 820,
           "status": "ok"
         },
         {
           "name": "feature next steps",
           "command": "bun x x db gen create notes && bun x x db migrate && bun x x verify --only budgets",
-          "ms": 7202,
+          "ms": 8111,
           "status": "ok"
         },
         {
           "name": "setup after feature",
           "command": "bun run setup",
-          "ms": 2229,
+          "ms": 2569,
           "status": "ok"
         },
         {
           "name": "verify after feature",
           "command": "bun run verify --json",
-          "ms": 20864,
+          "ms": 25994,
           "status": "ok"
         }
       ],
       "sizes": {
         "appFiles": 311,
-        "nodeModulesMb": 197,
-        "packages": 107,
+        "nodeModulesMb": 196,
+        "packages": 108,
         "homeBytes": 3856,
         "homeJsBytes": 0,
         "imageMb": null
       }
     },
     {
-      "work": "/tmp/first-hour-fNy4h6",
-      "resolved": "31.46.0",
+      "work": "/tmp/first-hour-i4Ouw5",
+      "resolved": "31.49.0",
       "steps": [
         {
           "name": "scaffold",
           "command": "bun x create-ultimate@latest firsthour --no-git",
-          "ms": 1501,
+          "ms": 1657,
           "status": "ok"
         },
         {
           "name": "setup",
           "command": "bun run setup",
-          "ms": 8056,
+          "ms": 9020,
           "status": "ok"
         },
         {
           "name": "verify",
           "command": "bun run verify --json",
-          "ms": 23115,
+          "ms": 29518,
           "status": "ok"
         },
         {
           "name": "first feature",
           "command": "bun x x g resource note --json",
-          "ms": 731,
+          "ms": 877,
           "status": "ok"
         },
         {
           "name": "feature next steps",
           "command": "bun x x db gen create notes && bun x x db migrate && bun x x verify --only budgets",
-          "ms": 7229,
+          "ms": 8141,
           "status": "ok"
         },
         {
           "name": "setup after feature",
           "command": "bun run setup",
-          "ms": 2274,
+          "ms": 2600,
           "status": "ok"
         },
         {
           "name": "verify after feature",
           "command": "bun run verify --json",
-          "ms": 21248,
+          "ms": 27263,
           "status": "ok"
         }
       ],
       "sizes": {
         "appFiles": 311,
-        "nodeModulesMb": 197,
-        "packages": 107,
+        "nodeModulesMb": 196,
+        "packages": 108,
         "homeBytes": 3856,
         "homeJsBytes": 0,
         "imageMb": null
       }
     },
     {
-      "work": "/tmp/first-hour-nSJRn7",
-      "resolved": "31.46.0",
+      "work": "/tmp/first-hour-amSSyH",
+      "resolved": "31.49.0",
       "steps": [
         {
           "name": "scaffold",
           "command": "bun x create-ultimate@latest firsthour --no-git",
-          "ms": 1602,
+          "ms": 3940,
           "status": "ok"
         },
         {
           "name": "setup",
           "command": "bun run setup",
-          "ms": 7985,
+          "ms": 9800,
           "status": "ok"
         },
         {
           "name": "verify",
           "command": "bun run verify --json",
-          "ms": 23119,
+          "ms": 35192,
           "status": "ok"
         },
         {
           "name": "first feature",
           "command": "bun x x g resource note --json",
-          "ms": 732,
+          "ms": 1009,
           "status": "ok"
         },
         {
           "name": "feature next steps",
           "command": "bun x x db gen create notes && bun x x db migrate && bun x x verify --only budgets",
-          "ms": 7338,
+          "ms": 10034,
           "status": "ok"
         },
         {
           "name": "setup after feature",
           "command": "bun run setup",
-          "ms": 2239,
+          "ms": 3120,
           "status": "ok"
         },
         {
           "name": "verify after feature",
           "command": "bun run verify --json",
-          "ms": 21046,
+          "ms": 31572,
           "status": "ok"
         }
       ],
       "sizes": {
         "appFiles": 311,
-        "nodeModulesMb": 197,
-        "packages": 107,
+        "nodeModulesMb": 196,
+        "packages": 108,
         "homeBytes": 3856,
         "homeJsBytes": 0,
         "imageMb": null
@@ -292,38 +292,38 @@
   ],
   "spread": {
     "scaffold ms": {
-      "min": 1367,
-      "median": 1501,
+      "min": 1646,
+      "median": 1761,
       "n": 5
     },
     "setup ms": {
-      "min": 7767,
-      "median": 7985,
+      "min": 8196,
+      "median": 9020,
       "n": 5
     },
     "verify ms": {
-      "min": 22405,
-      "median": 23115,
+      "min": 28132,
+      "median": 29627,
       "n": 5
     },
     "first feature ms": {
-      "min": 721,
-      "median": 732,
+      "min": 748,
+      "median": 825,
       "n": 5
     },
     "feature next steps ms": {
-      "min": 7042,
-      "median": 7202,
+      "min": 7734,
+      "median": 8111,
       "n": 5
     },
     "setup after feature ms": {
-      "min": 2218,
-      "median": 2229,
+      "min": 2537,
+      "median": 2583,
       "n": 5
     },
     "verify after feature ms": {
-      "min": 20864,
-      "median": 21248,
+      "min": 22763,
+      "median": 25994,
       "n": 5
     },
     "appFiles": {
@@ -332,13 +332,13 @@
       "n": 5
     },
     "nodeModulesMb": {
-      "min": 197,
-      "median": 197,
+      "min": 196,
+      "median": 196,
       "n": 5
     },
     "packages": {
-      "min": 107,
-      "median": 107,
+      "min": 108,
+      "median": 108,
       "n": 5
     },
     "homeBytes": {
