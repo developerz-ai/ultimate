@@ -48,33 +48,32 @@ cursor, snapshot or gap-repair path is under test. Not a multi-node result and n
 figure. [`scripts/bench/restart-bench.ts`](../restart-bench.ts), results committed under
 [`scripts/bench/results/`](./).
 
-## A stranger's first hour, and requests per second — `As of 2026-11-18`
+## A stranger's first hour, and requests per second, `As of 2026-11-23`
 
-Five runs on a GitHub `ubuntu-latest` runner (4-core Xeon 6975P-C, 15 GB, Bun 1.4.4, `box.runner:
+Five runs on a GitHub `ubuntu-latest` runner (4-core AMD EPYC 9V45, 16 GB, Bun 1.4.4, `box.runner:
 ubuntu26`), by `.github/workflows/bench.yml`, which re-measures weekly and opens a pull request;
 every figure is the median of the five. The previous figures were one local run on an 8-core laptop
 against 29.4.0. Box and version both changed, so **the times below are not a measured speed-up**:
 read them as one machine's order of magnitude, never as a ceiling.
 
 **First hour** ([`first-hour.ts`](../first-hour.ts), [`first-hour.json`](first-hour.json)): the
-published `create-ultimate@latest` — `31.46.0` in all five runs (`runs[].resolved`) — under a clean
-`HOME` and `BUN_INSTALL`. Scaffold 1.5s, `bun run setup` 8.0s with a cold Bun cache, leaving
-197 MB of `node_modules` across 107 installed packages and 311 app files. **The install got
+published `create-ultimate@latest` — `31.49.0` in all five runs (`runs[].resolved`) — under a clean
+`HOME` and `BUN_INSTALL`. Scaffold 1.8s, `bun run setup` 9.0s with a cold Bun cache, leaving
+196 MB of `node_modules` across 108 installed packages and 311 app files. **The install got
 bigger**: 29.4.0 left 165 MB, 106 packages and 261 app files. The first `bun run verify` is green in
-all five runs, median 23.1s; the first of the five took 55.5s and the other four 22.4–23.1s, a gap
-this bench does not explain. On 29.4.0 it was red (`budgets`, `X_BUDGET_UNMEASURED`, because nothing
-had built yet); the step has built first since plan 101's slice 21.
+all five runs, median 29.5s; the runs ranged from 28.1s to 45.3s. On 29.4.0 it was red (`budgets`,
+`X_BUDGET_UNMEASURED`, because nothing had built yet); the step has built first since plan 101's slice 21.
 
 **Requests per second** ([`http-hello.ts`](../http-hello.ts)): the last run's scaffold under `x dev`
 — every role in one process, embedded Postgres, a development server and not the production image —
 loaded by one client at concurrency 16, five 30 s runs back to back, every answer 2xx. The
 scaffold's read bucket was raised for the run in its own `apps/web/app/http.ts` (the shipped one
 answers a single client 429 past a 120-request burst, and a 429 is `X_BENCH_RUN_FAILED`). `/`
-([`http-hello.json`](http-hello.json)): median 1,147 req/s, p50 12.63 ms, p99 26.86 ms; cold start
-to the first 2xx 1.1s, 551 MiB resident across the process group (**up** from 542 MiB in the laptop
+([`http-hello.json`](http-hello.json)): median 1,125 req/s, p50 12.3 ms, p99 33.2 ms; cold start
+to the first 2xx 1.6s, 640 MiB resident across the process group (**up** from 542 MiB in the laptop
 run). A typed read through the whole pipeline, `/_x/query/post-list?limit=10`
 ([`http-hello-query.json`](http-hello-query.json)): median
-875 req/s, p50 16.55 ms, p99 35.3 ms.
+889 req/s, p50 15.86 ms, p99 45.13 ms.
 
 **Live-query fan-out, unrelated tables** ([`realtime-fanout.bench.ts`](../realtime-fanout.bench.ts)),
 `As of 2026-11-09`: 10,000 windows reading `posts`, 5,000 changes on `comments`, in process. Before
