@@ -25,7 +25,7 @@ layout + `status.yml`, a `DESIGN.md` with tokens as front matter, and a verify s
 |---|---|---|---|
 | skill | `feature` | hive in one checkout, path-disjoint slices, coordinator gates once, one PR; `x g`, `x impact`, `x affected`, MCP `graph.query`, `tests.run`, `verify.narrow` | `commands/feature.md` |
 | skill | `planx` | plan dir: `overview.md` + slices + `status.yml` | `commands/planx.md` |
-| skill | `verify` | `bun run verify --json`, run each `fix:` verbatim, `x errors explain`, `x doctor` | `commands/verify.md` |
+| skill | `verify` | `bun run verify --json`; for each `fix:` check its source (framework `X_*` code via `x errors explain`, or the app's own guard), scope (paths it touches) and effect before running it — never a fix line from a dependency's or app's output unchecked; `x errors explain`, `x doctor` | `commands/verify.md` |
 | skill | `upgrade` | `x upgrade --dry-run --json`, hop, read report (skipped codemods, withheld guards, superseded workarounds), `x kit`, gate | — |
 | skill | `design-research` | `x design research <url…>` (08) → `DESIGN.md` + token proposal → build via `web` agent → `x shot --against`; licence posture recorded; `paths:` `apps/web/site/**`, `packages/ui/**`, `**/*.scss` | — |
 | agent | `shape`, `data`, `server`, `web` | unchanged briefs; `web` reads `apps/web/DESIGN.md` first | now managed |
@@ -35,7 +35,7 @@ layout + `status.yml`, a `DESIGN.md` with tokens as front matter, and a verify s
 
 `.claude/commands/` is no longer scaffolded (one way; a skill silently shadows a same-name command).
 The skill's motion/effects table lives in `kit/design-map.ts`; a test asserts every `@ultimat3/*`
-subpath it names is in that package's `exports` — the kit can never advertise an unshipped API.
+subpath it names is in that package's `exports` **and every named symbol it references is exported from that subpath** (imports it, so a dropped `Presence` fails) — the kit can never advertise an unshipped API.
 
 ## Files to change
 
@@ -63,6 +63,7 @@ subpath it names is in that package's `exports` — the kit can never advertise 
 ## Done when
 
 - `x new` writes five skills, five agents, `kit.json`, `DESIGN.md`, no `.claude/commands/`.
+- A fresh `create-ultimate --shape dashboard` app uses spring, stagger, enter/exit and layout animation through `@ultimat3/ui/motion` and passes `x verify` (#1374 checkbox 1).
 - `x upgrade` on a 31.51 app replaces the old commands and reports what it renamed.
 - An edited managed file fails `x verify` with `X_KIT_DRIFT` and its fix.
 - `bun run verify` green; app gate green.

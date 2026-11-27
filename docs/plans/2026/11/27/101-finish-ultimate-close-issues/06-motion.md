@@ -53,7 +53,7 @@ already `startViewTransition`, skipped under reduced motion); `ui` adds names an
 
 ## Done when
 
-- A fresh `create-ultimate` app uses spring, stagger, enter/exit and layout animation through `@ultimat3/ui/motion` and passes `x verify` (#1374 checkbox 1).
+- `examples/dummy` uses spring, stagger, enter/exit and layout animation through `@ultimat3/ui/motion` and passes the app gate. (The fresh-scaffold check — #1374 checkbox 1 — is slice 09's, after scaffold adoption.)
 - `raw-motion` catches a literal duration in TS; the adapter's calls are silent.
 - Barrel-only islands carry zero motion bytes (pinned).
 - `bun run verify` green; `bun run scripts/reference-app-gate.ts` green.

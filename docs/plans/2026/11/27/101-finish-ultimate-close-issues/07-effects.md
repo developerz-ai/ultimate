@@ -22,8 +22,8 @@ island. A fallback is not a prop — the static frame is the fallback.
 
 | Tier | When | `data-effect-backend` |
 |---|---|---|
-| static first frame | server render, no JS, reduced motion, `data-motion="paused"` | `static` |
-| CSS | `site/` pages, any island before hydration | `css` |
+| static | reduced motion, `data-motion="paused"`, or an entry with no CSS animation — a still frame | `static` |
+| CSS | server render of an entry whose CSS animates (every `site/` page; any island before hydration); CSS itself freezes it under reduced motion via `reset.scss:155-167`, while the label stays `css` | `css` |
 | Canvas2D | island, no WebGL2 | `canvas` |
 | WebGL2 | island, `getContext('webgl2')` succeeds, not lost | `webgl2` |
 
@@ -48,11 +48,11 @@ island. A fallback is not a prop — the static frame is the fallback.
 | `Marquee` | interaction | reui/React Bits | pauses on hover, focus-within, `MotionToggle`; duplicate track `aria-hidden`; RTL logical direction |
 | `TextReveal` (`by: word \| line \| char`) | text | React Bits split/blur text | one readable node + `aria-hidden` split; `Intl.Segmenter` with locale |
 | `CountUp` | text | React Bits count-up | final value server-rendered; `Intl.NumberFormat` with `useUi().locale`; `Money`-aware |
-| `Shimmer` | text/surface | React Bits shiny text | replaces private `ultimate-shimmer` (`Skeleton.module.scss:3`); `Skeleton` adopts it |
+| `Shimmer` | text/surface | React Bits shiny text | the shimmer itself moves to `ui` as `@mixin shimmer` in `packages/ui/src/tokens/_effects.scss`, replacing private `ultimate-shimmer` (`Skeleton.module.scss:3`) — `Skeleton` uses the mixin; `effects`' `Shimmer` component consumes it (imports go down only) |
 
 Later sweeps (one PR each, same contract): particles, beams, dot-wave, magnetic button, border beam,
 scroll progress, scramble text, parallax, audio-visualizer bars (pull into the starter PR if the
-acceptance run in 10 needs it).
+acceptance run in 12 needs it).
 
 ## Files to change
 

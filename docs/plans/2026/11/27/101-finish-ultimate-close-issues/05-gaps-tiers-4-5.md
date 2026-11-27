@@ -28,7 +28,7 @@ definition, never a default on `main`.
 
 - `packages/testing/src/plan-budget.test.ts` (pure, JSON fixtures), `plan-budget-embedded.test.ts`.
 - `packages/testing/src/race-actions.live.test.ts`.
-- `packages/mcp/src/{from-action,runtime-tool,remote-tools}.test.ts` — byte-equal fence, no `\n`/`\"` escapes, on HTTP and stdio; fence red-team cases still hold; JSON tools byte-identical.
+- `packages/mcp/src/{from-action,runtime-tool,remote-tools}.test.ts` — the **decoded** text block equals the original fence byte for byte on HTTP and stdio (the JSON-RPC envelope still escapes; what is forbidden is a second serialization layer inside the text); fence red-team cases still hold; JSON tools byte-identical.
 
 ## Done when
 

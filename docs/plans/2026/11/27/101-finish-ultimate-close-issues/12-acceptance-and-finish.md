@@ -11,7 +11,7 @@
    - transcript shows the `design-research` skill / `x design research` ran before any UI file was written.
    - result uses `Presence`, a spring rung, `stagger`, `layout()`, ≥ 1 background effect, a live visualizer through `frameLoop`.
    - `x shot --matrix` and `--all-islands` cover reduced-motion and no-WebGL states.
-   - side-by-side contact sheet vs the issue's Vite + React + Motion build, judged by a fresh `architecture-reviewer`-style agent given only the two contact sheets and the issue's acceptance list; its verdict and reasons go in the record.
+   - side-by-side contact sheets **and short screen recordings of the same interactions** (intro, login success, music playback with the visualizer) vs the issue's Vite + React + Motion build — stills cannot show smoothness or a visualizer reacting — judged by a fresh `architecture-reviewer`-style agent given only the contact sheets, the recordings and the issue's acceptance list; its verdict and reasons go in the record.
 4. Run on Windows 11 as well (the reporter's platform).
 5. Record in `docs/history/motion-acceptance.md` (shots stay in `.x/`, not committed); close #1374 with each checkbox mapped: 1 → 06, 2 → `wiki/Motion.md` Solid mapping (React islands declined, `wiki/FAQ.md:60`), 3 → 08 + 09, 4 → 07 (in `@ultimat3/effects` by decision), 5 → this run.
 

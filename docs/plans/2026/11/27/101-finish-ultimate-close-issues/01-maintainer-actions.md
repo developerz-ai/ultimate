@@ -10,8 +10,8 @@
 | 2 | Stop #1298 recurring: if `gh secret list` shows no `NEXT_SYNC_TOKEN`, the coordinator repeats action 1 after every sweep that touches `.github/workflows/` (a fine-grained token cannot be minted from the CLI) | `git push origin origin/main:next` | — |
 | 3 | Re-run compat. bun-canary's last reds (`render/src/island-props.test.ts:97`, `testing/src/isolated-plugins.test.ts:102`) were fixed by d60c657ad (#1300) and fa0f2badf (#1292). | `gh workflow run compat.yml`; `scripts/compat-file.ts` closes on green | #1164 (bun-latest #1239 needs 02 first) |
 | 4 | Refresh the parked-breaks tracker: its body lists 11 rows, `scripts/lib/next-breaks-list.ts` has 20 | `gh issue edit 1162 --body-file <(bun run scripts/next-breaks.ts)` — re-run after 03 and 04 add the #1280/#1281 rows | keeps #1162 truthful (closes only after the 2027-02-08 window, `wiki/Stability.md:5`) |
-| 5 | Release the unreleased fixes a downstream app waits on: #1367 (`outbound({ refusal: { headers } })`), #1375 (split catalogs), plus sweep 1 | `bun run scripts/release.ts --check <version>`; release PR per [`PUBLISHING.md`](../../../../../../PUBLISHING.md) | unblocks 11 |
-| 6 | Land or close open PRs before sweep 1: #1369 (`updateWhereReturning`), #1299 (bench figures) | review + merge | — |
+| 5 | **After sweep 1 merges** (not before): release the unreleased fixes a downstream app waits on — #1367 (`outbound({ refusal: { headers } })`), #1375 (split catalogs) — together with sweep 1 | `bun run scripts/release.ts --check <version>`; release PR per [`PUBLISHING.md`](../../../../../../PUBLISHING.md) | unblocks 11 |
+| 6 | **Prerequisite of sweep 1** (with actions 1–4): land or close open PRs: #1369 (`updateWhereReturning`), #1299 (bench figures) | review + merge | — |
 
 ## Done when
 

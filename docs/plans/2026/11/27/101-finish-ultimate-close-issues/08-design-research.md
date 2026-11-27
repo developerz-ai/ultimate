@@ -14,10 +14,10 @@ Falsified claim: #1374 says the scaffold "ships Playwright MCP". It does not —
 
 | Piece | Shape | Extends |
 |---|---|---|
-| `x design research <url…> [--follow <n>] [--out .x/design] [--viewport] [--allow-hosts] [--json]` | per URL: `shot-390.png`, `shot-1440.png` (light/dark), `reference.json` (palette clusters by usage, font families + scale, spacing histogram, radii, shadows, `backdrop-filter` use, each `getAnimations()`/transition: duration, easing, delay, trigger enter/hover/scroll), `tokens.proposal.json` (a `defineTheme({ colors, radius, motion })` argument passing its own contrast checks), `motion-map.json` (observed animation → `@ultimat3/ui/motion` call or `@ultimat3/effects` entry), `sources.json` (URL, licence posture applied: `ideas-only` \| `mit-attribution` \| `apache-notice`) | `cdp-shot-driver.ts`, `mcp-ui-inspect.ts`, `mcp-ui-interact.ts`, `shot-viewport.ts`, `cmd-shot-spec.ts` flags |
+| `x design research <url…> [--follow <n>] [--out .x/design] [--viewport] [--allow-hosts] [--json]` | per URL: `shot-<viewport>-<scheme>.png` (`390`/`1440` × `light`/`dark`), `reference.json` (palette clusters by usage, font families + scale, spacing histogram, radii, shadows, `backdrop-filter` use, each `getAnimations()`/transition: duration, easing, delay, trigger enter/hover/scroll), `tokens.proposal.json` (a `defineTheme({ colors, radius, motion })` argument passing its own contrast checks), `motion-map.json` (observed animation → `@ultimat3/ui/motion` call or `@ultimat3/effects` entry), `sources.json` (URL, licence posture applied: `ideas-only` \| `mit-attribution` \| `apache-notice`) | `cdp-shot-driver.ts`, `mcp-ui-inspect.ts`, `mcp-ui-interact.ts`, `shot-viewport.ts`, `cmd-shot-spec.ts` flags |
 | `x design research --list` | default reference sources as data (React Bits, 21st.dev, Paper Shaders, shaders.com, reui, shadcn/ui, Motion) with licence posture | `messages-design.ts` |
 | `--follow <n>` | visits ≤ n same-origin links — the site is a catalogue | `--allow-hosts` semantics |
-| `x shot <route> --against <png \| .x/design/<slug>>` | writes `diff.png` + similarity into `verdict.json`; recorded, never gating | `diffShots` moved from `mcp-ui-diff.ts` to a shared module |
+| `x shot <route> --against <png \| .x/design/<slug>>` | a slug compares each of the route's shots with the reference shot of the same viewport and scheme (missing pair ⇒ `X_SHOT_AGAINST_MISSING`); writes `diff-<viewport>-<scheme>.png` + similarity into `verdict.json`; recorded, never gating | `diffShots` moved from `mcp-ui-diff.ts` to a shared module |
 | dev MCP `ui.research` | the same command (axiom 2) | `mcp-ui.ts`; `packages/mcp` `DevCapabilities` type |
 
 Page text from a reference is untrusted data: never written into prompts or files except as measured
@@ -29,7 +29,7 @@ values. Third-party pixels stay in `.x/` (gitignored); nothing captured is commi
 - `packages/cli/src/templates/motion-scale.ts` (from 06) — `design-map.ts` snaps durations/easings with it; palette → nearest role via the theme's contrast tables.
 - `packages/cli/src/cmd-shot.ts`, `cmd-shot-spec.ts` — `--against`; `packages/cli/src/shot-diff.ts` (new shared home of `diffShots`); `mcp-ui-diff.ts` imports it.
 - `packages/cli/src/mcp-ui.ts`, `packages/mcp/src/dev-agent-tools.ts` — `ui.research`.
-- Error codes (`bun run new-error-code … --package cli --off-socket`): `X_DESIGN_URL_REFUSED` (not http(s), private/loopback host — reuse `@ultimat3/scraping`'s outbound host guard if it has one; check first), `X_DESIGN_REFERENCE_UNREACHABLE` (navigation failed/timed out; fix: `--timeout <ms>` or drop the URL), `X_SHOT_AGAINST_MISSING` (fix: `bunx x design research <url>` first).
+- Error codes (`bun run new-error-code … --package cli --off-socket`): `X_DESIGN_URL_REFUSED` (not http(s), private/loopback host — reuse `@ultimat3/scraping`'s outbound host guard if it has one; check first). The check is **browser-wide**, not only on the submitted URL: the CDP driver intercepts every request (`Fetch.enable` on all patterns) and fails any navigation, redirect or subresource to a private/loopback/link-local address, for both the CLI and `ui.research`, `X_DESIGN_REFERENCE_UNREACHABLE` (navigation failed/timed out; fix: `--timeout <ms>` or drop the URL), `X_SHOT_AGAINST_MISSING` (fix: `bunx x design research <url>` first).
 - `wiki/Design-Research.md` (new), `wiki/CLI-Reference.md` rows.
 
 ## Steps
@@ -42,7 +42,7 @@ values. Third-party pixels stay in `.x/` (gitignored); nothing captured is commi
 ## Tests
 
 - `design-map.test.ts` — nearest role/rung; proposal passes `defineTheme`.
-- `cmd-design.test.ts` — local fixture server; refusal tests for private hosts; `--follow` cap.
+- `cmd-design.test.ts` — the fixture server is reached through a test-only host allowance injected by the harness (never a CLI flag), so extraction is exercised; separately, the default path refuses the same loopback address; a public fixture page that redirects or loads a subresource from a private address gets no request through; `--follow` cap.
 - `cmd-shot-against.test.ts` — identical image ⇒ similarity 1; missing reference ⇒ `X_SHOT_AGAINST_MISSING`.
 - Browser tests live in the `e2e` step with existing `shot-browser` discovery/skip semantics (Windows CI has Chrome).
 - `bun test ./packages/cli/src/design-map.test.ts`.

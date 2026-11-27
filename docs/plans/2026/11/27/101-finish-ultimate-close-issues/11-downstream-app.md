@@ -25,7 +25,7 @@ was verified against this repo's `main` at `5a998a869`.
 | Capability | Slice | App action |
 |---|---|---|
 | `service.name` from app config (#1361) | 02 | drop any manual `OTEL_SERVICE_NAME` workaround |
-| plan judge exported from `@ultimat3/testing` | 05 | delete its `packages/db/src/testing/plan-judge.ts` + `plan.ts`; keep its ceilings as app numbers |
+| `expectPlanWithin` from `@ultimat3/testing` | 05 | delete its `packages/db/src/testing/plan-judge.ts` + `plan.ts`; keep its ceilings as app numbers |
 | mail recipient distinct from store key | 03 | delete its `runtimeOf` workaround in its identity service-link module |
 | default egress proxy for framework senders | 03 | remove per-call proxy plumbing |
 | verbatim MCP text (only if its escaping measurement > 15%) | 05 | switch the gateway result path |
