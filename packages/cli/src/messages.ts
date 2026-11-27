@@ -172,6 +172,8 @@ const CATALOG = {
   // say "this locale's slots drifted and this string was never translated".
   'cli.i18n.parity':
     '{count} locale-parity finding(s) across {locales} locale(s) — a slot or an untranslated copy against {reference}',
+  'cli.i18n.split':
+    'split {locales} locale(s) into {files} namespace file(s) — {moved} moved from a flat file',
   'cli.i18n.synced': 'synced {locale} from {from} — {added} key(s) added, {total} total',
   'cli.i18n.unused': '{count} key(s) defined in {locale} and never used:',
   'cli.mail.preview.missing':

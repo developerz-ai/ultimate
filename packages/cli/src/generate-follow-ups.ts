@@ -26,11 +26,16 @@ export interface FollowUps {
   readonly findings: readonly Finding[];
 }
 
-/** The locale each written catalog file is for: a dry run's catalogs are not on the disk yet. */
+/**
+ * The locale each written catalog file is for: a dry run's catalogs are not on the disk yet. A
+ * flat `<locale>.json`, or any namespace file under a split locale's `<locale>/`.
+ */
 const writtenLocales = (written: readonly string[]): readonly string[] =>
   written.flatMap((path) => {
     const stem = path.startsWith(`${CATALOG_ROOT}/`) ? path.slice(CATALOG_ROOT.length + 1) : '';
-    return stem.endsWith('.json') && !stem.includes('/') ? [stem.slice(0, -'.json'.length)] : [];
+    if (!stem.endsWith('.json')) return [];
+    const slash = stem.indexOf('/');
+    return [slash === -1 ? stem.slice(0, -'.json'.length) : stem.slice(0, slash)];
   });
 
 export async function followUpEdits(
@@ -55,7 +60,7 @@ export async function followUpEdits(
   // A catalog on disk and a locale the app can select are two facts — see `syncI18nIndex`.
   const indexSync =
     written.length > 0
-      ? await syncI18nIndex(root, disk, writtenLocales(written))
+      ? await syncI18nIndex(root, disk, [...new Set(writtenLocales(written))], written)
       : { registered: true, findings: [] };
   return {
     edited: [

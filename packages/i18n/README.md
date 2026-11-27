@@ -12,6 +12,7 @@ strings: format those with `Intl` via [@ultimat3/money](../money) and [@ultimat3
 | Registration | `define-catalogs.ts` | `defineCatalogs()` — one call, at boot, per app |
 | Lookup + interpolation | `translator.ts` | `t(key, vars?)`, miss → `⟦key⟧` |
 | Catalog shape | `catalog.ts` | nested authoring → flat dot-keys |
+| Split catalogs | `catalog-files.ts` | a locale's namespace files joined, each key in one file |
 | Placeholders + plurals | `interpolate.ts` | `{var}`, CLDR categories via `Intl.PluralRules` |
 | Locale resolution | `locales.ts` | supported set, `normalizeLocale`, `negotiateLocale` |
 | Request locale | `context.ts` | resolved once, read from ALS — never passed by hand |
@@ -104,6 +105,25 @@ Spanish one, its own strings on top. A language the framework does not ship (`de
 every locale with the English catalog is a fallback chain, it reads as `isMiss === false`, and
 `auditCatalogs()` cannot see it because `CatalogSet.catalogs` carries app strings only.
 
+### Split catalogs
+
+**A locale is one file or one directory of namespace files, never both.** `As of 2026-11`.
+
+| Form | Holds | Index imports |
+|---|---|---|
+| flat | `catalogs/en.json`: every namespace | `import en from '../catalogs/en.json'` |
+| split | `catalogs/en/<namespace>.json`: that namespace's subtree; `site/home.json` is `site.home.*` | `import { catalog as en } from '../catalogs/en'` — the generated barrel `catalogs/en/index.ts` |
+
+`bunx x i18n split [<locale>]` migrates, losslessly and idempotently. This package reads no file:
+the CLI hands each one over parsed, and these are the pure halves.
+
+| Export | Does |
+|---|---|
+| `joinCatalogFiles(files)` | `{ path, name, value }[]` → one `Catalog`; a key two files define, or a leaf one file defines that another nests under, is `X_CATALOG_KEY_DUPLICATE` naming both |
+| `partitionCatalog(catalog, names?)` | the inverse: file name → its keys, each key in the existing file of its longest prefix, else its namespace's own; a top-level key is `X_CATALOG_INVALID` |
+| `catalogFilePrefix(name)` · `catalogFileName(prefix)` | `site/home.json` ↔ `site.home` |
+| `catalogLayoutMixed(locale)` | `X_CATALOG_LAYOUT_MIXED`, raised by the CLI for `en.json` beside `en/` |
+
 ## A catalog slice for an island
 
 A translator is a function and cannot be an island's prop. `catalogSubset(t, keys)` resolves the
@@ -157,6 +177,8 @@ X_CATALOG_MISSING_KEYS: catalog is incomplete
 | `X_LOCALE_INVALID` | `defineCatalogs` or `configureLocales` was given a tag that is not well-formed BCP 47 (`en_US`). **`@ultimat3/core`'s code**, raised by its `assertLocale` — not this package's `I18nError` |
 | `X_CATALOG_MISSING_KEYS` | a shipped locale lacks a key the source uses |
 | `X_CATALOG_INVALID` | non-string leaf, bad key segment, or a dotted/nested collision |
+| `X_CATALOG_LAYOUT_MIXED` | a locale has both `catalogs/<locale>.json` and `catalogs/<locale>/` |
+| `X_CATALOG_KEY_DUPLICATE` | two namespace files of one split locale define one key |
 
 ### Error classes
 
@@ -165,7 +187,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
-| `I18nError` | `X_LOCALE_UNSUPPORTED`, `X_CATALOG_MISSING_KEYS`, `X_CATALOG_INVALID`, `X_CATALOG_UNREGISTERED` | `src/errors.ts` |
+| `I18nError` | `X_LOCALE_UNSUPPORTED`, `X_CATALOG_MISSING_KEYS`, `X_CATALOG_INVALID`, `X_CATALOG_UNREGISTERED`, `X_CATALOG_LAYOUT_MIXED`, `X_CATALOG_KEY_DUPLICATE` | `src/errors.ts` |
 
 ## Why it exists
 

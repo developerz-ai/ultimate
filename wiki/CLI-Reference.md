@@ -52,7 +52,7 @@ x version              # CLI version
 | `x policy` | which clause decided a permission, and why | shipped |
 | `x exercise [<name>] [--seed n\|random] [--shard i/n]` | run every action, query, job and route `load` once on generated rows, with no test written; the gate's `exercise` step | shipped |
 | `x drill [<name>] [--list] [--budget-ms n]` | the app's roles as real processes on real Postgres, Redis and NATS, each dependency faulted through a proxy, each role signalled, or every role started before `ROLE=migrate`, red on any framework contract that does not hold. Not a gate step: it needs the services | shipped |
-| `x i18n` | add, sync, check catalogs | shipped |
+| `x i18n` | add, sync, check, split catalogs | shipped |
 | `x mail preview <id>` | render a mail's declared `preview` in every locale, nothing sent | shipped |
 | `x test <type>` | run one of the six test types, or the whole suite | shipped |
 | `x clean [--dry-run] [--services]` | remove what test runs leave behind: migrated test templates, `.x/cache`, stray `.x` folders, stale probe databases; `--services` stops this checkout's test stack and lists the machine's others | shipped |
@@ -1725,18 +1725,19 @@ Errors: `X_DECLARATION_UNKNOWN`, `X_CLI_BAD_FLAG`.
 ## x i18n
 
 ```bash
-x i18n [check|add <locale>|sync <locale>] [--json]
+x i18n [check|add <locale>|sync <locale>|split [<locale>]] [--json]
 ```
 
 | Subcommand | Does |
 |---|---|
 | `check` | scan every `t('…')` in the app's source, audit it against every catalog on disk, and **fail** on a missing key |
-| `add <locale>` | write `packages/i18n/catalogs/<locale>.json` seeded with the default locale's keys and values |
-| `sync <locale>` | add the keys that locale is missing; a key it already has is never overwritten, translated or not |
+| `add <locale>` | write `packages/i18n/catalogs/<locale>.json` seeded with the default locale's keys and values — `catalogs/<locale>/`, one file per namespace, when the default locale is split |
+| `sync <locale>` | add the keys that locale is missing; a key it already has is never overwritten, translated or not. A split locale's key lands in its namespace file, created if new |
+| `split [<locale>]` | move every flat catalog (or the one named) into `packages/i18n/catalogs/<locale>/<namespace>.json` with a generated `index.ts`, rewrite the app's index import, widen `.gitattributes`' catalog rule, delete the flat file. Lossless and idempotent. `--json`: `data.locales[]` (`{ locale, from, keys, files }`), `data.written`, `data.removed` |
 
-Catalogs are one flat file per locale under `packages/i18n/catalogs/`. `check` reports three things separately: `missing` (a gap, and an exit code), `unused` (defined and never called), and `dynamic` — a `t(`plans.${plan}.name`)` the extractor cannot resolve. A dynamic call contributes its static head as a runtime-key prefix, so a key only ever reached that way is never listed unused; an expression with no static head contributes nothing, because a guessed prefix would suppress real gaps.
+Catalogs are one file per locale under `packages/i18n/catalogs/`, or one directory per locale of namespace files ([I18n](I18n#split-catalogs)). `check` reports three things separately: `missing` (a gap, and an exit code), `unused` (defined and never called), and `dynamic` — a `t(`plans.${plan}.name`)` the extractor cannot resolve. A dynamic call contributes its static head as a runtime-key prefix, so a key only ever reached that way is never listed unused; an expression with no static head contributes nothing, because a guessed prefix would suppress real gaps.
 
-Errors: `X_CATALOG_MISSING_KEYS` (per locale, as a finding), `X_I18N_FAMILY_INCOMPLETE` (a `_select_`/`_ordinal_` family with no `_other`), `X_CATALOG_INVALID`, `X_GENERATE_CONFLICT` (`add` over an existing catalog), `X_CLI_BAD_FLAG`, `X_SCAFFOLD_PATH_ESCAPE`.
+Errors: `X_CATALOG_MISSING_KEYS` (per locale, as a finding), `X_I18N_FAMILY_INCOMPLETE` (a `_select_`/`_ordinal_` family with no `_other`), `X_CATALOG_INVALID`, `X_CATALOG_LAYOUT_MIXED` (`<locale>.json` beside `<locale>/`), `X_CATALOG_KEY_DUPLICATE` (one key in two namespace files), `X_GENERATE_CONFLICT` (`add` over an existing catalog), `X_CLI_BAD_FLAG`, `X_SCAFFOLD_PATH_ESCAPE`.
 
 ## x mail
 

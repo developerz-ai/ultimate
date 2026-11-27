@@ -9,6 +9,7 @@ Imported by every package that renders a string.
 |---|---|
 | `translator.ts` | lookup + delegate interpolation, and `TranslationKey`. No locale logic. |
 | `catalog.ts` | nested → flat, merge, validate. No lookup. |
+| `catalog-files.ts` | a split locale's namespace files joined into one catalog and partitioned back. Pure: the CLI reads the files. |
 | `define-catalogs.ts` | the app's one registration call. Boot only, composes the four below. |
 | `interpolate.ts` | `{var}` + CLDR plural selection. No catalog access (takes a `has` predicate). |
 | `locales.ts` | supported set, normalize, negotiate, RTL. No catalogs. |
@@ -17,7 +18,7 @@ Imported by every package that renders a string.
 | `app-catalogs.ts` | an app's declared locales, read by importing its catalog module — `loadAppCatalogs` (`undefined` when undeclared) and `appLocaleSet` (`UNDECLARED_LOCALES` then). The ONE reader: a CLI step never reads `localeConfig()`/`routedLocales()` after `loadApp`; it reads `LoadedApp.locales`. Tooling only: the `./app-catalogs` entry, never `index.ts` (it is in every island). |
 | `registration.ts` | are the catalogs an app SHIPS in the registry it READS? No file access. |
 | `extract.ts` | static scan + audit for `x verify`. |
-| `catalogs/<locale>.json` | data, not code: `en` the source, `ro`, `es`, `pt-BR` its translations. |
+| `catalogs/<locale>.json` | data, not code: `en` the source, `ro`, `es`, `pt-BR` its translations. The framework's own stay flat; an APP's may be split (`catalog-files.ts`). |
 | `recording-translator.ts` | a translator that records what it could not answer: `TranslationMiss` |
 
 ## Rules
