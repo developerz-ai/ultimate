@@ -21,6 +21,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- `x verify`'s `contract-diff` step classifies an input schema that only ADDS values to an `enum` (a new webhook topic, a status a filter takes) as `additive`, not `breaking`, when the enum sits where accepting more cannot refuse anything (`properties`, `items`, `anyOf`, `allOf` and their like): every payload the old schema accepted, the new one accepts. A widening under `oneOf`, `not`, `if` or `const`, a removed value, or any other change beside it is still `breaking`; an enum only reordered is no change.
 - `x shot --island` judges a picture by its pixels, not its byte count: a crop every pixel of which is one colour (within 2 levels per channel) or fully transparent is `X_SHOT_ISLAND_UNPHOTOGRAPHABLE` with the crop's fix, and bytes no decoder reads keep the browser's. The 512-byte floor refused a real 36 px flat button (372 bytes) as blank; `MIN_SHOT_BYTES` is now the smallest complete PNG, 67, a backstop only.
 - `Dialog` and `Drawer` reserve the close button's column: the header is a `minmax(0, 1fr) auto` grid and the title wraps with `overflow-wrap: anywhere`, so a long title ("Redenumește acest PC", one unbreakable word) no longer runs under the × or squeezes it at 320 px, in either direction (`packages/cli/e2e/ui-dialog-header.e2e.test.ts`).
 
