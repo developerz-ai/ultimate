@@ -97,8 +97,12 @@
   block-size: 100%;
 }
 
+// A grid, not a flex row: the close button's column is reserved at its own size, and the title's
+// `minmax(0, 1fr)` may only wrap inside what is left. In a flex row a long word ("Redenumește
+// acest PC" at 320px) squeezed the button and ran under it.
 .header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: t.space(3);
   padding-block: t.space(3);
@@ -107,9 +111,10 @@
 }
 
 .title {
-  flex: 1;
   min-inline-size: 0;
   font-size: t.text(lg);
+  // One unbreakable word still wraps, inside its column, never under the button.
+  overflow-wrap: anywhere;
 }
 
 .body {

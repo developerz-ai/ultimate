@@ -137,13 +137,13 @@ afterEach(() => {
 });
 
 describe('unit · x i18n spec', () => {
-  test('names all three subcommands, check first, and requires an app', () => {
-    expect(I18N_SUBCOMMANDS).toEqual(['check', 'add', 'sync']);
+  test('names all four subcommands, check first, and requires an app', () => {
+    expect(I18N_SUBCOMMANDS).toEqual(['check', 'add', 'sync', 'split']);
     expect(i18nCommand.spec.subcommands).toBe(I18N_SUBCOMMANDS);
     expect(i18nCommand.spec.name).toBe('i18n');
     expect(i18nCommand.spec.requiresApp).toBe(true);
-    expect(i18nCommand.spec.summary).toBe('catalogs: add a locale, sync keys, check for gaps');
-    expect(i18nCommand.spec.usage).toBe('x i18n [check|add <locale>|sync <locale>] [--json]');
+    expect(i18nCommand.spec.summary).toContain('check for gaps, split into namespace files');
+    expect(i18nCommand.spec.usage).toContain('sync <locale>|split [<locale>]] [--json]');
   });
 });
 

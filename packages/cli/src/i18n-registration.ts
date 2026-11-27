@@ -25,6 +25,8 @@ import { APP_CATALOGS_PATH } from '@ultimat3/i18n/app-catalogs';
 import { mountedAdminKeys } from './admin-catalog-keys';
 import type { LoadedApp } from './app-load';
 import { loadApp } from './app-load';
+import type { CatalogLayout } from './catalog-layout';
+import { catalogLocation } from './catalog-layout';
 import type { DuplicateProbe } from './duplicate-packages';
 import { duplicateCause, duplicateFinding, findDuplicateInstalls } from './duplicate-packages';
 import { auditApp } from './i18n-audit';
@@ -33,7 +35,7 @@ import { mailPreviewFindings } from './mail-preview-findings';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { quoteArg } from './shell-quote';
-import { CATALOG_ROOT, catalogPath } from './templates/locales';
+import { CATALOG_ROOT } from './templates/locales';
 
 /** The one package this check probes for a duplicate: its registry is the one it reads. */
 const I18N_PKG = '@ultimat3/i18n';
@@ -48,8 +50,10 @@ export type AppLoader = (root: string) => Promise<Pick<LoadedApp, 'findings' | '
 
 export interface RegistrationInput {
   readonly root: string;
-  /** The catalogs on disk, parsed — `packages/i18n/catalogs/*.json`. */
+  /** The catalogs on disk, parsed — `packages/i18n/catalogs/*.json` and `catalogs/<locale>/`. */
   readonly catalogs: Readonly<Record<Locale, Catalog>>;
+  /** Each locale's form on disk, so a finding names the file or directory it is about. */
+  readonly layout?: CatalogLayout;
   readonly extraction: Extraction;
   readonly ignoreUnused: readonly string[];
   readonly load?: AppLoader;
@@ -105,19 +109,20 @@ export async function checkRegistration(input: RegistrationInput): Promise<Regis
   const findings: Finding[] =
     duplicate === undefined ? [] : [duplicateFinding(input.root, duplicate, RECHECK)];
   for (const gap of gaps) {
-    const finding = findingFrom(catalogUnregistered(gap));
+    const at = catalogLocation(input.layout, gap.locale);
+    const finding = findingFrom(catalogUnregistered({ ...gap, file: at }));
     findings.push(
       duplicate === undefined
-        ? { ...finding, ...unregisteredFix(gap.locale, index), at: catalogPath(gap.locale) }
+        ? { ...finding, ...unregisteredFix(gap.locale, index), at }
         : // The registry's own fix names a source edit — move the `defineCatalogs()` call — that an
           // agent following it performs on a file that is already right (one adopter, 2026-09-05).
           // With a duplicate on disk the cause IS the install, so the finding says so and the fix
           // is the one the duplicate carries.
           {
             ...finding,
-            cause: `${duplicateCause(input.root, duplicate)}; ${gap.missing.length} of ${catalogPath(gap.locale)}'s ${gap.shipped} key(s) registered into the copy the CLI does not read`,
+            cause: `${duplicateCause(input.root, duplicate)}; ${gap.missing.length} of ${at}'s ${gap.shipped} key(s) registered into the copy the CLI does not read`,
             fix: findings[0]?.fix ?? finding.fix,
-            at: catalogPath(gap.locale),
+            at,
           },
     );
   }
@@ -142,7 +147,7 @@ export async function checkRegistration(input: RegistrationInput): Promise<Regis
     .filter((tag) => !unregisteredSet.has(tag))
     .sort()) {
     const missing = unanswered(catalogFor(locale), adminKeys);
-    if (missing.length > 0) findings.push(adminKeysFinding(locale, missing));
+    if (missing.length > 0) findings.push(adminKeysFinding(locale, missing, input.layout));
   }
 
   return {
@@ -180,8 +185,13 @@ const ADMIN_KEYS_WRITTEN =
   'writes each key above: in the default locale the label x g resource --admin generates, a real string to keep or reword; in any other locale that label inside ⟦…⟧, to translate';
 
 /** The finding with the code's own COMMAND and a comment that is true of what it writes. */
-function missingKeysFinding(locale: Locale, missing: readonly string[], written: string): Finding {
-  const finding = findingFrom(catalogMissingKeys(locale, missing));
+function missingKeysFinding(
+  locale: Locale,
+  missing: readonly string[],
+  written: string,
+  layout: CatalogLayout | undefined,
+): Finding {
+  const finding = findingFrom(catalogMissingKeys(locale, missing, catalogLocation(layout, locale)));
   const [command = finding.fix] = finding.fix.split('   #');
   return { ...finding, fix: `${command}   # ${written}` };
 }
@@ -192,12 +202,16 @@ function missingKeysFinding(locale: Locale, missing: readonly string[], written:
  * too (`cmd-i18n.ts`), nested. The hand edit this used to name was a dotted key, which
  * `loadCatalog` refuses as `X_CATALOG_INVALID`.
  */
-function adminKeysFinding(locale: Locale, missing: readonly string[]): Finding {
-  const path = catalogPath(locale);
+function adminKeysFinding(
+  locale: Locale,
+  missing: readonly string[],
+  layout: CatalogLayout | undefined,
+): Finding {
+  const path = catalogLocation(layout, locale);
   const shown = missing.slice(0, 12).map((key) => `"${key}"`);
   const more = missing.length > shown.length ? `, +${missing.length - shown.length} more` : '';
   return {
-    ...missingKeysFinding(locale, missing, ADMIN_KEYS_WRITTEN),
+    ...missingKeysFinding(locale, missing, ADMIN_KEYS_WRITTEN, layout),
     cause: `${path} is missing ${missing.length} key(s) the mounted admin renders (defineAdmin derives them, so no source file names one): ${shown.join(', ')}${more}`,
     at: path,
   };
@@ -230,10 +244,12 @@ export function unregisteredFix(
   index: string | undefined,
 ): { readonly fix?: string } {
   if (index === undefined) return {};
-  // The index is GENERATED (`i18nIndex`), so the one spelling that matters is the import it writes
-  // — `catalogs/<tag>.json`. Matching a bare tag instead would read `en` out of the word `key` and
-  // report a registered locale as unregistered, which is the direction that costs trust.
-  if (index.includes(`${CATALOG_ROOT.split('/').pop() ?? 'catalogs'}/${locale}.json`)) return {};
+  // The index is GENERATED (`i18nIndex`), so the spellings that matter are the imports it writes
+  // — `catalogs/<tag>.json`, or `catalogs/<tag>'` for a split locale's barrel. Matching a bare tag
+  // instead would read `en` out of the word `key` and report a registered locale as unregistered,
+  // which is the direction that costs trust.
+  const dir = CATALOG_ROOT.split('/').pop() ?? 'catalogs';
+  if (index.includes(`${dir}/${locale}.json`) || index.includes(`${dir}/${locale}'`)) return {};
   return {
     fix: `x i18n sync ${quoteArg(locale)}   # re-derives ${APP_CATALOGS_PATH} from the catalogs on disk`,
   };
@@ -305,21 +321,24 @@ export function withPlaceholdersMissing(
  * placeholder. Built here rather than in `cmd-i18n.ts` because `x verify`'s `i18n` step reports
  * the same finding, and a second construction of it is two renderers of one fact waiting to drift.
  */
-export function missingKeyFindings(report: ExtractReport): readonly Finding[] {
+export function missingKeyFindings(
+  report: ExtractReport,
+  layout?: CatalogLayout,
+): readonly Finding[] {
   const missing = report.locales
     .filter((audit) => audit.missing.length > 0)
     .map((audit) => ({
-      ...missingKeysFinding(audit.locale, audit.missing, SOURCE_KEYS_WRITTEN),
-      at: catalogPath(audit.locale),
+      ...missingKeysFinding(audit.locale, audit.missing, SOURCE_KEYS_WRITTEN, layout),
+      at: catalogLocation(layout, audit.locale),
     }));
   // A select or ordinal family with no `_other` renders `⟦key⟧` for every value it does not name:
   // the same loud miss, one family wide, so the same gate refuses it.
   const incomplete = report.locales
     .filter((audit) => audit.incomplete.length > 0)
-    .map((audit) => ({
-      ...findingFrom(familyIncomplete(audit.locale, audit.incomplete)),
-      at: catalogPath(audit.locale),
-    }));
+    .map((audit) => {
+      const at = catalogLocation(layout, audit.locale);
+      return { ...findingFrom(familyIncomplete(audit.locale, audit.incomplete, at)), at };
+    });
   return [...missing, ...incomplete];
 }
 
@@ -333,12 +352,18 @@ export function missingKeyFindings(report: ExtractReport): readonly Finding[] {
  * have, and a string nobody translated.
  */
 export async function catalogFindings(root: string): Promise<readonly Finding[]> {
-  const { report, catalogs, extraction, ignoreUnused } = await auditApp(root);
-  const registration = await checkRegistration({ root, catalogs, extraction, ignoreUnused });
+  const { report, catalogs, extraction, ignoreUnused, layout } = await auditApp(root);
+  const registration = await checkRegistration({
+    root,
+    catalogs,
+    extraction,
+    ignoreUnused,
+    layout,
+  });
   return [
-    ...missingKeyFindings(withPlaceholdersMissing(report, catalogs)),
+    ...missingKeyFindings(withPlaceholdersMissing(report, catalogs), layout),
     ...registration.findings,
-    ...localeParityFindings(catalogs),
+    ...localeParityFindings(catalogs, layout),
     // The app is loaded by the audit above, so every `defineMail({ preview })` is registered.
     ...mailPreviewFindings(Object.keys(catalogs)),
   ];

@@ -4,6 +4,10 @@
 
 export type Theme = 'light' | 'dark';
 
+/**
+ * The roles every palette states outright — a preset is total over these, and `_colors.scss`
+ * holds a channel list for each per theme. The alias roles below are not among them.
+ */
 export const COLOR_ROLES = [
   'bg',
   'bg-soft',
@@ -42,6 +46,33 @@ export const COLOR_ROLES = [
 export type ColorRole = (typeof COLOR_ROLES)[number];
 
 /**
+ * Roles that DEFAULT to a palette role: links, the current item of a navigation and the focus
+ * ring. Unset, each reads its source at run time — `rgb(var(--color-link, var(--color-accent)))`
+ * — so an app that never names them renders exactly as it did when every one of them read the
+ * accent, a brand's accent included. A brand or a preset that sets one splits it off. Mirrors
+ * `$aliases` in `_colors.scss`; `tokens.test.ts` fails if the two drift.
+ */
+export const COLOR_ALIASES = {
+  link: 'accent',
+  'link-strong': 'accent-strong',
+  'nav-active': 'accent',
+  focus: 'accent',
+} as const satisfies Readonly<Record<string, ColorRole>>;
+
+export type AliasRole = keyof typeof COLOR_ALIASES;
+
+export const ALIAS_ROLES = Object.keys(COLOR_ALIASES) as readonly AliasRole[];
+
+/** Every role a component or a brand may name: the palette, then the aliases. */
+export const THEME_ROLES: readonly ThemeRole[] = [...COLOR_ROLES, ...ALIAS_ROLES];
+
+export type ThemeRole = ColorRole | AliasRole;
+
+export function isAliasRole(role: string): role is AliasRole {
+  return Object.hasOwn(COLOR_ALIASES, role);
+}
+
+/**
  * The categorical series, in the order a chart assigns them. Okabe–Ito-derived and measured, not
  * picked: 3:1 against every surface (`CONTRAST_PAIRS`) and apart under protan, deutan and tritan
  * simulation (`colour-vision.test.ts`). A ninth series reuses `chart-1` with a second encoding —
@@ -60,7 +91,7 @@ export const CHART_ROLES = [
 
 export type ChartRole = (typeof CHART_ROLES)[number];
 
-/** Space-separated RGB channels, mirroring `_colors.scss`. */
+/** Space-separated RGB channels, mirroring `_colors.scss`. Palette roles only: an alias has none. */
 export const colorTokens: Readonly<Record<Theme, Readonly<Record<ColorRole, string>>>> = {
   light: {
     bg: '253 246 240',
@@ -131,3 +162,12 @@ export const colorTokens: Readonly<Record<Theme, Readonly<Record<ColorRole, stri
     'chart-8': '181 181 180',
   },
 } as const;
+
+/** A palette with every alias it leaves unset resolved to its source's channels — what renders. */
+export function withAliases(
+  colors: Readonly<Record<ColorRole, string>> & Readonly<Partial<Record<AliasRole, string>>>,
+): Readonly<Record<ThemeRole, string>> {
+  const out: Record<string, string> = { ...colors };
+  for (const role of ALIAS_ROLES) out[role] = colors[role] ?? colors[COLOR_ALIASES[role]];
+  return out as Readonly<Record<ThemeRole, string>>;
+}

@@ -333,5 +333,7 @@
  * raised 1778 → 1779, measured 1779 (2026-11-24, mailed-link sign-in exported): the one on `SERVING_ROLE_CEILING`, `auth/src/link-login.ts`.
  * raised 1779 → 1780, measured 1780 (2026-11-24, outbound refusal headers): the one on
  * `SERVING_ROLE_CEILING`, `core/src/outbound-refusal-headers.ts`.
+ * raised 1780 → 1783, measured 1783 (2026-11-26, framework strings in ro, es and pt-BR): the three
+ * on `SERVING_ROLE_CEILING`, `i18n/src/catalogs/{ro,es,pt-BR}.json`.
  */
-export const WEB_ROLE_CEILING = 1780;
+export const WEB_ROLE_CEILING = 1783;

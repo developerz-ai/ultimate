@@ -373,16 +373,27 @@ export { useToasts } from './toast/use-toasts';
 export type { ColourVision } from './tokens/colour-vision';
 export type { Channels } from './tokens/contrast';
 export { AA_LARGE, AA_TEXT, contrastRatio, roleContrast } from './tokens/contrast';
-export { CONTRAST_PAIRS } from './tokens/contrast-pairs';
+export { ALIAS_CONTRAST_PAIRS, CONTRAST_PAIRS } from './tokens/contrast-pairs';
 export type {
+  AliasRole,
   ColorRole,
   DurationName,
   EasingName,
   RadiusName,
   ShadowName,
   Theme,
+  ThemeRole,
 } from './tokens/tokens';
 // --- tokens ------------------------------------------------------------------
-export { COLOR_ROLES, color, colorRgb, colorTokens, colorVar } from './tokens/tokens';
+export {
+  ALIAS_ROLES,
+  COLOR_ALIASES,
+  COLOR_ROLES,
+  color,
+  colorRgb,
+  colorTokens,
+  colorVar,
+  THEME_ROLES,
+} from './tokens/tokens';
 export { uiCatalog } from './ui-catalog';
 export { registerHotkeys, useHotkeys } from './use-hotkeys';

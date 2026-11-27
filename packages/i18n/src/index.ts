@@ -21,6 +21,13 @@ export {
   parseNestedCatalog,
 } from './catalog';
 export {
+  type CatalogFile,
+  catalogFileName,
+  catalogFilePrefix,
+  joinCatalogFiles,
+  partitionCatalog,
+} from './catalog-files';
+export {
   catalogFor,
   configureLocales,
   currentDirection,
@@ -51,6 +58,8 @@ export {
 } from './define-catalogs';
 export {
   catalogInvalid,
+  catalogKeyDuplicate,
+  catalogLayoutMixed,
   catalogMissingKeys,
   catalogsNeverRegistered,
   catalogUnregistered,
@@ -71,7 +80,7 @@ export {
   type LocaleAudit,
   mergeExtractions,
 } from './extract';
-export { FRAMEWORK_CATALOG } from './framework';
+export { FRAMEWORK_CATALOG, FRAMEWORK_CATALOGS } from './framework';
 export {
   type InterpolationValue,
   type InterpolationVars,

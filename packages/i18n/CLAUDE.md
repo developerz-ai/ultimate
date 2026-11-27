@@ -9,6 +9,7 @@ Imported by every package that renders a string.
 |---|---|
 | `translator.ts` | lookup + delegate interpolation, and `TranslationKey`. No locale logic. |
 | `catalog.ts` | nested → flat, merge, validate. No lookup. |
+| `catalog-files.ts` | a split locale's namespace files joined into one catalog and partitioned back. Pure: the CLI reads the files. |
 | `define-catalogs.ts` | the app's one registration call. Boot only, composes the four below. |
 | `interpolate.ts` | `{var}` + CLDR plural selection. No catalog access (takes a `has` predicate). |
 | `locales.ts` | supported set, normalize, negotiate, RTL. No catalogs. |
@@ -17,7 +18,7 @@ Imported by every package that renders a string.
 | `app-catalogs.ts` | an app's declared locales, read by importing its catalog module — `loadAppCatalogs` (`undefined` when undeclared) and `appLocaleSet` (`UNDECLARED_LOCALES` then). The ONE reader: a CLI step never reads `localeConfig()`/`routedLocales()` after `loadApp`; it reads `LoadedApp.locales`. Tooling only: the `./app-catalogs` entry, never `index.ts` (it is in every island). |
 | `registration.ts` | are the catalogs an app SHIPS in the registry it READS? No file access. |
 | `extract.ts` | static scan + audit for `x verify`. |
-| `catalogs/en.json` | data, not code. |
+| `catalogs/<locale>.json` | data, not code: `en` the source, `ro`, `es`, `pt-BR` its translations. The framework's own stay flat; an APP's may be split (`catalog-files.ts`). |
 | `recording-translator.ts` | a translator that records what it could not answer: `TranslationMiss` |
 
 ## Rules
@@ -36,11 +37,14 @@ Imported by every package that renders a string.
   importing `@ultimat3/i18n` is what registers it, so no app can forget it and `resetCatalogs()`
   puts it back. It was `registerFrameworkCatalog()`, whose ONE caller was `defineCatalogs`, so an
   app whose catalog module nothing imported served `⟦errors.notFound.title⟧` on its 404 page and
-  `⟦ui.*⟧` in every design-system control, with `x verify` green (issue #249). Under
-  core's `DEFAULT_LOCALE` (`en`) **only**: it ran per locale until 2026-08, so an `es`-only app
-  served `Page not found` with `isMiss` reading FALSE — the fallback chain the line above refuses,
-  wearing registration as a disguise. A non-`en` app translates the framework keys it renders into
-  its own catalog.
+  `⟦ui.*⟧` in every design-system control, with `x verify` green (issue #249). **Each catalog under
+  the language it is written in** (`FRAMEWORK_CATALOGS`: `en`, `ro`, `es`, `pt-BR`): `baseFor` in
+  `context.ts` lays an app locale on its language's layer, then its exact tag's, on the canonical
+  key (`pt-br` on `pt-BR`, `es-MX` on `es`). Never English under another language: it ran per locale
+  until 2026-08, so an `es`-only app served `Page not found` with `isMiss` reading FALSE — the
+  fallback chain the line above refuses. Only `DEFAULT_LOCALE` is seated alone; another shipped
+  language lands only under a locale the app registered, so it never enters `registeredLocales()`.
+  A new framework string goes into all four catalogs (`framework-locales.test.ts`).
 - **The base layer merges UNDER whatever `registerCatalog` seated, never over it**, so an app's
   override of a framework key survives every later install and the install is idempotent by
   construction rather than by a module flag `resetCatalogs()` would go stale against.
@@ -112,7 +116,7 @@ Imported by every package that renders a string.
   `attachLocale`/`localeOf` existed until 1.3.0 with zero callers; `@ultimat3/time` had the same
   pair over a field name (`ctx['timeZone']`) that disagreed with core's `tz`, which is what made
   every server-rendered date UTC. Never reintroduce either half.
-- Adding a framework string: `catalogs/en.json`, feature-namespaced, then use `t('ns.key')`.
+- Adding a framework string: `catalogs/en.json`, feature-namespaced, the same key in `ro.json`, `es.json` and `pt-BR.json`, then use `t('ns.key')`.
 - **`catalogs/en.json` is gated in both directions**, on `x verify`'s `boundaries` step via
   `scripts/i18n-catalog.ts`. A `t('literal')` in `packages/*/src` with no entry is
   `X_CATALOG_MISSING_KEYS`; an entry nothing in framework source names, in a namespace the

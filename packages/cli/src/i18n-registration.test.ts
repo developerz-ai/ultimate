@@ -291,10 +291,8 @@ describe('unit · a mounted admin’s DERIVED keys are audited per locale', () =
 
   test('a key the framework’s base layer answers needs nothing in the app’s catalog', async () => {
     const report = await check(['errors.notFound.title']);
-    // Answered in `en` by the base layer; `es` has no base layer, and renders the miss.
-    expect(report.findings.map((finding) => finding.at)).toEqual([
-      'packages/i18n/catalogs/es.json',
-    ]);
+    // Answered by the base layer in BOTH locales: the framework ships `es` beside `en`.
+    expect(report.findings).toEqual([]);
   });
 
   test('a placeholder is still a miss', async () => {

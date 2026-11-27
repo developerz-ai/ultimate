@@ -1,12 +1,16 @@
 /**
- * The framework's own strings, flattened and installed as the base layer at import.
- * Under every app catalog, so an app overrides any framework key and forgets none.
+ * The framework's own strings, flattened and installed as the base layer at import, one catalog per
+ * shipped locale. Under every app catalog, so an app overrides any framework key and forgets none.
  */
 
 import { DEFAULT_LOCALE } from '@ultimat3/core';
 import { type Catalog, loadCatalog } from './catalog';
 import en from './catalogs/en.json';
+import es from './catalogs/es.json';
+import ptBR from './catalogs/pt-BR.json';
+import ro from './catalogs/ro.json';
 import { registerBaseCatalog } from './context';
+import type { Locale } from './locales';
 
 /**
  * `errors.*`, `auth.*`, `pagination.*`, `admin.*`, `validation.*`, `common.*`, `time.*`, `ui.*`.
@@ -17,10 +21,27 @@ import { registerBaseCatalog } from './context';
  */
 export const FRAMEWORK_CATALOG: Catalog = loadCatalog(en);
 
+/**
+ * Every locale the framework translates its own strings into, `en` the source. Each one carries
+ * every `en` key — `framework.test.ts` refuses a gap and a placeholder that drifted — and lands
+ * under an app catalog in the same language: `pt-br`, `pt-BR` and `pt` all stand on `pt-BR`'s.
+ */
+export const FRAMEWORK_CATALOGS: Readonly<Record<Locale, Catalog>> = {
+  [DEFAULT_LOCALE]: FRAMEWORK_CATALOG,
+  es: loadCatalog(es),
+  'pt-BR': loadCatalog(ptBR),
+  ro: loadCatalog(ro),
+};
+
 // At module scope, and that is the whole point: `index.ts` re-exports this file, so anything that
 // can call `t()` has already imported the module that installs these strings. It was a function
 // (`registerFrameworkCatalog`) that only `defineCatalogs` called until 5.1.0 — so an app whose
 // catalog module nothing imported rendered `⟦errors.notFound.title⟧` on its 404 page, `⟦ui.*⟧` in
 // every design-system control, and had no way to notice (issue #249). Registration that an app
 // can forget is not registration; the framework's half of it is now unforgettable by construction.
+// The source first, as its own statement: the side-effects scan reads a top-level call as this
+// module's import-time effect, and a loop alone hid it.
 registerBaseCatalog(DEFAULT_LOCALE, FRAMEWORK_CATALOG);
+for (const [locale, catalog] of Object.entries(FRAMEWORK_CATALOGS)) {
+  if (locale !== DEFAULT_LOCALE) registerBaseCatalog(locale, catalog);
+}

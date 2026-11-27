@@ -1,0 +1,770 @@
+{
+  "common": {
+    "save": "Salvează",
+    "cancel": "Anulează",
+    "delete": "Șterge",
+    "edit": "Editează",
+    "create": "Creează",
+    "search": "Caută",
+    "filter": "Filtrează",
+    "close": "Închide",
+    "retry": "Încearcă din nou",
+    "loading": "Se încarcă…",
+    "empty": "Nimic aici încă.",
+    "confirm": "Sigur?",
+    "yes": "Da",
+    "no": "Nu",
+    "copy": "Copiază",
+    "copied": "Copiat",
+    "signedInAs": "Conectat ca {email}"
+  },
+  "errors": {
+    "notFound": {
+      "title": "Pagina nu există",
+      "body": "Adresa aceasta nu duce nicăieri.",
+      "action": "Înapoi la siguranță"
+    },
+    "badRequest": {
+      "title": "Cererea nu a mers",
+      "body": "Ceva în ea nu era în regulă, așa că nu s-a întâmplat nimic.",
+      "action": "Înapoi la siguranță"
+    },
+    "forbidden": {
+      "title": "Nu ai voie",
+      "body": "Contul tău nu poate face asta. Cere unui administrator permisiunea {permission}.",
+      "action": "Înapoi"
+    },
+    "unauthorized": {
+      "title": "Conectează-te",
+      "body": "Pagina aceasta cere un cont.",
+      "action": "Conectare"
+    },
+    "serverError": {
+      "title": "S-a stricat ceva la noi",
+      "body": "Eroarea a fost înregistrată ca {traceId}.",
+      "action": "Reîncarcă"
+    },
+    "offline": {
+      "title": "Ești offline",
+      "body": "Modificările se salvează local și se sincronizează când revii online.",
+      "action": "Reîncearcă acum"
+    },
+    "rateLimited": {
+      "title": "Prea multe cereri",
+      "body": "Încearcă din nou peste {seconds} secunde.",
+      "action": "Așteaptă"
+    },
+    "validation": {
+      "title": "Verifică câmpurile marcate",
+      "count": "{count} câmp necesită atenție",
+      "count_few": "{count} câmpuri necesită atenție",
+      "count_plural": "{count} de câmpuri necesită atenție"
+    },
+    "unavailable": {
+      "title": "Indisponibil pentru moment",
+      "body": "Nu primim cereri acum. Încearcă din nou în scurt timp.",
+      "action": "Încearcă din nou"
+    },
+    "page": {
+      "builtWith": "Construit cu Ultimate",
+      "code": "cod",
+      "request": "cerere"
+    }
+  },
+  "validation": {
+    "required": "Obligatoriu",
+    "tooShort": "Folosește cel puțin {min} caractere",
+    "tooLong": "Folosește cel mult {max} caractere",
+    "notEmail": "Introdu o adresă de email validă",
+    "notUrl": "Introdu un URL valid",
+    "notNumber": "Introdu un număr",
+    "outOfRange": "Introdu o valoare între {min} și {max}",
+    "mismatch": "Valorile nu se potrivesc"
+  },
+  "auth": {
+    "signIn": {
+      "title": "Conectare",
+      "submit": "Conectează-te",
+      "email": "Email",
+      "password": "Parolă",
+      "forgot": "Ți-ai uitat parola?",
+      "noAccount": "Nu ai cont?",
+      "createAccount": "Creează unul",
+      "magicLink": "Trimite-mi un link de conectare",
+      "failed": "Emailul și parola nu se potrivesc."
+    },
+    "signUp": {
+      "title": "Creează-ți contul",
+      "submit": "Creează contul",
+      "name": "Nume",
+      "haveAccount": "Ai deja cont?",
+      "terms": "Continuând, ești de acord cu {termsLink}.",
+      "taken": "Emailul acesta este deja înregistrat."
+    },
+    "resetPassword": {
+      "title": "Resetează parola",
+      "submit": "Trimite linkul de resetare",
+      "sent": "Verifică {email} pentru linkul de resetare.",
+      "newPassword": "Parolă nouă",
+      "expired": "Linkul a expirat. Cere unul nou."
+    },
+    "verifyEmail": {
+      "title": "Confirmă-ți emailul",
+      "body": "Am trimis un cod la {email}.",
+      "submit": "Confirmă",
+      "resend": "Retrimite codul"
+    },
+    "twoFactor": {
+      "title": "Cod de autentificare în doi pași",
+      "body": "Introdu codul de 6 cifre din aplicația de autentificare.",
+      "submit": "Confirmă",
+      "recovery": "Folosește un cod de recuperare"
+    },
+    "signOut": "Deconectare",
+    "session": {
+      "expired": "Sesiunea a expirat. Conectează-te din nou.",
+      "current": "Acest dispozitiv"
+    }
+  },
+  "pagination": {
+    "previous": "Anterior",
+    "next": "Următor",
+    "first": "Prima",
+    "last": "Ultima",
+    "page": "Pagina {page} din {pages}",
+    "showing": "Se afișează {from}–{to} din {total}",
+    "perPage": "{count} pe pagină",
+    "result": "{count} rezultat",
+    "result_few": "{count} rezultate",
+    "result_plural": "{count} de rezultate",
+    "loadMore": "Încarcă mai mult",
+    "noMore": "Asta e tot."
+  },
+  "admin": {
+    "a11y": {
+      "skip-to-content": "Sari la conținut"
+    },
+    "actions": {
+      "label": "Acțiuni",
+      "confirm": {
+        "body": "Tastează {token} pentru confirmare. Nu se întâmplă nimic până nu se potrivește."
+      },
+      "none": "Niciun tip de înregistrare nu este disponibil pentru acest cont.",
+      "unknown": "Acțiunea nu este declarată de acest panou.",
+      "back": "Înapoi la rând",
+      "subject": {
+        "row": "Rulează pe {id}.",
+        "app": "Rulează o dată, pentru toată aplicația."
+      }
+    },
+    "ai": {
+      "disabled": "Panourile AI sunt dezactivate pentru acest admin.",
+      "no-runner": "Niciun executor AI nu este conectat, așa că panoul nu are ce întreba.",
+      "anomaly": {
+        "title": "Anomalii",
+        "description": "Rânduri care nu seamănă cu restul tabelului."
+      },
+      "nl-query": {
+        "title": "Întreabă datele",
+        "description": "O întrebare în limbaj obișnuit, cu răspuns printr-o interogare doar de citire."
+      },
+      "forecast": {
+        "title": "Prognoză",
+        "description": "Încotro merge seria, pe baza rândurilor deja salvate."
+      }
+    },
+    "audit": {
+      "title": "Jurnal de audit",
+      "empty": "Nicio intrare din jurnal nu se potrivește.",
+      "empty-row": "Nu s-a făcut încă nimic cu acest rând.",
+      "filter": {
+        "entity": "Entitate",
+        "actor": "Actor",
+        "outcome": "Rezultat",
+        "since": "De la",
+        "until": "Înainte de",
+        "changes": "Doar modificări și refuzuri"
+      },
+      "outcome": {
+        "allowed": "Permis",
+        "denied": "Refuzat",
+        "failed": "Eșuat"
+      },
+      "older": "Intrări mai vechi"
+    },
+    "brand": {
+      "name": "Admin"
+    },
+    "dashboard": {
+      "title": "Panou",
+      "records": {
+        "title": "Înregistrări",
+        "label": "Înregistrări pe resursă",
+        "resource": "Resursă",
+        "total": "înregistrări în total",
+        "approximate": "~{figure}"
+      },
+      "access": {
+        "title": "Acces",
+        "allowed": "{allowed} din {total} permise",
+        "open": "Deschide lista"
+      }
+    },
+    "denied": {
+      "body": "Contului îi lipsește {permission} ({reason})."
+    },
+    "detail": {
+      "edit": "Editează",
+      "not-found": {
+        "cause": "Nu există {entity} cu acest id.",
+        "fix": "Întoarce-te la listă și deschide un rând care încă există."
+      },
+      "delete": "Șterge"
+    },
+    "error": {
+      "action-failed": "Acțiunea a eșuat înainte să se termine.",
+      "confirmation-required": "Acțiunea este distructivă: tastează mai întâi codul de confirmare.",
+      "invalid-input": "Unele câmpuri nu respectă schema entității.",
+      "operation-not-offered": "Resursa nu oferă această operație.",
+      "row-missing": "Niciun rând nu are acest id.",
+      "secret-required": "Valoarea este obligatorie: coloana este sigilată și nu are valoare implicită.",
+      "action-not-applicable": "Acțiunea nu se aplică rândului în starea lui actuală.",
+      "row-out-of-scope": "După această scriere, rândul ar ieși din rândurile pe care contul le poate vedea.",
+      "batch-not-offered": "Acțiunea nu rulează pe o selecție de rânduri.",
+      "row-changed": "Altcineva a modificat rândul după ce l-ai deschis. Valorile tale au fost păstrate peste rândul actual: verifică-le și salvează din nou."
+    },
+    "filter": {
+      "any": "Oricare",
+      "apply": "Filtrează",
+      "clear": "Șterge filtrele",
+      "find": "Caută…",
+      "from": "{field}, de la",
+      "to": "{field}, până la"
+    },
+    "form": {
+      "cancel": "Anulează",
+      "create": "{entity} nou",
+      "edit": "Editează {entity}",
+      "issues": "Verifică câmpurile marcate",
+      "save": "Salvează",
+      "secret-unchanged": "Lasă gol pentru a păstra valoarea salvată."
+    },
+    "group": {
+      "data": "Date",
+      "jobs": "Joburi"
+    },
+    "jobs": {
+      "title": "Joburi",
+      "scoped": "Cozile, workerii și debitul aparțin tuturor organizațiilor, deci sunt vizibile doar operatorului platformei. Joburile organizației tale:",
+      "ms": "{ms} ms",
+      "seconds": "{seconds} s",
+      "tile": {
+        "ready": "Pregătite",
+        "running": "În execuție",
+        "delayed": "Amânate",
+        "suspended": "Suspendate",
+        "dead": "Moarte",
+        "workers": "Workeri",
+        "oldestReady": "Cel mai vechi pregătit"
+      },
+      "range": {
+        "label": "Interval",
+        "1h": "Ultima oră",
+        "24h": "Ultimele 24 de ore",
+        "7d": "Ultimele 7 zile",
+        "30d": "Ultimele 30 de zile"
+      },
+      "chart": {
+        "title": "Finalizate și eșuate",
+        "label": "Rulări finalizate și eșuate, {range}",
+        "done": "finalizate",
+        "failed": "eșuate"
+      },
+      "byName": {
+        "caption": "După numele jobului",
+        "name": "Job",
+        "volume": "Rulări",
+        "failureRate": "Rată de eșec",
+        "meanMs": "Durată medie",
+        "empty": "Niciun job nu s-a încheiat în acest interval."
+      },
+      "scope": {
+        "all": "Toate",
+        "ready": "Pregătite",
+        "delayed": "Amânate",
+        "running": "În execuție",
+        "suspended": "Suspendate",
+        "done": "Finalizate",
+        "failed": "Eșuate",
+        "dead": "Moarte",
+        "cancelled": "Anulate"
+      },
+      "section": {
+        "run": "Rulare",
+        "failure": "Eșec",
+        "work": "Intrare, progres și pași",
+        "trace": "Tenant și urmă"
+      },
+      "hint": {
+        "id": "Lipește primele caractere ale unui id de job."
+      }
+    },
+    "list": {
+      "empty": "Nimic aici încă.",
+      "open": "Deschide"
+    },
+    "lookup": {
+      "title": "Caută {entity}",
+      "placeholder": "Caută după nume"
+    },
+    "nav": {
+      "label": "Secțiuni"
+    },
+    "operation": {
+      "list": "a listat",
+      "detail": "a citit",
+      "search": "a căutat",
+      "create": "a creat",
+      "update": "a actualizat",
+      "delete": "a șters",
+      "page": "a deschis o pagină"
+    },
+    "permission": {
+      "read": "Citește toate ecranele de admin",
+      "write": "Creează și actualizează rânduri",
+      "destroy": "Șterge rânduri",
+      "impersonate": "Acționează ca alt cont"
+    },
+    "policy": {
+      "all-granted": "toate permisiunile necesare sunt acordate",
+      "granted": "lista de acordări conține această permisiune",
+      "missing": "nicio politică nu este înregistrată pentru această permisiune",
+      "not-granted": "lista de acordări nu conține această permisiune"
+    },
+    "scope": {
+      "label": "Domenii",
+      "all": "Toate"
+    },
+    "search": {
+      "title": "Căutare",
+      "label": "Caută",
+      "placeholder": "Caută în toate entitățile",
+      "skipped": {
+        "forbidden": "contul nu are voie să caute în această entitate",
+        "no-text-fields": "entitatea nu are niciun câmp text în care să caute",
+        "no-repo": "entitatea nu are un repo asociat",
+        "failed": "repo-ul entității a eșuat la căutare"
+      }
+    },
+    "value": {
+      "empty": "—",
+      "true": "Da",
+      "false": "Nu",
+      "sealed": "Sigilat",
+      "currency": "Monedă"
+    },
+    "actor": {
+      "anonymous": "neconectat",
+      "signedIn": "{id} — roluri: {roles}"
+    },
+    "backToApp": "← Înapoi la aplicație",
+    "matrix": {
+      "operation": "Operație",
+      "permissions": "Permisiuni necesare",
+      "verdict": "Verdict",
+      "allowed": "permis",
+      "deniedBy": "refuzat —"
+    },
+    "section": {
+      "other": "Altele"
+    },
+    "related": {
+      "all": "Vezi toate"
+    },
+    "batch": {
+      "action": "Acțiune",
+      "over": "Rulează pe",
+      "checked": "Rândurile bifate",
+      "all": "Toate rândurile din această listă",
+      "run": "Rulează",
+      "select": "Selectează",
+      "select-row": "Selectează {id}",
+      "done": "Finalizat",
+      "refused": "Refuzat",
+      "failed": "Eșuat",
+      "queued": "În coadă",
+      "remaining": "Neatins încă",
+      "continue": "Rulează pe următoarele {count}",
+      "back": "Înapoi la listă",
+      "subject": {
+        "checked": "Rulează pe {count} rânduri bifate.",
+        "all": "Rulează pe toate rândurile din această listă.",
+        "count": "Rulează pe {count} rânduri."
+      },
+      "matching": "A rulat o dată pe toate rândurile potrivite"
+    },
+    "x_jobs": {
+      "title": "Rulări de joburi",
+      "field": {
+        "id": "Id",
+        "name": "Job",
+        "queue": "Coadă",
+        "state": "Stare",
+        "attempt": "Încercare",
+        "maxAttempts": "Încercări maxime",
+        "runAt": "Rulează la",
+        "createdAt": "Pus în coadă",
+        "updatedAt": "Actualizat",
+        "tenantId": "Tenant",
+        "lastError": "Ultima eroare",
+        "lastErrorStack": "Stivă",
+        "progress": "Progres",
+        "input": "Intrare",
+        "steps": "Pași",
+        "traceparent": "Urmă",
+        "enqueuedBy": "Pus în coadă de",
+        "claimedBy": "Preluat de"
+      },
+      "column": {
+        "completed": "Progres",
+        "error": "Ultima eroare"
+      }
+    },
+    "x_job_queues": {
+      "title": "Cozi",
+      "field": {
+        "name": "Coadă",
+        "ready": "Pregătite",
+        "delayed": "Amânate",
+        "running": "În execuție",
+        "suspended": "Suspendate",
+        "failed": "Eșuate",
+        "dead": "Moarte",
+        "oldestReadyMs": "Cel mai vechi pregătit (ms)",
+        "paused": "În pauză",
+        "pausedAt": "Pus pe pauză la"
+      },
+      "column": {
+        "oldest": "Cel mai vechi pregătit",
+        "jobs": "Joburi"
+      }
+    },
+    "x_job_tasks": {
+      "title": "Sarcini programate",
+      "field": {
+        "name": "Sarcină",
+        "cron": "Program",
+        "tz": "Fus orar",
+        "catchUp": "Recuperare",
+        "enqueues": "Cozi",
+        "lastFireAt": "Ultima declanșare",
+        "nextFireAt": "Următoarea declanșare",
+        "paused": "În pauză"
+      }
+    },
+    "x_job_workers": {
+      "title": "Workeri",
+      "field": {
+        "id": "Worker",
+        "host": "Gazdă",
+        "queues": "Cozi",
+        "concurrency": "Sloturi",
+        "inFlight": "În lucru",
+        "startedAt": "Pornit",
+        "heartbeatAt": "Semnal de viață"
+      },
+      "column": {
+        "heartbeat": "Ultimul semnal de viață",
+        "running": "Joburi în execuție"
+      }
+    },
+    "action": {
+      "job": {
+        "retry": "Reîncearcă",
+        "retry-from-step": "Reîncearcă de la un pas",
+        "run-now": "Rulează acum",
+        "cancel": "Anulează",
+        "remove": "Elimină",
+        "queue": {
+          "pause": "Pune coada pe pauză",
+          "resume": "Reia coada"
+        },
+        "task": {
+          "pause": "Pune sarcina pe pauză",
+          "resume": "Reia sarcina",
+          "run-now": "Rulează acum"
+        }
+      }
+    },
+    "input": {
+      "job": {
+        "retry-from-step": {
+          "step": "Pas"
+        }
+      }
+    },
+    "errors": {
+      "title": "Erori",
+      "detail": {
+        "title": "Grup de erori"
+      },
+      "status": {
+        "open": "Deschisă",
+        "resolved": "Rezolvată",
+        "ignored": "Ignorată"
+      },
+      "field": {
+        "code": "Cod",
+        "source": "Sursă",
+        "operation": "Operație",
+        "status": "Stare",
+        "count": "Apariții",
+        "first-seen": "Prima apariție",
+        "last-seen": "Ultima apariție",
+        "release": "Versiune",
+        "environment": "Mediu",
+        "request": "Cerere",
+        "trace": "Urmă"
+      },
+      "filter": {
+        "status": "Filtrează erorile după stare"
+      },
+      "empty": "Niciun grup de erori nu se potrivește cu filtrul.",
+      "count": "{count} apariție",
+      "count_few": "{count} apariții",
+      "count_plural": "{count} de apariții",
+      "missing": "Grupul de erori nu mai există.",
+      "back": "Înapoi la erori"
+    }
+  },
+  "dev": {
+    "panel": {
+      "routes": {
+        "title": "Rute",
+        "question": "ce handler servește asta?"
+      },
+      "timeline": {
+        "title": "Cronologie",
+        "question": "unde s-a dus timpul în această cerere?",
+        "requests": "Cereri recente",
+        "spans": "Intervale, pe ceasul cererii",
+        "byKind": "Timp pe tip",
+        "ms": "{ms} ms",
+        "empty": "Nicio cerere nu a fost urmărită încă — deschide o pagină a aplicației, apoi reîncarcă tabul.",
+        "kind": {
+          "http": "http",
+          "render": "randare",
+          "action": "acțiune",
+          "policy": "politică",
+          "sql": "sql",
+          "cache": "cache",
+          "job": "job"
+        },
+        "nPlusOne": {
+          "title": "Instrucțiuni repetate",
+          "fix": "remediere:",
+          "clean": "nicio instrucțiune nu s-a repetat peste pragul detectorului în această cerere",
+          "unwired": "niciun detector N+1 nu este atașat procesului — x dev conectează unul"
+        }
+      },
+      "live": {
+        "title": "Live",
+        "question": "ce primește fiecare abonat și de ce?"
+      },
+      "jobs": {
+        "title": "Joburi",
+        "question": "se mișcă coada și ce pas a eșuat?",
+        "chart": {
+          "label": "Rulări recente după stare",
+          "total": "rulări recente",
+          "state": "Stare",
+          "runs": "Rulări"
+        },
+        "state": {
+          "ok": "finalizat",
+          "running": "în execuție",
+          "failed": "eșuat",
+          "dead": "mort"
+        }
+      },
+      "db": {
+        "title": "BD",
+        "question": "ce e în tabel și se potrivește schema cu migrările?"
+      },
+      "mail": {
+        "title": "Email",
+        "question": "cum arăta emailul acela, în limba aceea?"
+      },
+      "cache": {
+        "title": "Cache",
+        "question": "ce a invalidat ce — și de ce e încă învechit?"
+      },
+      "policy": {
+        "title": "Politici",
+        "question": "poate actorul acesta face asta și de ce?"
+      },
+      "manifest": {
+        "title": "Manifest",
+        "question": "este x.manifest.json din commit la zi?"
+      },
+      "services": {
+        "title": "Servicii",
+        "question": "cu ce servicii vorbește procesul și a eșuat ceva la încărcare?"
+      },
+      "boundaries": {
+        "title": "Granițe",
+        "question": "importă vreun fișier peste o graniță pe care buildul o va respinge?"
+      }
+    },
+    "live": {
+      "no-sync-node": "niciun nod de sincronizare nu este atașat — datele despre abonați cer un proces x dev pornit"
+    },
+    "cache": {
+      "no-invalidations-yet": "nicio invalidare nu a fost înregistrată încă — graficul de mai sus e totuși real"
+    }
+  },
+  "time": {
+    "cron": {
+      "everyMinute": "în fiecare minut",
+      "everyNMinutes": "la fiecare {n} minute",
+      "everyHour": "în fiecare oră",
+      "everyNHours": "la fiecare {n} ore",
+      "at": "la {time}",
+      "onDaysOfMonth": "în ziua {days}",
+      "onWeekdays": "{days}",
+      "inMonths": "în {months}",
+      "everyDay": "în fiecare zi",
+      "and": "și",
+      "invalid": "nu este o expresie cron validă"
+    },
+    "relative": {
+      "now": "chiar acum"
+    }
+  },
+  "ui": {
+    "breadcrumb": "Cale de navigare",
+    "cancel": "Anulează",
+    "chart": {
+      "none": "Fără date"
+    },
+    "close": "Închide",
+    "confirm": "Confirmă",
+    "copied": "Copiat",
+    "copy": "Copiază",
+    "date": {
+      "open": "Alege o dată",
+      "previousMonth": "Luna anterioară",
+      "nextMonth": "Luna următoare"
+    },
+    "dismiss": "Închide",
+    "empty": "Nimic aici încă.",
+    "error": {
+      "code": "Cod de eroare",
+      "cause": "Ce nu a mers",
+      "fix": "Cum se rezolvă",
+      "title": "Ceva nu a mers"
+    },
+    "first": "Prima",
+    "language": "Limbă",
+    "list": {
+      "toEnd": "Înapoi la final"
+    },
+    "live": {
+      "live": "Live",
+      "reconnecting": "Se reconectează",
+      "paused": "În pauză",
+      "offline": "Offline"
+    },
+    "load": {
+      "more": "Încarcă mai mult",
+      "end": "Asta e tot."
+    },
+    "loading": "Se încarcă…",
+    "menu": "Meniu",
+    "more": "Mai mult",
+    "navigation": "Navigare",
+    "next": "Următor",
+    "optional": "Opțional",
+    "page": "Pagină",
+    "previous": "Anterior",
+    "required": "Obligatoriu",
+    "results": {
+      "empty": "Niciun rezultat"
+    },
+    "range": {
+      "open": "Alege datele",
+      "from": "De la",
+      "to": "Până la",
+      "apply": "Aplică",
+      "custom": "Interval personalizat",
+      "invalid": "Intervalul nu este valid, așa că se afișează cel implicit."
+    },
+    "refresh": {
+      "pull": "Trage pentru reîmprospătare",
+      "release": "Eliberează pentru reîmprospătare",
+      "busy": "Se reîmprospătează…"
+    },
+    "retry": "Încearcă din nou",
+    "select": {
+      "none": "Nimic ales",
+      "more": "Se afișează {shown} din {total} — tastează pentru a restrânge",
+      "remove": "Elimină {label}",
+      "clear": "Golește"
+    },
+    "selection": {
+      "page": "Selectează toate rândurile de pe pagină",
+      "bar": "Selecție",
+      "count": "{count} selectate",
+      "matching": "Selectează toate cele {count} potrivite",
+      "clear": "Golește selecția"
+    },
+    "shortcuts": "Scurtături de tastatură",
+    "skip": "Sari la conținut",
+    "sort": {
+      "ascending": "Sortează crescător",
+      "descending": "Sortează descrescător",
+      "handle": "Mută",
+      "target": "Mută la",
+      "lift": "Ridicat, poziția {position} din {total} în {group}. Săgețile îl mută, Spațiu îl lasă, Escape îl pune înapoi.",
+      "moved": "Poziția {position} din {total} în {group}.",
+      "dropped": "Lăsat la poziția {position} din {total} în {group}.",
+      "cancelled": "Nemutat: înapoi la poziția {position} din {total} în {group}.",
+      "up": "Mută în sus",
+      "down": "Mută în jos"
+    },
+    "step": "Pasul {current} din {total}: {label}",
+    "suggestions": "{count} sugestii",
+    "theme": {
+      "light": "Luminoasă",
+      "dark": "Întunecată",
+      "system": "Sistem",
+      "label": "Temă"
+    },
+    "tree": {
+      "loading": "Se încarcă elementele…"
+    },
+    "pane": {
+      "resize": "Redimensionează panourile"
+    },
+    "code": {
+      "region": "Cod",
+      "wrap": "Încadrează rândurile",
+      "terminal": "Ieșire terminal"
+    },
+    "diff": {
+      "region": "Modificări",
+      "added": "Adăugat",
+      "removed": "Eliminat",
+      "next": "Modificarea următoare",
+      "folded": "Încă {count} rânduri neafișate"
+    },
+    "log": {
+      "region": "Jurnal",
+      "filter": "Filtrează rândurile",
+      "level": "Nivel",
+      "all": "Toate nivelurile",
+      "follow": "Urmărește finalul",
+      "capped": "Se afișează ultimele {count} rânduri"
+    }
+  }
+}

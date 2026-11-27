@@ -3,6 +3,7 @@
 // of scaffold-repo.ts to stay under the file-size ceiling.
 
 import { APP_CATALOGS_PATH } from '@ultimat3/i18n/app-catalogs';
+import { BARREL_EXPORT } from './catalog-barrel';
 import { catalogJson } from './catalog-json';
 import type { GeneratedFile, NameSet } from './naming';
 import { camel } from './naming';
@@ -46,9 +47,12 @@ const orderedLocales = (locales: readonly string[]): readonly string[] => {
 
 /** A locale tag is not always a valid JS binding (`zh-hant`) — `camel()` is the one identifier
  * derivation every generated file already uses for names, so the import agrees with the rest of
- * the app's own naming instead of inventing a second casing rule. */
-export const localeImport = (locale: string): string =>
-  `import ${camel(locale)} from '../catalogs/${locale}.json';`;
+ * the app's own naming instead of inventing a second casing rule. A split locale is its
+ * directory's generated barrel (`catalog-barrel.ts`), read as the same one object a JSON file is. */
+export const localeImport = (locale: string, split = false): string =>
+  split
+    ? `import { ${BARREL_EXPORT} as ${camel(locale)} } from '../catalogs/${locale}';`
+    : `import ${camel(locale)} from '../catalogs/${locale}.json';`;
 
 /** The object-literal entry for one locale: shorthand when the binding IS the tag (`en`, `es`, …),
  * `'tag': binding` when `camel()` had to reshape it (`zh-hant` → `zhHant`) — `defineCatalogs` reads
@@ -61,13 +65,13 @@ export const localeEntry = (locale: string): string => {
 /**
  * The app's one catalog-registration module — regenerated, never hand-edited, to the full current
  * locale set every time `x g ... --locales` lands a new catalog file (`syncI18nIndex` in
- * `cmd-generate.ts`). `i18nFiles` below calls this with `['en']` for the shape `x new` has always
+ * `cmd-generate.ts`). `split` names the locales held as a directory of namespace files. `i18nFiles` below calls this with `['en']` for the shape `x new` has always
  * scaffolded; a later run passes whatever `packages/i18n/catalogs/` actually holds.
  */
-export function i18nIndex(locales: readonly string[]): string {
+export function i18nIndex(locales: readonly string[], split: readonly string[] = []): string {
   const ordered = orderedLocales(locales);
   const fallback = defaultLocaleOf(locales);
-  const imports = ordered.map(localeImport).join('\n');
+  const imports = ordered.map((locale) => localeImport(locale, split.includes(locale))).join('\n');
   const entries = ordered.map(localeEntry).join(', ');
   return `// The app's catalog, registered once and typed against English. Every surface resolves strings
 // through this module, and an unknown key is a compile error via useT() — never a runtime miss

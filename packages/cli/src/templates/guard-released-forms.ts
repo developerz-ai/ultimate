@@ -147,6 +147,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['w7as1ib1ido8', 'error'],
   ],
   'untranslated-string': [
+    ['14xfnj5h9tq91', 'error'],
     ['211cleyx8cmgn', 'error'],
     ['2tmea7cmz7rvr', 'error'],
     ['2x85ib5eqdxzi', 'error'],
@@ -191,6 +192,6 @@ export const RELEASED_GUARD_TEST_FORMS: Readonly<Record<string, readonly string[
   'undeclared-custom-property': ['30bi2v92swukf', 'svuf8sm14fm8'],
   'undeclared-env': ['38run3rew6y0c', '8xdp7gp7hol7'],
   'undefined-style-class': ['1uy88gpk5k8p8', '2sy8me3i3bmzw'],
-  'untranslated-string': ['30q3u45cey2eq', 'cgvfv231gnvg', 'kdo3fxwgix3j'],
+  'untranslated-string': ['30q3u45cey2eq', '3bocce437rxn7', 'cgvfv231gnvg', 'kdo3fxwgix3j'],
   'unzoned-date': ['1m46q3h8t4v7v', '1siep3fqscks4', '20x6l238r09jk', '3jzdaqcytkgil'],
 };

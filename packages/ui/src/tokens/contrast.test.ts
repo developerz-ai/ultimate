@@ -12,8 +12,16 @@ import {
   relativeLuminance,
   roleContrast,
 } from './contrast';
-import { CONTRAST_PAIRS, VISIBLE_EDGE } from './contrast-pairs';
-import { CHART_ROLES, COLOR_ROLES, type ColorRole, colorTokens, type Theme } from './tokens';
+import { ALIAS_CONTRAST_PAIRS, CONTRAST_PAIRS, VISIBLE_EDGE } from './contrast-pairs';
+import {
+  ALIAS_ROLES,
+  CHART_ROLES,
+  COLOR_ROLES,
+  type ColorRole,
+  colorTokens,
+  type Theme,
+  withAliases,
+} from './tokens';
 
 const THEMES: readonly Theme[] = ['light', 'dark'];
 /**
@@ -82,6 +90,18 @@ describe('every shipped pairing meets WCAG AA in both themes', () => {
       ),
     );
     expect(failures).toEqual([]);
+  });
+
+  test('every alias role, resolved to its source, clears its own pairing in both themes', () => {
+    const failures = THEMES.flatMap((theme) => {
+      const palette = withAliases(colorTokens[theme]);
+      return ALIAS_CONTRAST_PAIRS.filter(
+        (pair) => contrastRatio(palette[pair.fg], palette[pair.bg]) < pair.minimum,
+      ).map((pair) => `${theme}: ${pair.fg} on ${pair.bg} (${pair.what})`);
+    });
+    expect(failures).toEqual([]);
+    // Every alias is measured on every surface: a role with no pairing is a role no brand is held to.
+    expect(new Set(ALIAS_CONTRAST_PAIRS.map((pair) => pair.fg))).toEqual(new Set(ALIAS_ROLES));
   });
 
   test('the table is not vacuous — it covers text, fills, tints, the ring and the edge', () => {

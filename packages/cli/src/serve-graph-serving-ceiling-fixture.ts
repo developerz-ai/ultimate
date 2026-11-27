@@ -382,5 +382,7 @@
  * raised 1575 → 1576, measured 1576 (2026-11-24, mailed-link sign-in exported): `auth/src/link-login.ts` returns to the auth barrel.
  * raised 1576 → 1577, measured 1577 (2026-11-24, outbound refusal headers):
  * `core/src/outbound-refusal-headers.ts` keeps selected, redacted response headers on refusals.
+ * raised 1577 → 1580, measured 1580 (2026-11-26, framework strings in ro, es and pt-BR): the three on
+ * `MIGRATE_CEILING`, `i18n/src/catalogs/{ro,es,pt-BR}.json`.
  */
-export const SERVING_ROLE_CEILING = 1577;
+export const SERVING_ROLE_CEILING = 1580;

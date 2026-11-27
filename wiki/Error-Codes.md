@@ -45,7 +45,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | `@ultimat3/entity` | [Error-Codes-entity](Error-Codes-entity) | 44 |
 | `@ultimat3/flags` | [Error-Codes-flags](Error-Codes-flags) | 6 |
 | `@ultimat3/http` | [Error-Codes-http](Error-Codes-http) | 34 |
-| `@ultimat3/i18n` | [Error-Codes-i18n](Error-Codes-i18n) | 5 |
+| `@ultimat3/i18n` | [Error-Codes-i18n](Error-Codes-i18n) | 7 |
 | `@ultimat3/jobs` | [Error-Codes-jobs](Error-Codes-jobs) | 72 |
 | `@ultimat3/mail` | [Error-Codes-mail](Error-Codes-mail) | 18 |
 | `@ultimat3/manifest` | [Error-Codes-manifest](Error-Codes-manifest) | 5 |
@@ -226,7 +226,9 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_CASSETTE_UNUSED | [testing](Error-Codes-testing) |
 | X_CATALOG_CARRIER_UNSCANNED | [scripts](Error-Codes-scripts) |
 | X_CATALOG_INVALID | [i18n](Error-Codes-i18n) |
+| X_CATALOG_KEY_DUPLICATE | [i18n](Error-Codes-i18n) |
 | X_CATALOG_KEY_UNREACHABLE | [scripts](Error-Codes-scripts) |
+| X_CATALOG_LAYOUT_MIXED | [i18n](Error-Codes-i18n) |
 | X_CATALOG_MISSING_KEYS | [i18n](Error-Codes-i18n) |
 | X_CATALOG_SLOT_MISMATCH | [cli](Error-Codes-cli) |
 | X_CATALOG_UNPARSEABLE | [cli](Error-Codes-cli) |

@@ -3,27 +3,26 @@
 // testable without a ParsedArgs or a rendered message.
 
 // why: `node:` and not Bun: `Bun.file().exists()` answers false for a directory, and `existsSync`
-// is how a missing `catalogs/` directory reads as "nothing shipped" instead of a throw; Bun has no
+// is how a missing `packages/i18n` reads as "no catalog module" instead of a throw; Bun has no
 // path API at all — `join` builds the absolute path `Bun.file` reads; `posixRelative` turns it
 // back into the root-relative POSIX shape every CLI-reported path is keyed by.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULT_LOCALE, renderThrowable } from '@ultimat3/core';
+import { DEFAULT_LOCALE } from '@ultimat3/core';
 import type { Catalog, Extraction, ExtractReport, Locale } from '@ultimat3/i18n';
 import {
   auditCatalogs,
-  catalogInvalid,
   catalogKeys,
   extractFromFiles,
-  loadCatalog,
   missingFrom,
   nestCatalog,
 } from '@ultimat3/i18n';
+import type { CatalogLayout } from './catalog-layout';
+import { loadLayoutCatalogs, readCatalogLayout } from './catalog-layout';
 import { APP_KEY_SHAPES } from './i18n-app-key-shapes';
 import { isLoudMiss, loudMiss } from './i18n-registration';
 import { posixRelative } from './posix-path';
 import { eachSourceFile, isTest } from './source-files';
-import { CATALOG_ROOT, catalogPath } from './templates/locales';
 
 /**
  * Every key the app's own source names: a `t()` call, a mail block or subject, a push payload
@@ -54,35 +53,13 @@ export async function scanSource(root: string): Promise<Extraction> {
 }
 
 /**
- * A `JSON.parse` failure is still a catalog problem, not a bare-Error crash through this command —
- * reported through the same factory a structural violation (`loadCatalog` below) uses.
- */
-function parseCatalogJson(path: string, raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch (error) {
-    throw catalogInvalid(path, renderThrowable(error));
-  }
-}
-
-/**
- * Every `packages/i18n/catalogs/*.json` on disk, parsed and flattened through `loadCatalog` —
- * never a bare `JSON.parse`: a nested `{ one, other }` plural authored by hand is a known past
- * bug, and `loadCatalog` is the seam that fails it loud (`X_CATALOG_INVALID`) instead of auditing
- * it as an empty catalog. No `catalogs/` directory yet (a fresh app, or `packages/i18n` never
- * scaffolded) yields `{}` — every caller here treats that as "nothing shipped", not an error.
+ * Every catalog on disk, parsed and flattened, flat `catalogs/<locale>.json` and split
+ * `catalogs/<locale>/` alike (`catalog-layout.ts`). No `catalogs/` directory yet (a fresh app, or
+ * `packages/i18n` never scaffolded) yields `{}` — every caller here treats that as "nothing
+ * shipped", not an error.
  */
 export async function loadCatalogs(root: string): Promise<Readonly<Record<Locale, Catalog>>> {
-  const dir = join(root, CATALOG_ROOT);
-  if (!existsSync(dir)) return {};
-  const catalogs: Record<string, Catalog> = {};
-  for await (const entry of new Bun.Glob('*.json').scan({ cwd: dir, absolute: false })) {
-    const locale = entry.replace(/\.json$/, '');
-    const path = catalogPath(locale);
-    const raw = await Bun.file(join(root, path)).text();
-    catalogs[locale] = loadCatalog(parseCatalogJson(path, raw));
-  }
-  return catalogs;
+  return loadLayoutCatalogs(root, await readCatalogLayout(root));
 }
 
 export interface AuditFacts {
@@ -93,6 +70,8 @@ export interface AuditFacts {
   readonly extraction: Extraction;
   /** The `prefix*` patterns derived from dynamic calls, carried for the same reason. */
   readonly ignoreUnused: readonly string[];
+  /** Each locale's form on disk, so a finding names the file or directory the keys live in. */
+  readonly layout: CatalogLayout;
 }
 
 /** The static head of a template literal, up to its first interpolation. */
@@ -117,7 +96,11 @@ export function runtimeKeyPatterns(extraction: Extraction): readonly string[] {
 
 /** The source scan and the catalogs on disk, audited together — the one fact `x i18n check` reports. */
 export async function auditApp(root: string): Promise<AuditFacts> {
-  const [extraction, catalogs] = await Promise.all([scanSource(root), loadCatalogs(root)]);
+  const layout = await readCatalogLayout(root);
+  const [extraction, catalogs] = await Promise.all([
+    scanSource(root),
+    loadLayoutCatalogs(root, layout),
+  ]);
   const ignoreUnused = runtimeKeyPatterns(extraction);
   return {
     // `reference` is what sees a key no static shape names: `t(\`plans.\${x}\`)` reads the same
@@ -126,6 +109,7 @@ export async function auditApp(root: string): Promise<AuditFacts> {
     catalogs,
     extraction,
     ignoreUnused,
+    layout,
   };
 }
 

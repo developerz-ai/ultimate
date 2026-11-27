@@ -57,7 +57,7 @@
 }
 
 .input:focus-visible + .track {
-  outline: t.stroke(thick) solid t.role('accent');
+  outline: t.stroke(thick) solid t.role('focus');
   outline-offset: t.stroke(thick);
 }
 

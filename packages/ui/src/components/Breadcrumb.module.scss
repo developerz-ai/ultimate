@@ -32,7 +32,7 @@
   text-decoration: none;
 
   &:hover {
-    color: t.role('accent');
+    color: t.role('link');
     text-decoration: underline;
   }
 }
