@@ -1,6 +1,7 @@
 // `localOnly` through the runner: CI leaves the named step out, a laptop and `--only` run it.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+// why: Bun has no API for creating or removing a temporary directory.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
