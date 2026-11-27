@@ -1731,9 +1731,9 @@ x i18n [check|add <locale>|sync <locale>|split [<locale>]] [--json]
 | Subcommand | Does |
 |---|---|
 | `check` | scan every `t('…')` in the app's source, audit it against every catalog on disk, and **fail** on a missing key |
-| `add <locale>` | write `packages/i18n/catalogs/<locale>.json` seeded with the default locale's keys and values — `catalogs/<locale>/`, one file per namespace, when the default locale is split |
-| `sync <locale>` | add the keys that locale is missing; a key it already has is never overwritten, translated or not. A split locale's key lands in its namespace file, created if new |
-| `split [<locale>]` | move every flat catalog (or the one named) into `packages/i18n/catalogs/<locale>/<namespace>.json` with a generated `index.ts`, rewrite the app's index import, widen `.gitattributes`' catalog rule, delete the flat file. Lossless and idempotent. `--json`: `data.locales[]` (`{ locale, from, keys, files }`), `data.written`, `data.removed` |
+| `add <locale>` | write `packages/i18n/catalogs/<locale>.json` (a directory when the default locale is split) seeded with the default locale's keys and values |
+| `sync <locale>` | add the keys that locale is missing (into its namespace file when split); a key it already has is never overwritten, translated or not |
+| `split [<locale>]` | move flat catalogs into `catalogs/<locale>/<namespace>.json` plus a generated `index.ts`; lossless, idempotent ([I18n](I18n#split-catalogs)) |
 
 Catalogs are one file per locale under `packages/i18n/catalogs/`, or one directory per locale of namespace files ([I18n](I18n#split-catalogs)). `check` reports three things separately: `missing` (a gap, and an exit code), `unused` (defined and never called), and `dynamic` — a `t(`plans.${plan}.name`)` the extractor cannot resolve. A dynamic call contributes its static head as a runtime-key prefix, so a key only ever reached that way is never listed unused; an expression with no static head contributes nothing, because a guessed prefix would suppress real gaps.
 
