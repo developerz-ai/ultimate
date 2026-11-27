@@ -16,7 +16,7 @@ import {
   skippedSuiteFinding,
   vanishedSuiteFinding,
 } from './verify-floor';
-import { leftOutOfCi } from './verify-local-only';
+import { leftOutLines, leftOutOfCi, leftOutSteps } from './verify-local-only';
 import { inCi, judgeSkips } from './verify-skip-ceiling';
 import { appliesReason, ranNothingReason, skipLines } from './verify-skip-reason';
 import { stalledOutput, stepTimeoutFinding } from './verify-stalled';
@@ -55,6 +55,12 @@ export async function runVerify(
     (step) =>
       (only === undefined || only.includes(step.name)) &&
       !leftOutOfCi(floor?.localOnly, step.name, ci, only),
+  );
+  const leftOut = leftOutSteps(
+    floor?.localOnly,
+    steps.map((step) => step.name),
+    ci,
+    only,
   );
   const byName = new Map<string, StepResult>();
   // Per step: the numbers a judged run measured, or — under `--shard`, which cannot judge — the
@@ -153,7 +159,7 @@ export async function runVerify(
     floor?.strict === true
       ? []
       : skippedSteps.filter((name) => unrun.has(name) && skipWhy(floor, name) === undefined);
-  const lines = skipLines(skipReasons, unwaived);
+  const lines = [...skipLines(skipReasons, unwaived), ...leftOutLines(leftOut)];
   const summary = verifySummary({
     results,
     failed: failedSteps,
@@ -177,6 +183,8 @@ export async function runVerify(
       durationMs: totalMs,
       ...(unrun.size === 0 ? {} : { skipReasons }),
       ...(unwaived.length === 0 ? {} : { unwaived }),
+      // The steps `localOnly` left out of this CI run, with their why: omitted coverage, said.
+      ...(Object.keys(leftOut).length === 0 ? {} : { localOnly: leftOut }),
       // A BOOLEAN beside the banner, so a reader of `--json` never has to substring-match a
       // summary line to learn that this run checked one thing.
       // `only` is always the LIST, in declared order — one name is a list of one.

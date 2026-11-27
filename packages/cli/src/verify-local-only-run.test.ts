@@ -15,7 +15,10 @@ writeFileSync(
 );
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-async function stepsRun(env: Record<string, string>, only?: VerifyStepName[]): Promise<string[]> {
+async function verified(
+  env: Record<string, string>,
+  only?: VerifyStepName[],
+): Promise<{ ran: string[]; result: Awaited<ReturnType<typeof runVerify>> }> {
   const ran: string[] = [];
   const step = (name: VerifyStep['name']): VerifyStep => ({
     name,
@@ -38,13 +41,24 @@ async function stepsRun(env: Record<string, string>, only?: VerifyStepName[]): P
       durationMs: 0,
     }),
   };
-  await runVerify([step('lint'), step('e2e')], ctx);
-  return ran.sort();
+  const result = await runVerify([step('lint'), step('e2e')], ctx);
+  return { ran: ran.sort(), result };
 }
+
+const stepsRun = async (env: Record<string, string>, only?: VerifyStepName[]) =>
+  (await verified(env, only)).ran;
 
 describe('unit · x.verify.json localOnly', () => {
   test('CI runs every step but the local-only one', async () => {
     expect(await stepsRun({ CI: 'true' })).toEqual(['lint']);
+  });
+
+  test('a CI run says what it left out and why, in data and in a line', async () => {
+    const { result } = await verified({ CI: 'true' });
+    expect(result.data).toMatchObject({ localOnly: { e2e: 'a real browser: run locally' } });
+    expect(result.lines).toContain('left out in CI: e2e — a real browser: run locally');
+    const local = await verified({});
+    expect(local.result.data).not.toHaveProperty('localOnly');
   });
 
   test('a developer machine runs all of them', async () => {

@@ -18,7 +18,7 @@ import { readStepTimeouts, STEP_TIMEOUT_FIELD } from './verify-deadline';
 import type { GuardBaseline } from './verify-guard-baseline';
 import { GUARD_BASELINE_FIELD, readGuardBaseline } from './verify-guard-baseline';
 import type { LocalOnlyReasons } from './verify-local-only';
-import { readLocalOnly } from './verify-local-only';
+import { LOCAL_ONLY_FIELD, readLocalOnly } from './verify-local-only';
 import type { SkipCeiling } from './verify-skip-ceiling';
 import { readSkipCeiling, SKIP_CEILING_FIELD } from './verify-skip-ceiling';
 import { GATE_COMMAND, VERIFY_STEP_NAMES } from './verify-step';
@@ -358,6 +358,8 @@ export const floorProblemFindings = (floor: VerifyFloor | undefined): readonly F
 const fixFor = (problem: string): string => {
   if (problem.includes(`"${STRICT_FIELD}"`))
     return `x verify --json   # then set "${STRICT_FIELD}" in ${VERIFY_FLOOR_FILE} to true or false`;
+  if (problem.startsWith(`"${LOCAL_ONLY_FIELD}"`))
+    return `x verify --json   # then write "${LOCAL_ONLY_FIELD}" in ${VERIFY_FLOOR_FILE} as { "e2e": "<why>" } — a step it runs, a written reason — or drop the entry`;
   if (problem.startsWith(`"${SKIP_FIELD}"`))
     return `x verify --json   # then write "${SKIP_FIELD}" in ${VERIFY_FLOOR_FILE} as { "e2e": "<why>" } — a step it runs and "steps" does not list, a written reason`;
   if (problem.includes(`"${GUARD_BASELINE_FIELD}"`))

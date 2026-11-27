@@ -11,6 +11,8 @@ export const FLOOR_MESSAGES = {
   'cli.verify.skip.noManifest': 'no {file} committed, so there is no contract to diff',
   'cli.verify.skip.noRoadmap': 'no {file} here',
   'cli.verify.skip.nothing': 'the step found nothing to check here',
+  // One line per step `localOnly` left out of a CI run (`verify-local-only.ts`): coverage it omits.
+  'cli.verify.localOnly.line': 'left out in CI: {step} — {reason}',
   // Without `strict`, a warning and never red: an existing app meets it on `main` (X_BREAKING_ON_MAIN).
   'cli.verify.unwaived':
     'not strict: {names} ran no check here — give each a suite, or a "skip" why in x.verify.json, then set "strict": true',
