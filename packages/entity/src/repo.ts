@@ -156,6 +156,19 @@ export interface Repo<T = unknown> {
     options?: FilteredWriteOptions,
   ): Promise<number>;
   /**
+   * `updateWhere` answering the rows it wrote, as stored: `update … where <filter> returning *`, so
+   * no explicit lock. The call for "update if it is still open" that must learn which rows this
+   * call (not a concurrent one) moved. Every guard `updateWhere` has applies unchanged, a match past
+   * `MAX_ASSERTED_ROWS` is refused, including when concurrent changes increase the Postgres result
+   * after its pre-write count. A filter matching nothing resolves `[]`.
+   * Optional: the typed handle refuses the call, before any write, on a repository without it.
+   */
+  updateWhereReturning?(
+    filter: RowPatch<T>,
+    patch: RowPatch<T>,
+    options?: FilteredWriteOptions,
+  ): Promise<readonly T[]>;
+  /**
    * A different patch per row, by id, resolving with how many rows were written — the bulk form of a
    * loop of `update(id, patch)`. Every patch names the same columns. Optional: the typed handle
    * runs a `updateWhere` per row for a repository without it.

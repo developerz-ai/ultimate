@@ -40,6 +40,7 @@ const OPERATIONS = {
   updateMany: { verb: 'update', rows: counted },
   update: { verb: 'update', rows: one },
   updateWhere: { verb: 'update', rows: counted },
+  updateWhereReturning: { verb: 'update', rows: listed },
   delete: { verb: 'delete', rows: () => 1 },
   deleteWhere: { verb: 'delete', rows: counted },
 } as const satisfies Record<string, Reported>;

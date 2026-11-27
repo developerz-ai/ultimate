@@ -58,6 +58,8 @@ const writes = (repo: Repo<Record<string, unknown>>) =>
     update: () => repo.update(ID, { note: 'm' }),
     delete: () => repo.delete(ID),
     updateWhere: () => repo.updateWhere({ id: ID }, { note: 'm' }),
+    updateWhereReturning: () =>
+      repo.updateWhereReturning?.({ id: ID }, { note: 'm' }) ?? Promise.resolve(),
     deleteWhere: () => repo.deleteWhere({ id: ID }),
     lock: () => repo.lock?.(ID, async () => undefined) ?? Promise.resolve(),
   }) as const;

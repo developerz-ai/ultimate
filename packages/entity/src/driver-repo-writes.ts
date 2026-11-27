@@ -22,7 +22,7 @@ import { notFound } from './errors';
 import { assertedRowsTooMany, MAX_ASSERTED_ROWS } from './invariants';
 import { mergedRow } from './memory-update';
 import { idPlan, namedColumns, singleKeyOf } from './plan';
-import type { Repo, RepoOptions, Tx } from './repo';
+import type { FilteredWriteOptions, Repo, RepoOptions, Tx } from './repo';
 import { rowKey } from './row-key';
 import { advancingVersionColumn, deletionStamp, VERSION_STEP_MS } from './search-index-version';
 import { writtenRowsSink } from './search-written-rows';
@@ -185,6 +185,19 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
         )
       : checkedDelete(scope, op, plan, options);
 
+  const updated = async (
+    op: 'updateWhere',
+    filter: RowPatch<Row>,
+    given: RowPatch<Row>,
+    options: FilteredWriteOptions | undefined,
+  ): Promise<number> => {
+    refuseAbandoned();
+    const patch = entity.$parsePatch(given) as RowPatch<Row>;
+    const plan = scope.storePlan(op, updateWherePlan(entity, filter, patch, options, op));
+    assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
+    return patched(op, plan, patch, options);
+  };
+
   const writes: DriverWrites<Row> = {
     async insert(values, options) {
       refuseAbandoned();
@@ -262,14 +275,7 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       return removed(op, scope.storePlan(op, writeWherePlan(entity, filter, options, op)), options);
     },
 
-    async updateWhere(filter, given, options) {
-      refuseAbandoned();
-      const op = 'updateWhere';
-      const patch = entity.$parsePatch(given) as RowPatch<Row>;
-      const plan = scope.storePlan(op, updateWherePlan(entity, filter, patch, options, op));
-      assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
-      return patched(op, plan, patch, options);
-    },
+    updateWhere: async (filter, given, options) => updated('updateWhere', filter, given, options),
 
     // A store answers rows from every insert, so the count is their length: one judging path.
     insertAllCount: async (given, options) => (await writes.insertAll(given, options)).length,

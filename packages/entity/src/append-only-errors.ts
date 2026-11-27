@@ -11,6 +11,7 @@ export type AppendOnlyRefusedCall =
   | 'update'
   | 'delete'
   | 'updateWhere'
+  | 'updateWhereReturning'
   | 'deleteWhere'
   | 'updateMany'
   | 'upsertAll';

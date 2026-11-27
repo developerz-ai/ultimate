@@ -14,6 +14,7 @@ const WRITES = [
   'delete',
   'deleteWhere',
   'updateWhere',
+  'updateWhereReturning',
   'insertAllCount',
   'upsertAllCount',
   'copyAll',

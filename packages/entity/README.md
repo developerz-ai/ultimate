@@ -1001,6 +1001,8 @@ db.posts.update(id, { title });                             // ditto; named colu
 db.likes.deleteWhere({ postId, userId });                   // -> 1  · the only way to unlike
 db.likes.deleteWhere({ postId });                           // -> n  · every like on that post
 db.participants.updateWhere({ conversationId, userId }, { lastReadAt });   // -> 1 · mark read
+// The rows it wrote, decided by the one `update … returning *`: no explicit lock
+const claimed = await db.posts.updateWhereReturning({ id, status: 'open' }, { status: 'claimed' });   // -> Row[]; [] when it was no longer open
 
 db.likes.deleteWhere({});                                   // X_WRITE_UNFILTERED, never every row
 db.participants.updateWhere({ conversationId }, {});        // X_PATCH_EMPTY, never a silent no-op
@@ -1020,6 +1022,21 @@ soft delete, invariant judging, `onUpdateNow()`, sealing (a lookup column matche
 it), the search mirror and the `entity.bulk` report cannot differ. No predicate is
 `X_WRITE_UNFILTERED`; `limit()`, `after()` and `search()` are refused. `updateMany` is `Repo`-optional:
 a hand-written repository without it gets one `updateWhere` per row from the typed handle.
+
+`updateWhereReturning(filter, patch, options?)` is `updateWhere` answering `readonly Row[]`, the rows as
+stored. On Postgres one `update … where … returning *` is the decision: "update if it is still open" and
+"which rows did this call move" need no explicit lock. A filter that matches nothing (already moved,
+soft-deleted, another tenant's) answers `[]`, never `X_NOT_FOUND`. It takes the equality filter, not a
+chain, and shares `updateWhere`'s plan and judging: `X_WRITE_UNFILTERED`, `X_PATCH_EMPTY`, tenancy, soft
+delete, invariants, the `onUpdateNow()` stamp, the version column, sealing, append-only and view refusals,
+the search mirror and the `entity.bulk` report are the same.
+
+| `updateWhereReturning` | |
+|---|---|
+| Bound | a pre-write count past `MAX_ASSERTED_ROWS` is `X_INVARIANT_VIOLATED`. Postgres also bounds returned rows inside a transaction, rolling back if the count drifts. Sweep with `.where(filter).inBatches(1000)`, or use `updateWhere`, which answers a count |
+| Statements on Postgres | one when the filter names the whole primary key and no rule only the app can judge is declared. Otherwise a `count(*)` goes first, without an explicit lock |
+| `defineDriver` store | refuses before writing: the store reports only a count, not the rows it wrote. Use `updateWhere` for a count or a repository implementing atomic `updateWhereReturning` |
+| `Repo` without it | optional on the contract: the call is `X_INVARIANT_VIOLATED` with nothing written |
 
 | Bulk insert | Resolves | Statement |
 |---|---|---|

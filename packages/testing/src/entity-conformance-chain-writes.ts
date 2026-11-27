@@ -1,7 +1,7 @@
-// Entity conformance · the WRITE TERMINALS of the read chain: `db.x.where(…).updateAll(patch)` and
-// `.deleteAll()` write exactly the rows the same chain reads — tenant-scoped as the read, soft delete
-// and append-only honoured, a JS-only rule judged before anything stays, sealed values sealed, the
-// change reported, history recorded — and an empty predicate is refused, never every row.
+// Entity conformance · the WRITE TERMINALS of the read chain (`updateAll`, `deleteAll`) and
+// `updateWhereReturning`: exactly the rows the same filter reads — tenant-scoped, soft delete and
+// append-only honoured, a JS-only rule judged before anything stays, sealed values sealed, the change
+// reported, history recorded — and an empty predicate is refused, never every row.
 
 import { expect } from 'bun:test';
 import type { Database } from '@ultimat3/entity';
@@ -342,9 +342,62 @@ const reported: readonly EntityDriverCheck[] = [
   ),
 ];
 
+const returning: readonly EntityDriverCheck[] = [
+  checkOver(
+    { notes },
+    'updateWhereReturning answers the rows it wrote, as stored; a second claim answers []',
+    async (db, { driver }) => {
+      // Optional on `Repo`: a hand-written driver without it has no rows to answer, and is refused.
+      if (driver.repo(notes).updateWhereReturning === undefined) return;
+      await seedNotes(db);
+      const claim = () => db.notes.updateWhereReturning({ kind: 'a' }, { kind: 'claimed' });
+      const rows = await claim();
+      expect(rows.map((row) => [row.id, row.kind, row.title]).sort()).toEqual([
+        [ONE, 'claimed', 'one'],
+        [TWO, 'claimed', 'two'],
+      ]);
+      expect(rows.every((row) => row.updatedAt > WHEN)).toBe(true);
+      expect(await claim()).toEqual([]);
+      expect(await db.notes.where({ kind: 'b' }).count()).toBe(1);
+      const one = await db.notes.updateWhereReturning({ id: ONE, kind: 'claimed' }, { kind: 'x' });
+      expect(one.map((row) => row.id)).toEqual([ONE]);
+      expect(await codeOf(() => db.notes.updateWhereReturning({}, { kind: 'y' }))).toBe(UNFILTERED);
+    },
+  ),
+  checkOver(
+    { swept },
+    'updateWhereReturning breaking a JS-only rule on one row is refused as one; no row moves',
+    async (db, { driver }) => {
+      if (driver.repo(swept).updateWhereReturning === undefined) return;
+      await db.swept.insertAll([
+        { id: ONE, kind: 'k', reason: 'fine', deletedAt: null },
+        { id: TWO, kind: 'k', reason: null, deletedAt: null },
+      ]);
+      const stamp = () => db.swept.updateWhereReturning({ kind: 'k' }, { deletedAt: WHEN });
+      expect(await codeOf(stamp)).toBe('X_INVARIANT_VIOLATED');
+      expect((await db.swept.orderBy('id').all()).map((row) => row.reason)).toEqual(['fine', null]);
+    },
+  ),
+  checkOver(
+    { vault },
+    'updateWhereReturning answers a sealed value by name only, and refuses a sealed filter',
+    async (db, { driver }) => {
+      if (driver.repo(vault).updateWhereReturning === undefined) return;
+      await db.vault.insert({ id: ONE, label: 'a', secret: null, email: 'a@example.com' });
+      const [row] = await db.vault.updateWhereReturning({ label: 'a' }, { secret: 'hunter2' });
+      expect([row?.secret, row?.email]).toEqual(['hunter2', 'a@example.com']);
+      expect(JSON.stringify(row)).not.toMatch(/secret|hunter2|email/);
+      const named = () =>
+        db.vault.updateWhereReturning({ email: 'a@example.com' } as never, { label: 'x' });
+      expect(await codeOf(named)).toBe('X_ENTITY_SEALED_PREDICATE');
+    },
+  ),
+];
+
 export const CHAIN_WRITE_CHECKS: readonly EntityDriverCheck[] = [
   ...terminals,
   ...tenancy,
   ...semantics,
   ...reported,
+  ...returning,
 ];

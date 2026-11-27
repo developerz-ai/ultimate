@@ -32,6 +32,8 @@ export interface VersionedWrite<Row> {
   readonly tx: Tx | undefined;
   /** Same-tenant references of a re-merged row, judged as the batch was. */
   readonly references: (rows: readonly Row[]) => Promise<void>;
+  /** Told each row this write wrote: a row gone or out of the filter by then is skipped. */
+  readonly wrote?: ((row: Row) => void) | undefined;
 }
 
 /**
@@ -78,6 +80,7 @@ export const versionedWrites = async <Row>(
       const count = await raw.update({ plan: keyed(read, true), tx }, valuesOf(result), advance);
       if (count > 0) {
         written += count;
+        write.wrote?.(read);
         break;
       }
       if (checks || attempt >= MAX_VERSION_RETRIES) throw stale(read);
