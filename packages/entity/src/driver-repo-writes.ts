@@ -10,7 +10,6 @@ import { narrowRow } from './columns';
 import { copyColumns } from './copy-plan';
 import { kindOf, valueAt } from './cursor';
 import { byKeys, checkedDelete } from './driver-delete';
-import { driverUnsupported } from './driver-errors';
 import type { DriverScope } from './driver-scope';
 import { versionedWrites } from './driver-versioned-write';
 import {
@@ -133,37 +132,6 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       }
       return written;
     }
-    // The store must keep the matching set stable through the invariant check and the write.
-    if (lock === null) {
-      if (raw.updateChecked === undefined) {
-        throw driverUnsupported(scope.definition.name, entity.$name, op, 'atomic invariant checks');
-      }
-      let checked: readonly Row[] = [];
-      const written = await raw.updateChecked(
-        { plan, tx },
-        async (current) => {
-          checked = scope.checked(op, plan, current);
-          if (checked.length > MAX_ASSERTED_ROWS) {
-            throw assertedRowsTooMany(entity.$name, op, checked.length);
-          }
-          const results = checked.map((row) => mergedRow(entity, row, patch));
-          for (const row of results) {
-            assertRowTenant(entity.$name, entity.$tenantColumn, op, row);
-            entity.$assert(row);
-          }
-          await references(results);
-          const first = results[0] as Record<string, unknown> | undefined;
-          const values = Object.fromEntries(
-            namedColumns(patch).map(([key]) => [key, first?.[key]]),
-          );
-          if (advance !== undefined) values[advance.property] = narrowed[advance.property];
-          return values;
-        },
-        advance,
-      );
-      if (sink !== undefined) sink(await writtenBack(op, plan, checked, tx));
-      return written;
-    }
     // Every invariant, a SQL-expressible one too: a custom store enforces no CHECK.
     const found = scope.checked(
       op,
@@ -179,7 +147,7 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       entity.$assert(merged);
     }
     await references(results);
-    {
+    if (lock !== null) {
       const written = await versionedWrites(scope, {
         op,
         plan,
@@ -195,6 +163,15 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       if (sink !== undefined) sink(await writtenBack(op, plan, found, tx));
       return written;
     }
+    // The narrowed values the merge produced — the same for every row — so the store holds what
+    // was judged rather than a money `bigint` the row type never carries. The version is the
+    // patch's instant: the store advances it per row.
+    const merged = mergedRow(entity, first, patch) as Record<string, unknown>;
+    const values = Object.fromEntries(namedColumns(patch).map(([key]) => [key, merged[key]]));
+    if (advance !== undefined) values[advance.property] = narrowed[advance.property];
+    const written = await raw.update({ plan, tx }, values, advance);
+    if (sink !== undefined) sink(await writtenBack(op, plan, found, tx));
+    return written;
   };
 
   /** Hard or soft, decided once so `delete(id)` and `deleteWhere` cannot drift apart. */

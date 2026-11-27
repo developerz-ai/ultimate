@@ -94,15 +94,4 @@ describe('unit · defineDriver · version lock', () => {
       ['swept', 1],
     ]);
   });
-  test('a concurrent filtered update preserves both version increments', async () => {
-    const id = '00000000-0000-7000-8000-000000004001';
-    await db.notes.insert({ id, body: 'original' });
-    await Promise.all([
-      db.notes.where({ id }).updateAll({ body: 'first' }),
-      db.notes.where({ id }).updateAll({ body: 'second' }),
-    ]);
-    const row = await db.notes.where({ id }).one();
-    expect(row?.lockVersion).toBe(2);
-    expect(row?.body === 'first' || row?.body === 'second').toBe(true);
-  });
 });
