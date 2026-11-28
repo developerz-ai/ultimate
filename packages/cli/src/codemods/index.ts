@@ -4,6 +4,7 @@
 
 import { codemod as agentKit } from './agent-kit';
 import { codemod as agentsDevMcp } from './agents-dev-mcp';
+import { codemod as agentsMdBudget } from './agents-md-budget';
 import { codemod as authenticatorSessionRefusal } from './authenticator-session-refusal';
 import { codemod as biomeNoDefaultExport } from './biome-no-default-export';
 import { codemod as bunfigIslandCoverage } from './bunfig-island-coverage';
@@ -81,6 +82,7 @@ export const CODEMODS: readonly Codemod[] = [
   docsWorkerCommands,
   mergeDrivers,
   agentKit,
+  agentsMdBudget,
   docsVisualQuality,
   settingsKitAllow,
 ];

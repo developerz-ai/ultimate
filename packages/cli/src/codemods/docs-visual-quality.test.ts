@@ -41,6 +41,19 @@ describe('unit · docs-visual-quality codemod', () => {
     expect(text.indexOf('## Visual quality')).toBeLessThan(text.indexOf('## Agent tools'));
   });
 
+  test('the commands rows as 31.22 worded them are swapped too', async () => {
+    const reworded = OLD.replace(
+      /\| `\.claude\/commands\/feature\.md`[^\n]*\n\| `\.claude\/commands\/planx\.md`[^\n]*\n\| `\.claude\/commands\/verify\.md`[^\n]*\n/,
+      '| `.claude/commands/feature.md` | build or fix one thing | plain markdown: any agent can read one and follow it |\n| `.claude/commands/planx.md` | write a plan for another agent to execute | the same |\n| `.claude/commands/verify.md` | run the gate | the same |\n',
+    );
+    expect(reworded).not.toBe(OLD);
+    const app = memoryCodemodApp({ 'CLAUDE.md': reworded });
+    const result = await codemod.run(app);
+    expect(result.skipped).toEqual([]);
+    expect(app.files['CLAUDE.md']).toContain('`.claude/skills/`');
+    expect(app.files['CLAUDE.md']).not.toContain('.claude/commands/');
+  });
+
   test('a second run changes nothing', async () => {
     const app = memoryCodemodApp({ 'CLAUDE.md': OLD });
     await codemod.run(app);

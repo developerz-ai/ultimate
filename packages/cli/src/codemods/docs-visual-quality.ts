@@ -3,7 +3,7 @@
 // it, within the brief's byte budget; one that cannot be placed is reported with the row to add.
 
 import { editAgentsDocRow } from './agents-doc-row';
-import type { Codemod, CodemodResult } from './codemod';
+import type { Codemod, CodemodApp, CodemodResult } from './codemod';
 import { mergeResults } from './engine-edits';
 
 const lines = (...text: readonly string[]): string => text.join('\n');
@@ -54,6 +54,25 @@ const VISUAL_QUALITY = lines(
   '',
 );
 
+const COMMAND_ROW = /^\| `\.claude\/commands\/(?:feature|planx|verify)\.md` \|.*$/;
+
+/**
+ * The `.claude/commands/*` rows as THIS app's brief words them: `x new` reworded the three over the
+ * releases ("plain markdown: any agent can read one and follow it"), so the block is read off the
+ * file — its first row to its last, whatever each says — and the template's own text is the fallback.
+ */
+async function commandRows(app: CodemodApp): Promise<string> {
+  for (const path of ['CLAUDE.md', 'AGENTS.md']) {
+    const rows = ((await app.read(path)) ?? '').split('\n');
+    const first = rows.findIndex((row) => COMMAND_ROW.test(row));
+    if (first === -1) continue;
+    let last = first;
+    while (COMMAND_ROW.test(rows[last + 1] ?? '')) last += 1;
+    return rows.slice(first, last + 1).join('\n');
+  }
+  return OLD_COMMANDS;
+}
+
 const swap =
   (from: string, to: string, said: string, missing: string) =>
   (app: Parameters<Codemod['run']>[0]) =>
@@ -68,7 +87,7 @@ export const codemod: Codemod = {
     // The two that shrink first, so the ones that grow find the room they need.
     const results = [
       await swap(
-        OLD_COMMANDS,
+        await commandRows(app),
         NEW_SKILLS,
         '`.claude/skills/`',
         'no .claude/commands rows in the Agent tools table',
