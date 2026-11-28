@@ -199,4 +199,16 @@ describe('@ultimat3/effects — ShaderBackground presets are lazy chunks', () =>
       expect(named.length).toBeLessThanOrEqual(1);
     }
   }, 30_000);
+
+  test('known gap: an unsplit build (a lone island) inlines every preset into the entry', async () => {
+    // Today's behaviour, pinned so the Known-gaps row goes red the day the island bundler splits a
+    // lone island: with no splitting Bun inlines each dynamic import(), so all three presets ride.
+    const outputs = await build('shader-background-unsplit', SHADER, false);
+    expect(outputs.filter((output) => output.kind === 'chunk')).toHaveLength(0);
+    const entry = outputs.find((output) => output.kind === 'entry-point');
+    if (entry === undefined) expect.unreachable('no entry chunk');
+    // A vertex and a fragment program per preset.
+    expect(entry.text.split('#version 300 es').length - 1).toBe(2 * SHADER_PRESETS.length);
+    for (const preset of SHADER_PRESETS) expect(entry.text).toContain(`"${preset}"`);
+  }, 30_000);
 });
