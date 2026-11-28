@@ -130,7 +130,28 @@ describe('toJsonSchema', () => {
       type: 'object',
       properties: { id: { type: 'string', format: 'uuid' } },
       required: ['id'],
-      additionalProperties: false,
+      additionalProperties: true,
+    });
+  });
+
+  test('toJsonSchema input:true permits undeclared keys; default forbids them', () => {
+    const object = t.object({ id: t.uuid });
+    const base = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: { id: { type: 'string', format: 'uuid' } },
+      required: ['id'],
+    };
+    expect(toJsonSchema(object)).toEqual({ ...base, additionalProperties: false });
+    expect(toJsonSchema(object, { input: true })).toEqual({ ...base, additionalProperties: true });
+    expect(toJsonSchema(object, { input: false })).toEqual({ ...base, additionalProperties: false });
+    // Undeclared keys land on nested input objects too.
+    const nested = t.object({ parent: t.object({ child: t.string }) });
+    expect(toJsonSchema(nested, { input: true })).toMatchObject({
+      properties: { parent: { additionalProperties: true } },
+    });
+    expect(toJsonSchema(nested)).toMatchObject({
+      properties: { parent: { additionalProperties: false } },
     });
   });
 

@@ -82,7 +82,7 @@ describe('toWireSchema', () => {
 
   test('a record schema says "extra keys allowed", never a value schema the subset cannot hold', () => {
     expect(toWireSchema(Everything).properties?.['meta']?.additionalProperties).toBe(true);
-    expect(toWireSchema(Everything).additionalProperties).toBe(false);
+    expect(toWireSchema(Everything).additionalProperties).toBe(true);
   });
 
   test('the shape survives: required, nesting, defaults, descriptions, nullable branches', () => {

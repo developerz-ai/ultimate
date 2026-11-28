@@ -78,7 +78,7 @@ const QUERIES: RegistryKind<QueryDescriptor, AnyQuery> = {
   ],
   // The descriptor carries no input shape at all; the JSON-schema view of it is cheap and is
   // exactly what an agent needs before it can call `x dev`'s query endpoint correctly.
-  extra: (raw) => ({ input: asJson(jsonSchemaOf(raw.input)) }),
+  extra: (raw) => ({ input: asJson(jsonSchemaOf(raw.input, { input: true })) }),
 };
 
 const ENTITIES: RegistryKind<EntityDescription, RegistryEntry> = {

@@ -3,7 +3,7 @@
     "schemas": {
       "ApproveConnectionInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "request": {
             "maxLength": 8192,
@@ -32,7 +32,7 @@
       },
       "BlockUserInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "userId": {
             "format": "uuid",
@@ -70,7 +70,7 @@
       },
       "CreateAccountInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "displayName": {
             "maxLength": 80,
@@ -135,7 +135,7 @@
       },
       "CreateSessionInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "h-captcha-response": {
             "minLength": 1,
@@ -189,7 +189,7 @@
       },
       "DenyConnectionInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "request": {
             "maxLength": 8192,
@@ -218,7 +218,7 @@
       },
       "DestroySessionInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "confirm": {
             "const": "sign-out"
@@ -253,7 +253,7 @@
       },
       "HealthInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {},
         "required": [],
         "type": "object"
@@ -278,7 +278,7 @@
       },
       "MarkNotificationsReadInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "ids": {
             "items": {
@@ -399,7 +399,7 @@
       },
       "RequestFriendInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "userId": {
             "format": "uuid",
@@ -458,7 +458,7 @@
       },
       "RespondFriendInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "decision": {
             "enum": [
@@ -525,7 +525,7 @@
       },
       "SendMessageInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "body": {
             "maxLength": 5000,
@@ -579,7 +579,7 @@
       },
       "UnblockUserInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "userId": {
             "format": "uuid",

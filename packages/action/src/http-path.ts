@@ -211,7 +211,7 @@ export function pathParametersOf(
 ): readonly Record<string, unknown>[] {
   const params = templateParams(path);
   if (params.length === 0) return [];
-  const properties = jsonSchemaOf(input)['properties'];
+  const properties = jsonSchemaOf(input, { input: true })['properties'];
   const members: Readonly<Record<string, unknown>> =
     typeof properties === 'object' && properties !== null ? { ...properties } : {};
   return params.map((name) => ({

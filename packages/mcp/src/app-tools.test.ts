@@ -96,7 +96,7 @@ describe('tools as a named record', () => {
       type: 'object',
       properties: { orgId: { type: 'string', minLength: 1 } },
       required: ['orgId'],
-      additionalProperties: false,
+      additionalProperties: true,
     });
     // Policy is the only gate; a scope would be a second one and the two would drift.
     expect(tool.scope).toBeUndefined();
@@ -272,7 +272,7 @@ describe("include: 'exposed'", () => {
       type: 'object',
       properties: { postId: { type: 'string', minLength: 1 } },
       required: ['postId'],
-      additionalProperties: false,
+      additionalProperties: true,
     });
   });
 

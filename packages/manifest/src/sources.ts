@@ -60,7 +60,7 @@ const asJson = (value: object): JsonValue => value as JsonValue;
 /** `describeQueries` and `getQuery` read one registry, so the handle is always there. */
 const queryInput = (name: string): { readonly input?: JsonValue } => {
   const handle = getQuery(name);
-  return handle === undefined ? {} : { input: asJson(jsonSchemaOf(handle.input)) };
+  return handle === undefined ? {} : { input: asJson(jsonSchemaOf(handle.input, { input: true })) };
 };
 
 /**

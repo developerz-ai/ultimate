@@ -465,7 +465,7 @@ export function describeAction(target: AnyAction): ActionDescriptor {
     capability: policyCapability(def.policy),
     // The flattened list, beside the label and never instead of it: one is read, one is matched.
     permissions: policyPermissions(def.policy),
-    input: jsonSchemaOf(def.input),
+    input: jsonSchemaOf(def.input, { input: true }),
     output: jsonSchemaOf(def.output),
     invalidates: tagKeys(def.cache?.invalidates ?? []),
     idempotent: def.idempotent === true,

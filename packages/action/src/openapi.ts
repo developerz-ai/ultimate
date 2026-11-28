@@ -60,7 +60,7 @@ export function buildOpenApi(options: BuildOpenApiOptions = {}): OpenApiDocument
     paths[documented] = { ...item, [verb]: toOpenApiOperation(target) };
     // The component IS the request body, so a `:param`'s key leaves it: the URL carries it.
     schemas[inputSchemaName(name)] = withoutKeys(
-      sortSchema(jsonSchemaOf(target.input)),
+      sortSchema(jsonSchemaOf(target.input, { input: true })),
       templateParams(path),
     );
     schemas[outputSchemaName(name)] = sortSchema(jsonSchemaOf(target.output));

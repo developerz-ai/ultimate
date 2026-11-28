@@ -20,8 +20,8 @@ export type JsonSchemaObject = Record<string, unknown>;
  * `registerAction` calls this at boot (`assertProjectable`), so a registered action can never
  * reach a projection that throws.
  */
-export function jsonSchemaOf(schema: StandardSchemaV1): JsonSchemaObject {
-  return normalizeJsonSchema(() => toJsonSchema(schema));
+export function jsonSchemaOf(schema: StandardSchemaV1, options?: { input?: boolean }): JsonSchemaObject {
+  return normalizeJsonSchema(() => toJsonSchema(schema, options));
 }
 
 /**

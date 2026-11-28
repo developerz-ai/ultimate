@@ -3,7 +3,7 @@
     "schemas": {
       "AbortPostsImportInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "key": {
             "maxLength": 512,
@@ -42,7 +42,7 @@
       },
       "AddWebhookEndpointInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "orgId": {
             "format": "uuid",
@@ -85,7 +85,7 @@
       },
       "AnswerPromptInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "answer": {
             "maxLength": 64,
@@ -136,7 +136,7 @@
       },
       "AttachAvatarInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "key": {
             "maxLength": 512,
@@ -171,7 +171,7 @@
       },
       "CancelPostsExportInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "jobId": {
             "format": "uuid",
@@ -218,7 +218,7 @@
       },
       "CancelRunInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "orgId": {
             "format": "uuid",
@@ -251,7 +251,7 @@
       },
       "CompletePostsImportInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "key must be one grantPostsImport minted: org/<orgId>/pending/<importId>.csv",
         "properties": {
           "key": {
@@ -336,7 +336,7 @@
       },
       "ConfirmAgentPublishInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "arguments": {
             "additionalProperties": {
@@ -457,7 +457,7 @@
       },
       "ConfirmPostAttachmentInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "id": {
             "maxLength": 255,
@@ -502,7 +502,7 @@
       },
       "ConnectSiteInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "credential": {
             "maxLength": 200,
@@ -558,7 +558,7 @@
       },
       "ContactSalesInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "budget": {
             "maxLength": 40,
@@ -621,7 +621,7 @@
       },
       "CreateCommentInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "body": {
             "maxLength": 2000,
@@ -680,7 +680,7 @@
       },
       "CreatePostInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "body": {
             "minLength": 1,
@@ -801,7 +801,7 @@
       },
       "EndSessionInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {},
         "required": [],
         "type": "object"
@@ -826,7 +826,7 @@
       },
       "ErasureApprovalOptionsInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "memberId": {
             "format": "uuid",
@@ -849,7 +849,7 @@
       },
       "GrantAvatarUploadInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "contentType": {
             "maxLength": 255,
@@ -919,7 +919,7 @@
       },
       "GrantPostsImportInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "contentType": {
             "maxLength": 255,
@@ -1004,7 +1004,7 @@
       },
       "InviteMemberInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "email": {
             "format": "email",
@@ -1127,7 +1127,7 @@
       },
       "IssueRunKeyInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "orgId": {
             "format": "uuid",
@@ -1165,7 +1165,7 @@
       },
       "KeepDraftReviewInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "memberId": {
             "format": "uuid",
@@ -1231,7 +1231,7 @@
       },
       "LikePostInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "orgId": {
             "format": "uuid",
@@ -1341,7 +1341,7 @@
       },
       "ListPostsImportPartsInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "key": {
             "maxLength": 512,
@@ -1396,7 +1396,7 @@
       },
       "MemberAvatarInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {},
         "required": [],
         "type": "object"
@@ -1424,7 +1424,7 @@
       },
       "MovePostStatusInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "from": {
             "enum": [
@@ -1487,7 +1487,7 @@
       },
       "PasskeyRegisterOptionsInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {},
         "required": [],
         "type": "object"
@@ -1498,7 +1498,7 @@
       },
       "PasskeySignInInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "response": {
             "description": "any JSON value, nested at most 256 levels deep"
@@ -1511,7 +1511,7 @@
       },
       "PasskeySignInOptionsInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {},
         "required": [],
         "type": "object"
@@ -1536,7 +1536,7 @@
       },
       "PrintPostInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "orgId": {
             "format": "uuid",
@@ -1670,7 +1670,7 @@
       },
       "PublishPostInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "notify": {
             "default": true,
@@ -1779,7 +1779,7 @@
       },
       "RegisterDeviceInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "an ios token is 64 to 200 hex characters, and an android token is an FCM registration token",
         "properties": {
           "locale": {
@@ -1848,7 +1848,7 @@
       },
       "RegisterPasskeyInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "response": {
             "description": "any JSON value, nested at most 256 levels deep"
@@ -1875,7 +1875,7 @@
       },
       "RemoveWebhookEndpointInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "endpointId": {
             "format": "uuid",
@@ -1908,7 +1908,7 @@
       },
       "RequestDraftReviewInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "orgId": {
             "format": "uuid",
@@ -1941,7 +1941,7 @@
       },
       "RequestMemberErasureInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "approval": {
             "description": "any JSON value, nested at most 256 levels deep"
@@ -1978,7 +1978,7 @@
       },
       "RequestMemberExportInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "memberId": {
             "format": "uuid",
@@ -2016,7 +2016,7 @@
       },
       "RequestPostAttachmentInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "contentType": {
             "maxLength": 255,
@@ -2091,7 +2091,7 @@
       },
       "RequestPostsExportInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "orgId": {
             "format": "uuid",
@@ -2129,7 +2129,7 @@
       },
       "ReviewDraftInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "orgId": {
             "format": "uuid",
@@ -2171,7 +2171,7 @@
       },
       "RevokeRunKeyInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "keyId": {
             "minLength": 1,
@@ -2203,7 +2203,7 @@
       },
       "SavePreferencesInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "digestOptIn": {
             "default": true,
@@ -2355,7 +2355,7 @@
       },
       "SetThemeInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "memberId": {
             "format": "uuid",
@@ -2474,7 +2474,7 @@
       },
       "SignPostsImportPartInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "key": {
             "maxLength": 512,
@@ -2526,7 +2526,7 @@
       },
       "StartRunInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "connectionId": {
             "format": "uuid",
@@ -2564,7 +2564,7 @@
       },
       "SubscribePushInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "endpoint": {
             "maxLength": 2048,
@@ -2635,7 +2635,7 @@
       },
       "SummarizeInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "orgId": {
             "format": "uuid",
@@ -2676,7 +2676,7 @@
       },
       "SummarizePostsInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "orgId": {
             "format": "uuid",
@@ -2863,7 +2863,7 @@
       },
       "ToggleDigestOptInInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "digestOptIn": {
             "type": "boolean"
@@ -2977,7 +2977,7 @@
       },
       "UnregisterDeviceInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "platform": {
             "enum": [
@@ -3014,7 +3014,7 @@
       },
       "UnsubscribePushInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "endpoint": {
             "maxLength": 2048,
@@ -3042,7 +3042,7 @@
       },
       "UpgradePlanInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "orgId": {
             "format": "uuid",
@@ -3211,7 +3211,7 @@
       },
       "WithdrawPostInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "orgId": {
             "format": "uuid",

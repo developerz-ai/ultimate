@@ -40,6 +40,31 @@ describe('jsonSchemaOf', () => {
   test('refuses, with the provider code, when the provider cannot introspect it', () => {
     expect(() => jsonSchemaOf(unintrospectable)).toThrow(/X_SCHEMA_UNSUPPORTED/);
   });
+
+  test('input:true permits undeclared keys; default forbids them', () => {
+    const base = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: {
+        postId: { type: 'string', format: 'uuid' },
+        title: { type: 'string', minLength: 1 },
+      },
+      required: ['postId', 'title'],
+    };
+    expect(jsonSchemaOf(Schema)).toEqual({ ...base, additionalProperties: false });
+    expect(jsonSchemaOf(Schema, { input: true })).toEqual({ ...base, additionalProperties: true });
+    expect(jsonSchemaOf(Schema, { input: false })).toEqual({ ...base, additionalProperties: false });
+  });
+
+  test('the input shape flows through nested objects', () => {
+    const nested = t.object({ parent: t.object({ child: t.string }) });
+    expect(jsonSchemaOf(nested, { input: true })['properties']).toMatchObject({
+      parent: { additionalProperties: true },
+    });
+    expect(jsonSchemaOf(nested)['properties']).toMatchObject({
+      parent: { additionalProperties: false },
+    });
+  });
 });
 
 describe('sortSchema', () => {

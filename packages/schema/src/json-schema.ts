@@ -82,6 +82,11 @@ export interface ToJsonSchemaOptions {
   /** Emit `$schema` at the root. Off for OpenAPI component schemas. */
   readonly includeDialect?: boolean | undefined;
   readonly title?: string | undefined;
+  /** When true this schema describes INPUT: the parser strips undeclared keys, so
+   * `additionalProperties` permits them instead of forbidding. Output keeps `false`,
+   * so declared-key validation is unchanged and existing successful inputs are not
+   * newly rejected. */
+  readonly input?: boolean | undefined;
 }
 
 const FORMAT_MAP: Readonly<Record<string, string>> = Object.freeze({
@@ -191,7 +196,7 @@ function jsonDefault(value: unknown): { default?: unknown } {
   }
 }
 
-function convert(node: SchemaNode): JsonSchema {
+function convert(node: SchemaNode, options?: ToJsonSchemaOptions): JsonSchema {
   const refinements = node.refinements ?? [];
   const notes = [
     node.description,
@@ -248,13 +253,13 @@ function convert(node: SchemaNode): JsonSchema {
     case 'array':
       return annotate({
         type: 'array',
-        items: node.items === undefined ? {} : convert(node.items),
+        items: node.items === undefined ? {} : convert(node.items, options),
         ...(node.minItems === undefined ? {} : { minItems: node.minItems }),
         ...(node.maxItems === undefined ? {} : { maxItems: node.maxItems }),
       });
     case 'union':
       return annotate({
-        anyOf: (node.anyOf ?? []).map(convert),
+        anyOf: (node.anyOf ?? []).map((child) => convert(child, options)),
         // Only when the union actually dispatches on a key: an untagged `t.union` carrying a
         // `discriminator` would tell a generator to read a property no member declares.
         ...(node.discriminant === undefined
@@ -264,7 +269,8 @@ function convert(node: SchemaNode): JsonSchema {
     case 'record':
       return annotate({
         type: 'object',
-        additionalProperties: node.valueNode === undefined ? true : convert(node.valueNode),
+        additionalProperties:
+          node.valueNode === undefined ? true : convert(node.valueNode, options),
         // The key rule, published rather than left implicit: `recordSchema` refuses
         // `__proto__` / `constructor` / `prototype` by name, and without this the document
         // advertised them — an OpenAPI body, a generated client and an MCP tool all sending a key
@@ -299,7 +305,7 @@ function convert(node: SchemaNode): JsonSchema {
           },
         },
         required: ['minor', 'currency'],
-        additionalProperties: false,
+        additionalProperties: options?.input === true ? true : false,
       });
     case 'object': {
       // `Object.create(null)`, the same rule `validators.ts` applies to the IR this reads: a
@@ -310,13 +316,13 @@ function convert(node: SchemaNode): JsonSchema {
         JsonSchema
       >;
       for (const [key, child] of Object.entries(node.properties ?? {})) {
-        properties[key] = convert(child);
+        properties[key] = convert(child, options);
       }
       return annotate({
         type: 'object',
         properties,
         required: requiredKeys(node),
-        additionalProperties: false,
+        additionalProperties: options?.input === true ? true : false,
       });
     }
     // No `type`: an empty schema is JSON Schema's own spelling of "any JSON value", and every
@@ -354,7 +360,7 @@ function dialectUri(dialect: string): string {
 
 /** Convert any schema the active provider can introspect. */
 export function toJsonSchema(schema: unknown, options?: ToJsonSchemaOptions): JsonSchema {
-  const converted = convert(introspect(schema));
+  const converted = convert(introspect(schema), options);
   // Resolved BEFORE `includeDialect` is read: a dialect nothing publishes is a caller mistake
   // whether or not this document happens to emit `$schema`, and a refusal that fires for one flag
   // and not the other is a rule a caller learns the wrong half of.
@@ -368,7 +374,7 @@ export function toJsonSchema(schema: unknown, options?: ToJsonSchemaOptions): Js
 
 /** Draft-07, no `$schema`: the document `wire-schema.ts` narrows to what an MCP tool publishes. */
 export function toMcpInputSchema(schema: unknown): JsonSchema {
-  return toJsonSchema(schema, { dialect: 'draft-07', includeDialect: false });
+  return toJsonSchema(schema, { dialect: 'draft-07', includeDialect: false, input: true });
 }
 
 /** Convert an already-introspected node — used by generators that walk the IR themselves. */
