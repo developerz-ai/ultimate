@@ -27,7 +27,7 @@ Until the workflow exists, this page is a person's.
 | # | Step |
 |---|---|
 | 1 | Read the platform's status for the account first. A retired model or key is [`model-or-key-retired.md`](./model-or-key-retired.md) |
-| 2 | Run the week's `health` checkup by hand: `bun run scripts/health.ts --json`, and file what `.dz/briefs/health.md` says to file |
+| 2 | Run the health rows by hand: `bun run scripts/health.ts --json`, and file what `docs/ops/health.md` says to file |
 | 3 | `main` red: [`main-red.md`](./main-red.md). A release owed: `bun run scripts/release-due.ts --json`; a person may cut it (PUBLISHING.md § Ongoing releases) |
 | 4 | Open PRs: review and merge them as a member would. `require_review: true` still holds |
 | 5 | When the bot is back, its first `health` run re-reads every row; close what it finds healthy |

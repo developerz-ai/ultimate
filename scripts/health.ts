@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Answer whether the project is healthy: one verdict per row of `.dz/briefs/health.md`, read from
+// Answer whether the project is healthy: one verdict per row of `docs/ops/health.md`, read from
 // git, `gh`, npm and the repo's own scripts, and refuse with `cannot tell` and no data when any
 // row's command cannot be read — answering over a row it never read is the silent green it refuses.
 //
