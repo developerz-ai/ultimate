@@ -360,4 +360,42 @@ describe('unit · x new · each shipped guard refuses the mistake it names', () 
     });
     expect(findings).toEqual([]);
   }, 30_000);
+
+  // `x new --shape dashboard` and `--shape content` write page.module.scss with named z-index
+  // layers through tokens.z(...) / calc(-1 * #{tokens.z(raised)}), never raw numerals: the
+  // raw-z-index guard must stay silent on them. PR #1385 re-introduced raw z-index values into
+  // both shapes and boundary failed on the smoke run at merge 40057e367; this pins it.
+  test('a dashboard scaffold ships no raw z-index', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'x-scaffold-zindex-'));
+    try {
+      for (const file of planNewApp({
+        name: 'guard-demo',
+        shape: 'dashboard',
+        example: true,
+      })) {
+        await Bun.write(join(dir, file.path), file.contents);
+      }
+      await linkUi(dir);
+      expect(codes(await guardFindings(dir))).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  test('a content scaffold ships no raw z-index', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'x-scaffold-zindex-'));
+    try {
+      for (const file of planNewApp({
+        name: 'guard-demo',
+        shape: 'content',
+        example: true,
+      })) {
+        await Bun.write(join(dir, file.path), file.contents);
+      }
+      await linkUi(dir);
+      expect(codes(await guardFindings(dir))).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
