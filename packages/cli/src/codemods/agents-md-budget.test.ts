@@ -22,9 +22,17 @@ describe('unit · agents-md-budget codemod', () => {
     expect(app.files[FLOOR]).toBe('{"agentsMdMaxBytes":20000}\n');
   });
 
-  test('the default declared out loud is raised too, and a second run changes nothing', async () => {
+  test("a deliberate lower cap is the author's and stays", async () => {
+    const app = memoryCodemodApp({ [FLOOR]: '{"agentsMdMaxBytes":10000}\n' });
+    expect(await codemod.run(app)).toEqual({ changed: [], skipped: [] });
+    expect(app.files[FLOOR]).toBe('{"agentsMdMaxBytes":10000}\n');
+  });
+
+  test('the default declared out loud becomes exactly the scaffold budget, and a second run changes nothing', async () => {
     const app = memoryCodemodApp({ [FLOOR]: '{"agentsMdMaxBytes":12000}\n' });
     expect((await codemod.run(app)).changed).toEqual([FLOOR]);
+    expect(JSON.parse(app.files[FLOOR] ?? '').agentsMdMaxBytes).toBe(SCAFFOLD_AGENTS_MD_MAX_BYTES);
+    expect(SCAFFOLD_AGENTS_MD_MAX_BYTES).toBe(13_120);
     expect(await codemod.run(app)).toEqual({ changed: [], skipped: [] });
   });
 

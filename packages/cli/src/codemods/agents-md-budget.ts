@@ -35,7 +35,7 @@ export const codemod: Codemod = {
       return { changed: [], skipped: [] };
     }
     const held = Reflect.get(floor, 'agentsMdMaxBytes');
-    if (held !== undefined && (typeof held !== 'number' || held > AGENTS_MD_MAX_BYTES)) {
+    if (held !== undefined && held !== AGENTS_MD_MAX_BYTES) {
       return { changed: [], skipped: [] };
     }
     await app.write(

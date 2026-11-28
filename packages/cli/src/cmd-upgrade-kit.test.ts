@@ -1,5 +1,6 @@
-// `x upgrade` and the agent kit a hop brings: the INSTALLED CLI's `x kit --json` runs after the
-// codemods and the guards, before the gate judges the tree, and its refresh is in the report.
+// `x upgrade` and the agent kit a hop brings: the INSTALLED CLI's `x kit --json` runs right after the
+// codemods and before the manifest and the doctor, so the doctor reads the tree it wrote, and its
+// refresh is in the report.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { fixture, kitDocument, recording, removeFixtures, run } from './cmd-upgrade-fixture';

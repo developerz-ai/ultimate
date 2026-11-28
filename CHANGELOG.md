@@ -54,7 +54,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Fixed
 
-- `x upgrade` from any 31.x reaches 31.53.0 with no hand edit: the kit stage runs before the hop's doctor, `docs-visual-quality` reads an older brief's agent-tools rows whatever their wording, and the new `agents-md-budget` codemod lifts a default 12,000-byte `agentsMdMaxBytes` to the scaffold's 13,120 (a raised budget is left alone).
+- `x upgrade` from any 31.x reaches 31.53.0 with no hand edit when its brief is the scaffold's text; a customised brief row is reported for the author. The kit stage runs before the hop's doctor, `docs-visual-quality` swaps the agent-tools rows of every shipped wording (inside the Agent tools table only), and the new `agents-md-budget` codemod lifts an absent or default 12,000-byte `agentsMdMaxBytes` to the scaffold's 13,120 (any other budget, higher or lower, is left alone).
 - `x new --shape dashboard|blog|saas|content` passes its first `x verify` again: the landing's Aurora layers sit on the z ladder (`tokens.z(...)`), and the dashboard's page test names the motion island beside the theme toggle.
 - The scaffolded `shape` agent's front matter was invalid YAML, so Claude Code loaded it with no description and never dispatched it.
 

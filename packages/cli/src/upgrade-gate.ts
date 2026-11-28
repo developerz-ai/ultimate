@@ -265,9 +265,9 @@ export type HopStage =
 
 /**
  * The gate, in order, each stage told apart by `onStage` so a long gate is not a long silence.
- * `kit` refreshes the managed agent files before `verify` judges them; `guards` runs only when the
- * doctor lists a missing one; `coverage` only on a hop that moved the
- * Bun floor — both before `verify`, so the verdict is the one on the tree the hop leaves.
+ * `kit` writes the managed agent files right after the codemods, before the manifest and the doctor
+ * that read them; `guards` runs only when the doctor lists a missing one; `coverage` only on a hop
+ * that moved the Bun floor — both before `verify`, so the verdict is the one on the tree the hop leaves.
  */
 export async function runHopGate(input: {
   readonly runner: Runner;
