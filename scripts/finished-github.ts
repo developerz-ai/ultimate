@@ -16,6 +16,8 @@ export const SHAPE_RUN_DEPTH = 10;
 export const FLAKE_WEEKS = 4;
 /** A week plus a late runner's slack: an older newest run means the schedule stopped. */
 const WEEK_MS = 8 * 24 * 60 * 60 * 1000;
+/** The least gap between two weekly runs: a late runner moves one by hours, never by a day. */
+const SLOT_MS = 6 * 24 * 60 * 60 * 1000;
 
 const CI_RUNS = [
   'run',
@@ -133,12 +135,18 @@ export async function flakeRow(root: string, gh: Runner, nowMs: number): Promise
   const greenWeeks = weeks.filter((run) => run['conclusion'] === 'success').length;
   const newest = Date.parse(String(weeks[0]?.['createdAt'] ?? ''));
   const fresh = nowMs - newest <= WEEK_MS;
-  if (weeks.length === FLAKE_WEEKS && greenWeeks === FLAKE_WEEKS && fresh) {
+  // Each run in its own weekly slot: nightly runs from before 2026-11-28 (two rounds each) sit days
+  // apart and are not four weekly hunts of four rounds.
+  const times = weeks.map((run) => Date.parse(String(run['createdAt'] ?? '')));
+  const weekly = times.every((at, i) => i === 0 || (times[i - 1] ?? Number.NaN) - at >= SLOT_MS);
+  if (weeks.length === FLAKE_WEEKS && greenWeeks === FLAKE_WEEKS && fresh && weekly) {
     return green('tests-deterministic', `the last ${FLAKE_WEEKS} scheduled flake hunts passed`);
   }
   const why = !fresh
     ? `the newest scheduled flake hunt is not from the last eight days (${weeks.length === 0 ? 'none ran' : String(weeks[0]?.['createdAt'])})`
-    : `${greenWeeks} of the last ${weeks.length} scheduled flake hunts passed, and ${FLAKE_WEEKS} green weekly runs in a row are the bar`;
+    : !weekly && greenWeeks === FLAKE_WEEKS
+      ? `the last ${FLAKE_WEEKS} scheduled flake hunts are not ${FLAKE_WEEKS} weekly runs (two sit under six days apart: nightly runs from before the weekly schedule)`
+      : `${greenWeeks} of the last ${weeks.length} scheduled flake hunts passed, and ${FLAKE_WEEKS} green weekly runs in a row are the bar`;
   return red('tests-deterministic', why, [
     {
       code: 'X_FINISHED_FLAKY',

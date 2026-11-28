@@ -3,7 +3,7 @@ name: ci-nightly
 # Says out loud when ci.yml's scheduled full run on main is red: weekly since 2026-11-28, and the
 # workflow and its label keep the `nightly` name so the open issue still matches. A pull request
 # away from the scaffold code runs three of scaffold-smoke's eleven rows
-# (`scripts/lib/ci/scaffold-matrix.ts`), so the scheduled run — every job, every row — is where a shape-only regression from elsewhere
+# (`scripts/lib/ci/scaffold-matrix.ts`), so the scheduled run — every scaffold row — is where a shape-only regression from elsewhere
 # shows first, and a red scheduled run that only sits in the Actions tab is a signal nobody reads.
 #
 # The registry-audit.yml pattern: ONE open `ci-nightly` issue, retitled and commented each red
@@ -65,7 +65,7 @@ jobs:
           count="$(jq 'length' <<< "$red")"
           title="ci scheduled run: ${count} job(s) red on main"
           body="$(jq -r --arg url "$RUN_URL" --arg sha "$SHA" --arg id "$RUN_ID" --arg conclusion "$CONCLUSION" \
-            '"**ci.yml scheduled run \($conclusion)** at `\($sha)`: \($url)\n\n" + (map("- `" + . + "`") | join("\n")) + "\n\nfix: `gh run view \($id) --log-failed`   # each red job names its step and its fix; then rerun it: `gh workflow run ci.yml --ref main`"' <<< "$red")"
+            '"**ci.yml scheduled run \($conclusion)** at `\($sha)`: \($url)\n\n" + (map("- `" + . + "`") | join("\n")) + "\n\nfix: `gh run view \($id) --log-failed`   # each red job names its step and its fix; then rerun this run (still a `schedule` run, so a green one closes this issue): `gh run rerun \($id) --failed`"' <<< "$red")"
           existing="$(printf '%s\n' "$open" | head -n 1)"
           if [ -n "$existing" ]; then
             gh issue edit "$existing" --title "$title"
