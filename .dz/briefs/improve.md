@@ -1,13 +1,12 @@
-# Brief: monthly improvement
+# Brief: improvement pass
 
-Fired every Monday by `schedules: improve` in `.dz/maintainer/maintainer.yml` — the schema has
-weekdays, not days of the month. **Act only on the first Monday of the month:**
-`[ "$(date -u +%-d)" -le 7 ]`. On any other Monday stop here, file nothing, open nothing.
+Fired on the first and third Monday of the month by `schedules: improve` in
+`.dz/maintainer/maintainer.yml` (`weeks_of_month: [1, 3]`).
 
-Ultimate is feature-complete and maintained by agents only. Once a month, leave it measurably
-better and one step ahead of the next Bun release. The other checkups already cover the alarms:
-a red `main`, a missing publish, a stuck Dependabot PR are `health`'s; a release owed is
-`release-due`'s. This one looks for what nothing announces because nothing is broken yet.
+Ultimate is feature-complete and maintained by agents only. Each pass, leave it measurably
+better and one step ahead of the next Bun release. The alarms are covered elsewhere: a red `main`
+is the platform's red-base ask, the rest is `bun run scripts/health.ts` (docs/ops/health.md); a
+release owed is `release-due`'s. This one looks for what nothing announces because nothing is broken yet.
 
 Read `CLAUDE.md` and `AGENTS.md` first. The design axioms, the tier table, the non-negotiables
 (no `any`, no bare `Error`, no raw colours, no float money, one file one job) and "one way to do

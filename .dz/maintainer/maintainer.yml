@@ -16,7 +16,7 @@
 #   releases          the bot judges weekly whether one is needed (`.dz/briefs/release-due.md`;
 #                     `scripts/release-due.ts` gathers its facts), opens the bump PR, and merging it
 #                     IS the release (`.github/workflows/release-tag.yml`). A security fix a
-#                     first-tier source confirms is the one off-cycle release
+#                     first-tier source confirms is the one off-cycle release (`devops.watch`)
 #
 # Every pull request is reviewed, whoever wrote it — `review.force` below.
 #
@@ -127,45 +127,35 @@ escalate:
   # cannot remove them.
   ask_before_acting: []
 
+# CUT 2026-11-28 (fleet dz cost standard, from the 30-day prod census across both accounts):
+# `security-release` (fleet-wide 170 firings -> 3 product merges + 17 REPORT.md-only PRs; here it
+# committed REPORT.md), `health` (270 firings -> 8 asks -> 0 merges; here its only merges edited its
+# own brief) and `main-red` (it duplicated the platform's `cron.base_red_ask`, which files a fix for a
+# red `main` within minutes; 0 asks). The health row table lives on as the doc of
+# `scripts/health.ts` (docs/ops/health.md); a security fix arrives through `devops.watch` below.
 schedules:
   # Weekly and judged, so a merge never cuts a release (owner, 2026-11-01: "no auto, not dependabot,
-  # us developerz.ai AI decides if needed"). One weekday per repo, so the fleet is not hit at once.
-  # `mode: devops`: the run needs a shell (the facts come from `scripts/release-due.ts`, the bump from
-  # `scripts/release.ts`) and delivers the bump PR itself. A read-only checkup could do neither.
+  # us developerz.ai AI decides if needed"). Monday, the fleet's one release slot (owner, 2026-11-26:
+  # releases weekly, on Monday). `mode: devops`: the run needs a shell (the facts come from
+  # `scripts/release-due.ts`, the bump from `scripts/release.ts`) and delivers the bump PR itself. A
+  # read-only checkup could do neither.
   - name: release-due
-    days: [tue]
+    days: [mon]
     hours_utc: [3]
     mode: devops
     brief_file: .dz/briefs/release-due.md
-  # The one exception, so a confirmed security fix does not wait up to a week for Tuesday.
-  - name: security-release
-    days: [thu, sun]
-    hours_utc: [4]
-    mode: devops
-    brief_file: .dz/briefs/security-release.md
-  # The failures nothing announces: a red `main`, a publish that did not land, npm drift, a stuck
-  # Dependabot PR. Bot-authored alarm issues never pass intake, so this is how they reach the bot.
-  # Weekly (owner, 2026-11-06: routine maintenance weekly, CVE daily). Security has its own lanes.
-  - name: health
-    days: [mon]
-    hours_utc: [7]
-    brief_file: .dz/briefs/health.md
   # Leave it measurably better and one step ahead of the next Bun release: at most three small,
   # evidenced PRs, never a breaking change on `main` — a Bun or Solid playbook move
   # (docs/ops/08-raise-bun.md, 10-solid-major.md) is the one break it may open, against `next` (narrower than `escalate:` on
   # purpose: an improvement nobody asked for is not worth a migration for every app, so the brief
-  # files an issue for the owner instead). Fires EVERY Monday because the schema has weekdays, not
-  # days of the month; the brief acts only on the first Monday of the month (UTC day 1-7) and stops
-  # on the others.
+  # files an issue for the owner instead). The first and third Monday of the month
+  # (`weeks_of_month`, 2026-11-28 standard: 59 firings -> 25 product merges, the best scheduled
+  # return), so the brief no longer checks the date itself.
   - name: improve
     days: [mon]
+    weeks_of_month: [1, 3]
     hours_utc: [8]
     brief_file: .dz/briefs/improve.md
-  # A red `main` is repaired, never rerun to green: bisect by the failing step, revert when clean.
-  - name: main-red
-    days: [mon, tue, wed, thu, fri, sat, sun]
-    hours_utc: [9]
-    brief_file: .dz/briefs/main-red.md
   # Plan 101b slice 20 continuing: one rotating tier band through an auditor, at most three PRs.
   - name: audit
     days: [mon]
@@ -176,9 +166,11 @@ schedules:
     days: [wed]
     hours_utc: [7]
     brief_file: .dz/briefs/evidence.md
-  # After a release: x upgrade + x verify over the tracked apps and a previous-minor scaffold.
+  # After a release: x upgrade + x verify over the tracked apps and a previous-minor scaffold. Weekly
+  # since 2026-11-28 (it was daily, polling for a release that comes at most once a week): Wednesday,
+  # after Monday's release-due and its merge, over a Release published in the last 7 days.
   - name: adopter-canary
-    days: [mon, tue, wed, thu, fri, sat, sun]
+    days: [wed]
     hours_utc: [10]
     brief_file: .dz/briefs/adopter-canary.md
 
@@ -187,3 +179,14 @@ schedules:
 # range; it claims ahead of routine work. It runs on your boxes and your key. `off` stops it.
 devops:
   watch: advisories
+
+# scout: the platform's survey files only what is already BROKEN (red CI, failing tests, a security
+# advisory, a broken build or link), never an improvement idea (2026-11-28 standard: an active repo;
+# a full survey run is ~14M tokens). `improve` above is where improvements come from.
+scout:
+  survey: broken_only
+
+# care.docs_drift: off (2026-11-28 standard: fleet-wide 47 docs-drift tasks gave 8 docs-only merges
+# and 33 failures). This repo's doc guards already run in the gate on every PR.
+care:
+  docs_drift: off

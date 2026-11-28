@@ -41,7 +41,7 @@ const brief = (path: string): Promise<string> => Bun.file(join(repoRoot(), path)
 describe('unit · a scheduled brief is one the platform can run', () => {
   test('the schedule names its briefs, so the rules have subjects', async () => {
     const files = (await schedules()).map((schedule) => schedule.brief_file);
-    expect(files).toContain('.dz/briefs/health.md');
+    expect(files).toContain('.dz/briefs/improve.md');
     expect(files).toContain('.dz/briefs/release-due.md');
   });
 

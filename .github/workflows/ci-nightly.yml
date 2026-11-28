@@ -1,12 +1,13 @@
 name: ci-nightly
 
-# Says out loud when ci.yml's nightly full run on main is red. A pull request away from the scaffold
-# code runs three of scaffold-smoke's eleven rows (`scripts/lib/ci/scaffold-matrix.ts`), so the
-# nightly `schedule` run — every job, every row — is where a shape-only regression from elsewhere
+# Says out loud when ci.yml's scheduled full run on main is red: weekly since 2026-11-28, and the
+# workflow and its label keep the `nightly` name so the open issue still matches. A pull request
+# away from the scaffold code runs three of scaffold-smoke's eleven rows
+# (`scripts/lib/ci/scaffold-matrix.ts`), so the scheduled run — every job, every row — is where a shape-only regression from elsewhere
 # shows first, and a red scheduled run that only sits in the Actions tab is a signal nobody reads.
 #
 # The registry-audit.yml pattern: ONE open `ci-nightly` issue, retitled and commented each red
-# night, closed by the next green night. A cancelled night is no evidence either way: nothing moves.
+# run, closed by the next green run. A cancelled run is no evidence either way: nothing moves.
 # No checkout and no install: every step is `gh` over the finished run, so no code from the tree
 # runs beside the `issues: write` token.
 
@@ -49,22 +50,22 @@ jobs:
           open="$(gh issue list --label ci-nightly --state open --json number --jq '.[].number')"
           if [ "$CONCLUSION" = success ]; then
             for number in $open; do
-              gh issue close "$number" --reason completed --comment "Green nightly run: $RUN_URL"
+              gh issue close "$number" --reason completed --comment "Green scheduled run: $RUN_URL"
             done
             echo "green: closed ${open:-no open issue}"
             exit 0
           fi
           # `gh issue create --label` refuses a label the repository does not have: create first,
           # and a failed create is fatal only when the label cannot be read back.
-          if ! err="$(gh label create ci-nightly --color d73a4a --description 'the nightly full ci.yml run on main is red' 2>&1)"; then
+          if ! err="$(gh label create ci-nightly --color d73a4a --description 'the scheduled full ci.yml run on main is red' 2>&1)"; then
             gh api "repos/${GH_REPO}/labels/ci-nightly" >/dev/null 2>&1 || { printf '%s\n' "$err" >&2; exit 1; }
           fi
           red="$(gh run view "$RUN_ID" --json jobs \
             --jq '[.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out") | .name]')"
           count="$(jq 'length' <<< "$red")"
-          title="ci nightly: ${count} job(s) red on main"
+          title="ci scheduled run: ${count} job(s) red on main"
           body="$(jq -r --arg url "$RUN_URL" --arg sha "$SHA" --arg id "$RUN_ID" --arg conclusion "$CONCLUSION" \
-            '"**ci.yml nightly run \($conclusion)** at `\($sha)`: \($url)\n\n" + (map("- `" + . + "`") | join("\n")) + "\n\nfix: `gh run view \($id) --log-failed`   # each red job names its step and its fix; then rerun the night: `gh workflow run ci.yml --ref main`"' <<< "$red")"
+            '"**ci.yml scheduled run \($conclusion)** at `\($sha)`: \($url)\n\n" + (map("- `" + . + "`") | join("\n")) + "\n\nfix: `gh run view \($id) --log-failed`   # each red job names its step and its fix; then rerun it: `gh workflow run ci.yml --ref main`"' <<< "$red")"
           existing="$(printf '%s\n' "$open" | head -n 1)"
           if [ -n "$existing" ]; then
             gh issue edit "$existing" --title "$title"

@@ -1,6 +1,8 @@
-# Brief: is the project healthy?
+# Is the project healthy?
 
-Weekly: the failures no issue or PR announces. No verdict is always re-run, never filed: a null `conclusion` (`status` not
+The row table of `bun run scripts/health.ts`: the failures no issue or PR announces. It was the
+weekly `health` checkup's brief until 2026-11-28; a maintainer runs it by hand now
+(`docs/ops/maintainer-runbooks/maintainer-down.md`). No verdict is always re-run, never filed: a null `conclusion` (`status` not
 `completed`) is one on every run row. Runbooks: `docs/ops/maintainer-runbooks/`.
 
 ## Check, in order
@@ -17,7 +19,7 @@ Weekly: the failures no issue or PR announces. No verdict is always re-run, neve
 | `demo-shipped` | `gh run list --workflow deploy-social-demo.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,displayTitle,url,createdAt` | `success` on a `workflow_run`. Null `conclusion` = still building: read `status`. `skipped` = the `ci.yml` completion was no green push: red `main-green` files it; with it green, look for a non-push `ci.yml` run. `workflow_dispatch` = an operator's run, not a push publish; `headBranch` names the ref. Other non-success: name the guard its log's `::error::` line names. The ask carries `url`, `createdAt`, `databaseId`, `displayTitle`, `headBranch` |
 | `release-exists` | `t=$(git describe --tags --abbrev=0 --match 'v[0-9]*' origin/main)`, then `gh release view "$t" --json tagName,isDraft,publishedAt` | `isDraft` false AND `publishedAt` set; a draft is unhealthy. Missing = unhealthy: gh prints `release not found` and no JSON — the message is the signal, not the exit code. Any other unreadable answer = `cannot tell` (`X_HEALTH_ROW_UNREADABLE`) |
 | `tutorials-run` | `gh run list --workflow tutorial-run.yml --branch main --limit 20 --json databaseId,event,status,conclusion,headBranch,displayTitle,url,createdAt` | newest non-`pull_request` run: as `bench`. Else diverged: the ask names `url` and `bun run scripts/tutorial-run.ts --json` |
-| `flake-hunt` | `gh run list --workflow flake-hunt.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,headSha,displayTitle,url,createdAt` | `success` under 48 h; older = unhealthy, the schedule stopped. No run or `cancelled` = re-run. Else red: open `flake-hunt` issues name test, seed, rerun |
+| `flake-hunt` | `gh run list --workflow flake-hunt.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,headSha,displayTitle,url,createdAt` | `success` under 8 days; older = unhealthy, the weekly schedule stopped. No run or `cancelled` = re-run. Else red: open `flake-hunt` issues name test, seed, rerun |
 | `bench` | `gh run list --workflow bench.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,headSha,displayTitle,url,createdAt` | `success` under 8 days; older = the weekly schedule stopped. No run or `cancelled` = re-run. Else a figure failed to measure |
 | `compat` | `gh run list --workflow compat.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,headSha,displayTitle,url,createdAt` | as `bench`. Else open `compat` issues name each red cell and its replay |
 | `next-sync` | `gh run list --workflow next-sync.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,headSha,displayTitle,url,createdAt` | as `bench`. Else `main` is not in `next`: the open issue names the merge |
