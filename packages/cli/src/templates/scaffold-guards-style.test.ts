@@ -196,7 +196,9 @@ describe('unit · shipped guards · the framework passes the motion rules it shi
         )
         .map((finding) => `${finding.at} ${finding.code}`),
     ).toEqual([]);
-  });
+    // A walk of every app and package source under five guards: 5.1 s on a loaded CI runner, so
+    // the 5 s default made this a flake, never a finding.
+  }, 60_000);
 });
 
 describe('unit · shipped guards · no tracked app holds an edited copy', () => {
