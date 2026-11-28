@@ -65,7 +65,7 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...['x.verify.json', 'packages/cli/src/templates/scaffold-verify-floor.ts'].map((template) => ({
     template,
     since: '31.53.0',
-    none: 'x new now declares agentsMdMaxBytes for the larger brief it writes; an existing app keeps its own x.verify.json and the AGENTS.md it holds, whose size the gate already judges against that floor, so x upgrade leaves it alone',
+    codemod: 'agents-md-budget',
   })),
   ...[
     'apps/web/app/dashboard/page.tsx',

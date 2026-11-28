@@ -41,6 +41,60 @@ describe('unit · docs-visual-quality codemod', () => {
     expect(text.indexOf('## Visual quality')).toBeLessThan(text.indexOf('## Agent tools'));
   });
 
+  const ROWS_3122 = [
+    '| `.claude/commands/feature.md` | build or fix one thing end to end, done when `bun run verify` is green | plain markdown: any agent can read one and follow it |',
+    '| `.claude/commands/planx.md` | write a plan to `docs/plans/` for another agent to execute | the same |',
+    '| `.claude/commands/verify.md` | run the gate and fix what it reports | the same |',
+  ].join('\n');
+  const OLD_ROWS = OLD.slice(OLD.indexOf('| `.claude/commands/feature.md`'));
+
+  test('the commands rows as 31.22 shipped them are swapped too', async () => {
+    const reworded = OLD.replace(OLD_ROWS, `${ROWS_3122}\n`);
+    expect(reworded).not.toBe(OLD);
+    const app = memoryCodemodApp({ 'CLAUDE.md': reworded });
+    const result = await codemod.run(app);
+    expect(result.skipped).toEqual([]);
+    expect(app.files['CLAUDE.md']).toContain('`.claude/skills/`');
+    expect(app.files['CLAUDE.md']).not.toContain('.claude/commands/');
+  });
+
+  test('a row the author customised is reported, never replaced', async () => {
+    const custom = OLD.replace(
+      'done when `bun run verify` is green | plain markdown any agent can follow |',
+      'done when `bun run verify` is green AND a second review approves | plain markdown any agent can follow |',
+    );
+    const app = memoryCodemodApp({ 'CLAUDE.md': custom });
+    const result = await codemod.run(app);
+    expect(app.files['CLAUDE.md']).toContain('a second review approves');
+    expect(app.files['CLAUDE.md']).toContain('`.claude/commands/planx.md`');
+    expect(
+      result.skipped.some(
+        (skip) => skip.reason.includes('you changed') && skip.reason.includes('.claude/skills/'),
+      ),
+    ).toBe(true);
+  });
+
+  test('only the Agent tools table migrates: an earlier table keeps its command row', async () => {
+    const earlier = `# app\n\n## Notes\n\n| Tool | Use |\n|---|---|\n${ROWS_3122.split('\n')[1]}\n\n${OLD.slice(OLD.indexOf('| Timing'))}`;
+    const app = memoryCodemodApp({ 'CLAUDE.md': earlier });
+    await codemod.run(app);
+    const after = app.files['CLAUDE.md'] ?? '';
+    const [notes = '', tools = ''] = after.split('## Agent tools');
+    expect(notes).toContain('`.claude/commands/planx.md`');
+    expect(tools).toContain('`.claude/skills/`');
+    expect(tools).not.toContain('.claude/commands/');
+  });
+
+  test("a later table under the Agent tools heading is the author's, never migrated", async () => {
+    const tools = OLD.slice(OLD.indexOf('## Agent tools'));
+    const later = `${OLD.slice(0, OLD.indexOf('## Agent tools'))}## Agent tools\n\n| Tool | Use |\n|---|---|\n| \`bunx x kit\` | refresh the kit |\n\nAnd my own:\n\n${tools.split('\n').slice(2).join('\n')}`;
+    const app = memoryCodemodApp({ 'CLAUDE.md': later });
+    await codemod.run(app);
+    const after = app.files['CLAUDE.md'] ?? '';
+    expect(after).toContain('`.claude/commands/feature.md`');
+    expect(after.split('`.claude/commands/').length - 1).toBe(3);
+  });
+
   test('a second run changes nothing', async () => {
     const app = memoryCodemodApp({ 'CLAUDE.md': OLD });
     await codemod.run(app);

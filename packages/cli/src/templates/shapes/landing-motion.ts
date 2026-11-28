@@ -36,12 +36,12 @@ export const baseLandingAurora = (): readonly ShapeEdit[] => [
 .hero > .aurora {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: tokens.z(base);
 }
 
 .hero > :not(.aurora) {
   position: relative;
-  z-index: 1;
+  z-index: tokens.z(raised);
 }
 
 .eyebrow {`,

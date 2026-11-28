@@ -255,19 +255,19 @@ const readGuards = (doctor: DoctorDocument['data']): HopGuards => {
 
 export type HopStage =
   | 'codemods'
+  | 'kit'
   | 'manifest'
   | 'doctor'
   | 'guards'
-  | 'kit'
   | 'coverage'
   | 'exercise'
   | 'verify';
 
 /**
  * The gate, in order, each stage told apart by `onStage` so a long gate is not a long silence.
- * `kit` refreshes the managed agent files before `verify` judges them; `guards` runs only when the
- * doctor lists a missing one; `coverage` only on a hop that moved the
- * Bun floor — both before `verify`, so the verdict is the one on the tree the hop leaves.
+ * `kit` writes the managed agent files right after the codemods, before the manifest and the doctor
+ * that read them; `guards` runs only when the doctor lists a missing one; `coverage` only on a hop
+ * that moved the Bun floor — both before `verify`, so the verdict is the one on the tree the hop leaves.
  */
 export async function runHopGate(input: {
   readonly runner: Runner;
@@ -288,6 +288,11 @@ export async function runHopGate(input: {
     onStage('codemods');
     codemods = await applyHopCodemods({ runner, root, ...input.codemods });
   }
+  // After the codemods deleted the old commands, and BEFORE the doctor: its `.claude/kit.json` check
+  // reads the tree this writes, and a doctor asked first reports the kit absent on a hop that
+  // installs it — a hand step the upgrade had already taken.
+  onStage('kit');
+  const kit = readKit(await installed(['kit', '--json']));
   const superseded = (await supersededFindings(root)).map(pick);
   onStage('manifest');
   const manifest = readManifest(await installed(['manifest', '--json']));
@@ -306,9 +311,6 @@ export async function runHopGate(input: {
       ...done,
     };
   }
-  // After the codemods deleted the old commands and the guards settled: the kit is the release's.
-  onStage('kit');
-  const kit = readKit(await installed(['kit', '--json']));
   let coverage: HopCoverage | null = null;
   const stated = input.bunMoved === undefined ? undefined : await statedCoverage(root);
   if (input.bunMoved !== undefined && stated !== undefined) {

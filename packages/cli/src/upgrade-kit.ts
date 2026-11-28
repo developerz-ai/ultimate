@@ -1,7 +1,6 @@
-// The agent kit a hop refreshes: after the codemods and the guards, the INSTALLED CLI's `x kit
-// --json` writes the managed skills and agents of the release the hop just installed — never this
-// process's, which may be majors older. A CLI with no `kit` command answers no `data.written`, and
-// that is `reported: false` (unknown), never an empty refresh.
+// The agent kit a hop refreshes, after the codemods and before the manifest and the doctor: the
+// INSTALLED CLI's `x kit --json` writes the release it just installed — never this process's, which
+// may be majors older. No `kit` command answers no `data.written`: `reported: false`, unknown.
 
 import { t } from '@ultimat3/schema';
 import type { ExecResult } from './exec';

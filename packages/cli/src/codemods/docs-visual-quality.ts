@@ -3,7 +3,7 @@
 // it, within the brief's byte budget; one that cannot be placed is reported with the row to add.
 
 import { editAgentsDocRow } from './agents-doc-row';
-import type { Codemod, CodemodResult } from './codemod';
+import type { Codemod, CodemodApp, CodemodResult } from './codemod';
 import { mergeResults } from './engine-edits';
 
 const lines = (...text: readonly string[]): string => text.join('\n');
@@ -17,11 +17,6 @@ const NEW_HARNESS = lines(
   '  Managed: `bunx x kit` rewrites them, an edit in place is `X_KIT_DRIFT`; yours go in `app-*`.',
 );
 
-const OLD_COMMANDS = lines(
-  '| `.claude/commands/feature.md` | build or fix one thing end to end, done when `bun run verify` is green | plain markdown any agent can follow |',
-  '| `.claude/commands/planx.md` | write a plan to `docs/plans/` | the same |',
-  '| `.claude/commands/verify.md` | run the gate and fix what it reports | the same |',
-);
 const NEW_SKILLS =
   '| `.claude/skills/` | `feature` (hive, one PR, done when merged), `planx`, `verify`, `upgrade`, `design-research` | plain markdown any agent can follow; `bunx x kit` keeps them current |';
 
@@ -54,6 +49,111 @@ const VISUAL_QUALITY = lines(
   '',
 );
 
+const COMMAND_ROW = /^\| `\.claude\/commands\/(?:feature|planx|verify)\.md` \|.*$/;
+
+/**
+ * Every wording `x new` ever shipped for the three rows (read off each release tag's
+ * `scaffold-docs.ts`): 31.22.0 to 31.35.x said "plain markdown: any agent can read one and follow it",
+ * later ones "plain markdown any agent can follow". A row in neither is the author's.
+ */
+const SHIPPED_COMMAND_ROWS: ReadonlySet<string> = new Set([
+  '| `.claude/commands/feature.md` | build or fix one thing end to end, done when `bun run verify` is green | plain markdown: any agent can read one and follow it |',
+  '| `.claude/commands/planx.md` | write a plan to `docs/plans/` for another agent to execute | the same |',
+  '| `.claude/commands/verify.md` | run the gate and fix what it reports | the same |',
+  '| `.claude/commands/feature.md` | build or fix one thing end to end, done when `bun run verify` is green | plain markdown any agent can follow |',
+  '| `.claude/commands/planx.md` | write a plan to `docs/plans/` | the same |',
+]);
+
+const SECTION = '## Agent tools';
+
+/**
+ * `text` from the Agent tools heading to the last row of the FIRST table under it, or `undefined`
+ * when it has none: a later table under the same heading is the author's, never this table.
+ */
+function agentToolsSection(text: string): string | undefined {
+  const start = text.indexOf(`\n${SECTION}\n`);
+  if (start === -1) return undefined;
+  const lines = text.slice(start + 1).split('\n');
+  const head = lines.findIndex((line) => line.startsWith('|'));
+  if (head === -1 || lines.slice(1, head).some((line) => line.startsWith('## '))) return undefined;
+  let end = head;
+  while ((lines[end + 1] ?? '').startsWith('|')) end += 1;
+  return lines.slice(0, end + 1).join('\n');
+}
+
+type CommandRows =
+  | { readonly kind: 'swap'; readonly from: string; readonly to: string }
+  | { readonly kind: 'customised'; readonly rows: readonly string[] }
+  | { readonly kind: 'none' };
+
+/**
+ * The `.claude/commands/*` rows INSIDE the Agent tools table, never an earlier table's: all shipped
+ * wordings are replaced by the one skills row, and any row the author changed (a review step added,
+ * say) holds the whole swap back so nothing they wrote is dropped. `from` runs from the heading to
+ * the last row, so it names exactly one place in the brief.
+ */
+async function commandRows(app: CodemodApp): Promise<CommandRows> {
+  for (const path of ['CLAUDE.md', 'AGENTS.md']) {
+    const text = (await app.read(path)) ?? '';
+    const section = agentToolsSection(text);
+    if (section === undefined) continue;
+    const rows = section.split('\n');
+    const first = rows.findIndex((row) => COMMAND_ROW.test(row));
+    if (first === -1) continue;
+    let last = first;
+    while (COMMAND_ROW.test(rows[last + 1] ?? '')) last += 1;
+    const block = rows.slice(first, last + 1);
+    const custom = block.filter((row) => !SHIPPED_COMMAND_ROWS.has(row));
+    if (custom.length > 0) return { kind: 'customised', rows: custom };
+    const head = rows.slice(0, first).join('\n');
+    return {
+      kind: 'swap',
+      from: `${head}\n${block.join('\n')}`,
+      to: `${head}\n${NEW_SKILLS}`,
+    };
+  }
+  return { kind: 'none' };
+}
+
+async function swapCommandRows(app: CodemodApp): Promise<CodemodResult> {
+  const found = await commandRows(app);
+  if (found.kind === 'customised') {
+    return {
+      changed: [],
+      skipped: [
+        {
+          path: 'CLAUDE.md',
+          reason: `the Agent tools table keeps ${String(found.rows.length)} \`.claude/commands\` row(s) you changed, so none was replaced: move what they say into the skills (or your own app-* ones), then replace the rows with this one by hand: ${NEW_SKILLS}`,
+        },
+      ],
+    };
+  }
+  if (found.kind === 'none') {
+    // No legacy row inside the Agent tools table: nothing elsewhere in the brief is this table's.
+    for (const path of ['CLAUDE.md', 'AGENTS.md']) {
+      if ((await app.read(path))?.includes('`.claude/skills/`') === true) {
+        return { changed: [], skipped: [] };
+      }
+    }
+    return {
+      changed: [],
+      skipped: [
+        {
+          path: 'CLAUDE.md',
+          reason: `no .claude/commands rows in the Agent tools table; add this row to the conventions table by hand: ${NEW_SKILLS}`,
+        },
+      ],
+    };
+  }
+  return editAgentsDocRow(app, {
+    from: found.from,
+    to: found.to,
+    row: NEW_SKILLS,
+    said: (text) => text.includes('`.claude/skills/`'),
+    missing: 'no .claude/commands rows in the Agent tools table',
+  });
+}
+
 const swap =
   (from: string, to: string, said: string, missing: string) =>
   (app: Parameters<Codemod['run']>[0]) =>
@@ -67,12 +167,7 @@ export const codemod: Codemod = {
   async run(app): Promise<CodemodResult> {
     // The two that shrink first, so the ones that grow find the room they need.
     const results = [
-      await swap(
-        OLD_COMMANDS,
-        NEW_SKILLS,
-        '`.claude/skills/`',
-        'no .claude/commands rows in the Agent tools table',
-      )(app),
+      await swapCommandRows(app),
       await swap(
         OLD_HARNESS,
         NEW_HARNESS,

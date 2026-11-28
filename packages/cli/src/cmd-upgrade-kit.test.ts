@@ -1,5 +1,6 @@
-// `x upgrade` and the agent kit a hop brings: the INSTALLED CLI's `x kit --json` runs after the
-// codemods and the guards, before the gate judges the tree, and its refresh is in the report.
+// `x upgrade` and the agent kit a hop brings: the INSTALLED CLI's `x kit --json` runs right after the
+// codemods and before the manifest and the doctor, so the doctor reads the tree it wrote, and its
+// refresh is in the report.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { fixture, kitDocument, recording, removeFixtures, run } from './cmd-upgrade-fixture';
@@ -12,17 +13,20 @@ const WRITTEN = [
 ];
 
 describe('unit · x upgrade, the agent kit a hop brings', () => {
-  test('the installed x kit runs between the guards and the gate, and its writes are reported', async () => {
+  test('the installed x kit runs right after the codemods, before the doctor reads the tree', async () => {
     const dir = await fixture();
     const { runner, spawned } = recording({ kit: kitDocument(WRITTEN) });
     const { code, output, lines } = await run(dir, runner, [], { json: false });
     expect(code).toBe(0);
-    expect(spawned.slice(spawned.indexOf('x kit') - 1)).toEqual([
-      'x verify --only boundaries',
+    expect(spawned).toContain('x manifest');
+    expect(spawned.slice(spawned.indexOf('x upgrade'), spawned.indexOf('x manifest') + 1)).toEqual([
+      'x upgrade',
       'x kit',
-      'x exercise',
-      'x verify',
+      'x manifest',
     ]);
+    expect(spawned).toContain('x kit');
+    expect(spawned).toContain('x doctor');
+    expect(spawned.indexOf('x kit')).toBeLessThan(spawned.indexOf('x doctor'));
     expect(Object.keys(output)).toEqual([]);
     const text = lines.join('\n');
     expect(text).toContain('agent kit: 1 written, 1 refreshed, 0 already current');

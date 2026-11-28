@@ -32,12 +32,12 @@ describe('unit · x upgrade, the walk', () => {
       'pm view',
       'install',
       'x upgrade',
+      'x kit',
       'x manifest',
       'x doctor',
       'x verify --only boundaries',
       'x g',
       'x verify --only boundaries',
-      'x kit',
       'x exercise',
       'x verify',
     ]);
@@ -292,10 +292,10 @@ describe('unit · x upgrade, on stderr while it runs', () => {
     expect(stages.map((line) => JSON.parse(line).upgrade)).toEqual([
       'install',
       'codemods',
+      'kit',
       'manifest',
       'doctor',
       'guards',
-      'kit',
       'exercise',
       'verify',
     ]);

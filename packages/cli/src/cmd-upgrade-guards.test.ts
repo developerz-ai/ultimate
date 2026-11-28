@@ -42,7 +42,6 @@ describe('unit · x upgrade, the shipped guards a hop brings', () => {
       'x verify --only boundaries',
       'x g',
       'x verify --only boundaries',
-      'x kit',
       'x exercise',
       'x verify',
     ]);

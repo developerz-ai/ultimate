@@ -207,7 +207,7 @@ const indexStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 .aurora {
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: calc(-1 * #{tokens.z(raised)});
 }
 
 .lede {

@@ -64,6 +64,24 @@ const MotionPanel = island({
     find: "expect(page.config.budget.js).toBe('60kb');",
     replace: "expect(page.config.budget.js).toBe('78kb');",
   },
+  // The render emits the motion island beside the theme toggle: the test names both.
+  {
+    path: `${DIR}/page.test.ts`,
+    find: "hydrates one island', async () => {",
+    replace: "hydrates its two islands', async () => {",
+  },
+  {
+    path: `${DIR}/page.test.ts`,
+    find: `  // What the render emitted, beside what the config declares: the theme toggle, and only it.
+  expect(view.islands.map((island) => [island.moduleId, island.strategy])).toEqual([
+    ['shared-theme-toggle', 'visible'],
+  ]);`,
+    replace: `  // What the render emitted, beside what the config declares: the theme toggle and the motion.
+  expect(view.islands.map((island) => [island.moduleId, island.strategy])).toEqual([
+    ['shared-theme-toggle', 'visible'],
+    ['${ISLAND}', 'visible'],
+  ]);`,
+  },
   {
     path: PAGE,
     find: '  AreaChart,\n',
