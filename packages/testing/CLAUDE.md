@@ -6,7 +6,7 @@ A row marked `†` has its full text in [`docs/history/testing-rules.md`](../../
 Deps (21): `core` `schema`; `cache` `db` `i18n` `seo` `time`; `auth` `entity` `http` `policy`; `action`
 `jobs` `query` `realtime`; `ai` `mail` `notify` `pwa` `render` `scraping` (`ai`, `auth`, `notify`, `scraping` for `swapAdapter`, dynamic-only). Static in `.`: `scraping/cdp`, `cache`
 (`registry-leak-guard.ts:7`), `i18n`, `jobs`, `policy` (`registry-snapshot.ts:29-38`), `db`
-(`reusable-database.ts:20`), `realtime/server` (`fixture-subscribe.ts:13`). Dynamic-only:
+(`reusable-database.ts:20`), `realtime/server` (`fixture-subscribe.ts:14`). Dynamic-only:
 `action`, `http`, `mail`, `pwa`, `query`, `render`, `schema` (`exercise-input.ts:16`), `time` — no `mail` destructure, no mail
 package; a `packages/core` import never loads `@ultimat3/entity`. `entity` is reached by `await import` only
 (seed writer, tenant witness, `nPlusOne()`, repro, subject proof, the row observer); static only in

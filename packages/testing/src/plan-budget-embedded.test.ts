@@ -83,4 +83,18 @@ describe(testName('unit', 'expectPlanWithin · embedded'), () => {
     const after = await client.one<{ n: string }>(sql`select count(*)::text as n from pb_items`);
     expect(after?.n).toBe(before?.n);
   }, 60_000);
+
+  test('a budget that is not a finite number is refused before any plan is read', async () => {
+    for (const bad of [
+      { maxCost: Number.NaN, maxSortRows: 10 },
+      { maxCost: Number.POSITIVE_INFINITY, maxSortRows: 10 },
+      { maxCost: 10, maxSortRows: Number.NaN },
+      { maxCost: 10, maxSortRows: 1.5 },
+      { maxCost: 10, maxSortRows: -1 },
+    ]) {
+      await expect(expectPlanWithin(byOwner('o1'), bad, { client })).rejects.toMatchObject({
+        code: 'X_INVARIANT',
+      });
+    }
+  }, 60_000);
 });

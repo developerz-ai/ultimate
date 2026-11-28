@@ -2097,7 +2097,7 @@ const after = await cancelJobFor(driver, { jobId, tenantId: orgId, reason: `by $
 | another tenant's job, a job queued for NO tenant and a missing id all answer `undefined` | the fence is IN the store (`JobDriver.tenantJobs`: a pg `where id = $1 and tenant_id = $2`, a Redis script, the memory map) — one lookup, one answer, nothing to tell apart |
 | `name`, when given, is part of the fence | an export endpoint answers for exports only, never another job of the same org |
 | `cancelJobFor` cancels only a LIVE job, under the same fence, and answers it as it now stands | `cancelled`, or the finished state it had; another tenant's job is a no-op answering `undefined` — never `X_JOB_NOT_CANCELLABLE`, which would say it exists |
-| an id that is not a lowercase uuid, or an empty tenant, answers `undefined` without a lookup | every driver alike; Postgres never sees a malformed uuid |
+| an id that is not a lowercase uuid, an empty tenant or an empty `name` answers `undefined` without a lookup; an empty `reason` is no reason (the row keeps its `lastError`) | every driver alike: Postgres never sees a malformed uuid, and a script's `''` never reads as "any name" |
 | a hand-rolled driver with no `tenantJobs` | `X_JOB_INTROSPECTION_UNSUPPORTED` — memory, pg and redis all ship one |
 
 The worked recipe is the reference app's `postsExportStatus` query and `cancelPostsExport` action

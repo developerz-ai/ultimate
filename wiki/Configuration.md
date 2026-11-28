@@ -692,7 +692,7 @@ export const config = defineConfig({
 
 | Key | Type | Default | Effect |
 |---|---|---|---|
-| `outbound.proxy` | `string` (`http:`/`https:` URL) | unset — every call dials as it says | **read** by the container boot (`configureOutboundProxy`). A call's own `proxy` wins; `proxy: null` dials direct. Any other scheme, or not a URL → `X_CONFIG_INVALID`, the value never echoed. A credential rides the URL: take it from the env, never a literal |
+| `outbound.proxy` | `string` (`http:`/`https:` URL) | unset — every call dials as it says | **read** by the container boot (`configureOutboundProxy`). A call's own `proxy` wins; `proxy: null` dials direct. Any other scheme, or not a URL → `X_CONFIG_INVALID`, the value never echoed. A credential rides the URL: take it from the env, never a literal. `x config show` hides its whole userinfo (a token as the user included). A plain-`http:` target the proxy carries crosses it in cleartext, `Authorization` and SigV4 included: the first use per host logs one `ultimate outbound proxy cleartext` warn line (host and port only) naming `outbound.direct` — routing is not changed for you |
 | `outbound.direct` | `string[]` (bare host names, IP literals) | `[]` | hosts never sent through the proxy, each with every name under it, per label. `localhost`, `*.localhost` and loopback are always direct. A scheme, path, port or `*` → `X_CONFIG_INVALID` |
 
 ## `drain`

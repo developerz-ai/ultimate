@@ -37,8 +37,9 @@ type Rows = Map<string, Record<string, unknown>>;
  * A Map per table. The write that touches `SECOND` runs `failing` (another writer, straight into
  * the store), then refuses as a duplicate key would — after `FIRST` was written.
  */
-const toy = (checked: boolean, failing: (rows: Rows) => void) => {
+const toy = (checked: boolean, failing: (rows: Rows) => void, early?: (rows: Rows) => void) => {
   const rows: Rows = new Map();
+  let once = early;
   const definition: DriverDefinition = {
     name: checked ? 'rollback-checked' : 'rollback-plain',
     capabilities: [],
@@ -63,7 +64,8 @@ const toy = (checked: boolean, failing: (rows: Rows) => void) => {
         select: async (read) => selectRows(table, all(), read),
         count: async ({ plan }) => matched(plan).length,
         insert: async (batch) => {
-          for (const row of batch) rows.set(String((row as Record<string, unknown>)['id']), row);
+          for (const row of batch)
+            rows.set(String((row as Record<string, unknown>)['id']), { ...(row as object) });
           return batch;
         },
         update: async ({ plan }, patch) => {
@@ -77,6 +79,10 @@ const toy = (checked: boolean, failing: (rows: Rows) => void) => {
       return {
         ...repo,
         updateChecked: async ({ plan }, expected, patch) => {
+          // Another writer, once, inside the first set: it is lost, and the re-read sees theirs.
+          const writer = once;
+          once = undefined;
+          writer?.(rows);
           const hit = matched(plan);
           if (!Bun.deepEquals(hit, expected)) return false;
           set(hit, patch);
@@ -103,15 +109,20 @@ const theirs = (rows: Rows) => {
   if (row !== undefined) rows.set(FIRST, { ...row, note: 'theirs' });
 };
 
-const run = async (checked: boolean, failing: (rows: Rows) => void) => {
-  const store = toy(checked, failing);
+const run = async (
+  checked: boolean,
+  failing: (rows: Rows) => void,
+  early?: (rows: Rows) => void,
+) => {
+  const store = toy(checked, failing, early);
   const repo = defineDriver(store.definition).repo(cards);
   await repo.insertAll([
     { id: FIRST, a: null, b: null, note: null },
     { id: SECOND, a: null, b: null, note: null },
   ]);
-  const code = await codeOf(() =>
-    repo.updateMany([
+  // Optional on `Repo`; a `defineDriver` repository has it, and a missing one answers 'resolved'.
+  const code = await codeOf(async () =>
+    repo.updateMany?.([
       { id: FIRST, patch: { note: 'mine' } },
       { id: SECOND, patch: { note: 'mine' } },
     ]),
@@ -137,5 +148,15 @@ describe('updateMany’s rollback on a custom store', () => {
     const { code, first } = await run(true, theirs);
     expect(code).toBe('X_DB_SERIALIZATION_FAILURE');
     expect(first).toMatchObject({ note: 'theirs' });
+  });
+
+  test('a row the set won over a newer value is restored to that value, not the first read', async () => {
+    const early = (rows: Rows) => {
+      const row = rows.get(FIRST);
+      if (row !== undefined) rows.set(FIRST, { ...row, note: 'w' });
+    };
+    const { code, first } = await run(true, () => undefined, early);
+    expect(code).toBe('X_DB_UNIQUE_VIOLATION');
+    expect(first).toMatchObject({ note: 'w' });
   });
 });

@@ -286,6 +286,28 @@ describe('acknowledged advisories', () => {
     );
   });
 
+  test('a row dated exactly 90 days out acknowledges; 91 days out acknowledges nothing', async () => {
+    expect((await audit(on('2026-11-27'))).ok).toBe(true);
+    const result = await audit(on('2026-11-26'));
+    expect(result.findings?.map((f) => f.code)).toEqual(['X_ADVISORY_ACK_EXPIRED']);
+    expect(result.findings?.[0]?.cause).toContain('91 days after 2026-11-26');
+  });
+
+  test('a far-future expiry never silences an advisory', async () => {
+    const forever = { ...row, expires: '2099-01-01' };
+    const result = await audit(on('2026-11-27', [forever]));
+    expect(result.ok).toBe(false);
+    expect(result.findings?.map((f) => f.code)).toEqual(['X_ADVISORY_ACK_EXPIRED']);
+    expect(result.findings?.[0]?.cause).toContain('more than 90 days');
+  });
+
+  test('an expiry that is not a calendar day is never live', async () => {
+    for (const expires of ['2027-2-25', '2027-02-30', 'soon']) {
+      const result = await audit(on('2026-11-27', [{ ...row, expires }]));
+      expect(result.findings?.map((f) => f.code)).toEqual(['X_ADVISORY_ACK_EXPIRED']);
+    }
+  });
+
   test('a row whose advisory the range no longer admits is stale', async () => {
     const extra = { ...row, advisories: [...row.advisories, 'GHSA-0000-0000-0000'] };
     const result = await audit(on('2026-11-27', [extra]));

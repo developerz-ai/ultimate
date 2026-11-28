@@ -70,7 +70,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `audit-input.ts` | what may be written DOWN: an `input` redacted through core's table and made JSON-representable on every path |
 | `audit-gate.ts` | **the only** file that calls a sink, and where the two failure policies live |
 | `type-pins.ts` | compile-time assertions `tsc` checks — what the erased view projects, and why `client()` is not part of it |
-| `naming.ts`, `validate.ts`, `json-schema.ts`, `stable.ts` | pure helpers; `validate-unknown-keys.ts` logs `X_INPUT_UNKNOWN_KEY` once per action and path set after a good parse (the answer is unchanged; refusing waits on `next`, #1281). `stable.ts` is the DOCUMENT serializer (core's `isJsonObject` is imported from core, never re-exported) — the hash form is `@ultimat3/core`'s `canonicalJson`/`fingerprint` |
+| `naming.ts`, `validate.ts`, `json-schema.ts`, `stable.ts` | pure helpers; `validate-unknown-keys.ts` warns `X_INPUT_UNKNOWN_KEY` (#1281). `stable.ts` is the DOCUMENT serializer (core's `isJsonObject` is imported from core, never re-exported) — the hash form is `@ultimat3/core`'s `canonicalJson`/`fingerprint` |
 
 ## Invariants — execution and authz
 

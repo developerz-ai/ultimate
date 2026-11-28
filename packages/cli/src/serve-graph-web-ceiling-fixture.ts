@@ -335,5 +335,7 @@
  * `SERVING_ROLE_CEILING`, `core/src/outbound-refusal-headers.ts`.
  * raised 1780 → 1783, measured 1783 (2026-11-26, framework strings in ro, es and pt-BR): the three
  * on `SERVING_ROLE_CEILING`, `i18n/src/catalogs/{ro,es,pt-BR}.json`.
+ * raised 1783 → 1797, measured 1797 (2026-11-27, plan 101 bugs and gaps): the fourteen on
+ * `SERVING_ROLE_CEILING`; the web role adds none of its own.
  */
-export const WEB_ROLE_CEILING = 1783;
+export const WEB_ROLE_CEILING = 1797;

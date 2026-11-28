@@ -533,15 +533,15 @@ Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a
 | The `sig` on a resume | What the node does | Counter (`LiveQueryRegistry`) |
 |---|---|---|
 | this cursor's, for this subscriber | resumes from it: a delta inside the window, a snapshot outside. A row really held, revoked while away, is still withdrawn | — |
-| present and not this cursor's: edited `ids` or `lsn`, another subscriber's cursor, another window's, a secret rotated since | a **cold start** — one snapshot of what this subscriber may see, no replay, no `delete` for an id it named | `cursorsRefused` · `onCursorRefused` |
-| absent: a client built before 2026-11 | resumes as it always did, ids trusted | `unsignedCursors` · `onUnsignedCursor` |
+| present and not this cursor's: edited `ids` or `lsn`, another subscriber's cursor, another window's, a secret rotated since, or a value that is no sig at all | a **cold start** — one snapshot of what this subscriber may see, no replay, no `delete` for an id it named | `cursorsRefused` · `onCursorRefused` |
+| absent — no `sig` key at all: a client built before 2026-11, or one that stripped its own | resumes as it always did, ids trusted | `unsignedCursors` · `onUnsignedCursor` |
 
 - **No honest client sends a mismatched `sig`** — only the node mints one — so the cold start is not a break. A steady `cursorsRefused` outside a secret rotation is somebody editing cursors.
-- **The unsigned row is open on `main`**, on purpose: refusing it is a break, and it flips on `next` (an unsigned cursor cold-starts). `unsignedCursors` at zero says no old client is left.
+- **The unsigned row is open on `main`**, on purpose: refusing it is a break, and it flips on `next` (an unsigned cursor cold-starts). `unsignedCursors` counts resumes that sent no `sig` — old builds, or a client stripping its own; at zero, nothing resumes unsigned.
 - **Rotating the signing secret costs every open subscription one snapshot** on its next resume, as it invalidates every pagination cursor.
 - **A subscriber's own older cursor still verifies.** It names rows it really held at that position; replaying it reveals nothing it was not sent.
 - **Never the obvious fix**: intersecting `ids` with what the policy admits now cannot tell a forged id from a row held and since revoked, and drops the withdraw the second one is owed.
-- **Optional on the wire, so no `PROTOCOL_VERSION` bump**: an older node sends no `sig` and ignores one; a `sig` that is not a short `[a-z0-9:]` string is dropped where the frame is decoded, never a refused frame.
+- **Optional on the wire, so no `PROTOCOL_VERSION` bump**: an older node sends no `sig` and ignores one. Only an **absent** `sig` is unsigned. One that is present and is no sig — not a string, `null`, longer than 64 characters, outside `[a-z0-9:]` — is kept by the decoder as a marker that verifies for nobody: a cold start, counted in `cursorsRefused`, never a refused frame and never the legacy path.
 - **Cost**: one keyed fingerprint per subscriber per patch frame, ≈ 11 µs (measured 2026-11-27, one core); the ids digest is cached per ids array, and an update moves no id.
 
 ## Inbound frame order

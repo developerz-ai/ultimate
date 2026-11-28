@@ -159,4 +159,28 @@ describe('unit · outbound · the app-wide proxy', () => {
     expect(ambientProxyFor('http://minio.storage:9000/b/k')).toBeUndefined();
     expect(ambientProxyFor('not a url')).toBeUndefined();
   });
+
+  // A plain-http target sent through the proxy crosses it in cleartext, Authorization or SigV4
+  // included — an in-cluster gateway or MinIO left out of `outbound.direct`. Routing is unchanged
+  // (the app may mean it); the first use per host says so once, naming the fix.
+  test('a plain-http target the proxy carries warns once per host, naming outbound.direct', () => {
+    ambient(PROXY, ['minio.storage']);
+    const lines: string[] = [];
+    const release = installLogSink((line) => lines.push(line));
+    try {
+      expect(ambientProxyFor('http://llm-gateway.svc:8080/v1/chat')).toBe(PROXY);
+      expect(ambientProxyFor('http://llm-gateway.svc:8080/v1/other')).toBe(PROXY);
+      expect(ambientProxyFor('https://api.openai.com/v1/chat')).toBe(PROXY);
+      expect(ambientProxyFor('http://minio.storage:9000/b/k')).toBeUndefined();
+      expect(ambientProxyFor('http://localhost:9000/b/k')).toBeUndefined();
+    } finally {
+      release();
+    }
+    const warned = lines.filter((line) => line.includes('cleartext'));
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain('llm-gateway.svc');
+    expect(warned[0]).toContain("outbound: { direct: ['llm-gateway.svc'] }");
+    expect(warned[0]).not.toContain('s3cret');
+    expect(warned[0]).not.toContain('/v1/chat');
+  });
 });

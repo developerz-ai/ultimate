@@ -4,7 +4,7 @@
 
 import type { AcknowledgedAdvisory } from './advisory-acknowledged';
 import type { FloorVerdict } from './advisory-floors';
-import { covers } from './advisory-floors';
+import { covers, lapseOf } from './advisory-floors';
 import type { Finding } from './log';
 import { acknowledgedKey, acknowledgedLine } from './pin-tables';
 
@@ -30,11 +30,13 @@ export function expiredFinding(
   source: string,
 ): Finding {
   const { name, range } = verdict.declaration;
-  const lapsed = verdict.rows.map((row) => `${rowName(row)} expired ${row.expires}`).join('; ');
+  const lapsed = verdict.rows
+    .map((row) => `${rowName(row)}: ${lapseOf(row, verdict.today) ?? `expires ${row.expires}`}`)
+    .join('; ');
   return {
     code: 'X_ADVISORY_ACK_EXPIRED',
     at: atOf(verdict),
-    cause: `${name}@${range} still admits ${verdict.exposures.map((e) => e.advisory).join(', ')} and no ${name} release floors them, but ${lapsed}: an acknowledgement is a decision with a date, and the date passed. If bun outdated shows a ${name} release that raises the floor, bump it and delete the row instead`,
+    cause: `${name}@${range} still admits ${verdict.exposures.map((e) => e.advisory).join(', ')} and no ${name} release floors them, but ${lapsed}: an acknowledgement is a decision with a date, and that date has passed or was never a bounded one. If bun outdated shows a ${name} release that raises the floor, bump it and delete the row instead`,
     fix: `${editAt(verdict.rows[0], source)} re-date ${verdict.rows.map(rowName).join(', ')} at most 90 days out, with the reason it still stands`,
   };
 }

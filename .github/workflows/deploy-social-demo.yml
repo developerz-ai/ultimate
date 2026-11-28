@@ -33,7 +33,9 @@ on:
 
 # Serialize, and never cancel a publish mid-flight — a half-pushed manifest is worse than a queue.
 concurrency:
-  group: deploy-social-demo
+  # Keyed on what triggered ci: a scheduled ci run, every job here skipped, must never replace a
+  # push's deploy pending in the group.
+  group: deploy-social-demo-${{ github.event.workflow_run.event || github.event_name }}
   cancel-in-progress: false
 
 permissions:
@@ -202,7 +204,7 @@ jobs:
           compare="$RUNNER_TEMP/compare.json"
           if [ -n "$base" ]; then
             gh api "repos/${GITHUB_REPOSITORY}/compare/${base}...${SHA}" \
-              --jq '{status, files: [.files[]?.filename]}' > "$compare" || rm -f "$compare"
+              --jq '{status, files: [.files[]? | .filename, (.previous_filename // empty)]}' > "$compare" || rm -f "$compare"
           fi
           bun run scripts/lib/ci/deploy-due.ts --app social "$compare" > "$RUNNER_TEMP/due.json"
           echo "last publish: ${base:-none}; $(jq -r '.summary' "$RUNNER_TEMP/due.json")"

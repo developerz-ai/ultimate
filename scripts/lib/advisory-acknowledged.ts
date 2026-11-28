@@ -21,7 +21,10 @@ export interface AcknowledgedAdvisory {
   readonly reason: string;
   /** The command an app runs to take the patched versions into its own lockfile. */
   readonly appFix: string;
-  /** `YYYY-MM-DD`, UTC: the last day the row acknowledges anything. At most 90 days out. */
+  /**
+   * `YYYY-MM-DD`, UTC: the last day the row acknowledges anything. More than `ACK_MAX_DAYS` (90)
+   * after the audit's day, or not a calendar day, and it acknowledges nothing (`lapseOf`).
+   */
   readonly expires: string;
 }
 

@@ -801,11 +801,11 @@ made it — a key already queued collapses as always, and nothing queued is ever
   | The cursor's `sig` | The resume | Counted as |
   |---|---|---|
   | this cursor's, for this subscriber | decided from the cursor, ids trusted — so a row really held and revoked while away is still withdrawn | — |
-  | present, and not this cursor's — edited ids or lsn, another subscriber's, another window's, a rotated secret | a **cold start**: one snapshot, nothing replayed | `registry.cursorsRefused`, `onCursorRefused` |
-  | absent — a client built before the signature | as before 2026-11, ids trusted | `registry.unsignedCursors`, `onUnsignedCursor` |
+  | present, and not this cursor's — edited ids or lsn, another subscriber's, another window's, a rotated secret, or a value that is no sig at all (kept by the decoder as a marker, never read as absent) | a **cold start**: one snapshot, nothing replayed | `registry.cursorsRefused`, `onCursorRefused` |
+  | absent — no `sig` key: a client built before the signature, or one that stripped its own | as before 2026-11, ids trusted | `registry.unsignedCursors`, `onUnsignedCursor` |
 
   The absent row is the gap that stays open on `main` and closes on `next`, where an unsigned
-  cursor cold-starts too; `unsignedCursors` falling to zero says no such client is left. The ids
+  cursor cold-starts too; `unsignedCursors` counts resumes sending no `sig` (old builds, or tampering); at zero, none is left. The ids
   are never intersected with what the policy admits now — that is the fix that loses the withdraw.
   A subscriber's own OLDER cursor still verifies: it is a position it really held. Signing costs
   one keyed fingerprint per subscriber per patch frame (≈ 11 µs, measured 2026-11-27); the id

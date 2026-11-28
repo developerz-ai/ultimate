@@ -43,8 +43,30 @@ describe(testName('unit', 'raceActions'), () => {
     expect(report.settled[0]?.[2]?.status).toBe('rejected');
   });
 
+  test('a call that throws before it returns a promise is a rejection, not a throw', async () => {
+    const report = await raceActions(
+      [
+        () => {
+          throw driverError('40001');
+        },
+        () => Promise.resolve(1),
+      ],
+      { rounds: 1 },
+    );
+    expect(report.settled[0]?.[0]?.status).toBe('rejected');
+    expect(report.serializationFailures).toHaveLength(1);
+  });
+
+  test('fewer than two calls race nothing and are refused', async () => {
+    await expect(raceActions([() => Promise.resolve(1)], { rounds: 1 })).rejects.toMatchObject({
+      code: 'X_INVARIANT',
+    });
+  });
+
   test('a round count that is not a positive integer is refused', async () => {
-    await expect(raceActions([], { rounds: 0 })).rejects.toMatchObject({ code: 'X_INVARIANT' });
+    await expect(
+      raceActions([() => Promise.resolve(1), () => Promise.resolve(1)], { rounds: 0 }),
+    ).rejects.toMatchObject({ code: 'X_INVARIANT' });
   });
 });
 

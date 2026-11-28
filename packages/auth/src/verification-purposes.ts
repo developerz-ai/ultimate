@@ -15,6 +15,8 @@ export interface VerificationPurposeDef {
   readonly identifier: (raw: string) => string;
   /** Declared a sign-in credential: the one thing `signInWithLink` consumes. Absent is no. */
   readonly signIn?: boolean | undefined;
+  /** `'explicit'`: `issueVerification` mails `to`, not the identifier (an invite). Absent refuses `to`. */
+  readonly recipient?: 'explicit' | undefined;
 }
 
 // A Map, never a record keyed by an attacker-reachable string: `consumeVerification` looks a

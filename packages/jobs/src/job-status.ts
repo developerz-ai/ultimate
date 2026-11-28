@@ -27,7 +27,7 @@ export interface JobStatus {
 }
 
 export interface CancelJobForInput extends TenantJobQuery {
-  /** Kept as the row's `lastError` — an operator's read, never the tenant's. */
+  /** Kept as the row's `lastError` — an operator's read, never the tenant's. `''` is no reason. */
   readonly reason?: string;
 }
 
@@ -38,8 +38,12 @@ export interface CancelJobForInput extends TenantJobQuery {
  */
 const JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/**
+ * An empty tenant or name names no row on any driver — answered here, because a script's `''` reads
+ * as "any name" where SQL's `name = ''` matches nothing, and the three must give one answer.
+ */
 const askable = (query: TenantJobQuery): boolean =>
-  JOB_ID.test(query.jobId) && query.tenantId !== '';
+  JOB_ID.test(query.jobId) && query.tenantId !== '' && query.name !== '';
 
 function fenceOf(driver: JobDriver): TenantJobs {
   if (driver.tenantJobs === undefined) {
@@ -93,6 +97,8 @@ export async function cancelJobFor(
 ): Promise<JobStatus | undefined> {
   const fence = fenceOf(driver);
   if (!askable(input)) return undefined;
-  const row = await fence.cancel(only(input), input.reason);
+  // `''` is no reason: it keeps the row's `lastError` on every driver, never blanks it on one.
+  const reason = input.reason === '' ? undefined : input.reason;
+  const row = await fence.cancel(only(input), reason);
   return row === undefined ? undefined : toJobStatus(row);
 }

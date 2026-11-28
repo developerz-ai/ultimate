@@ -390,8 +390,15 @@
  * raised 1011 → 1014, measured 1014 (2026-11-26, framework strings in ro, es and pt-BR):
  * `i18n/src/catalogs/{ro,es,pt-BR}.json`, the framework's own translations `framework.ts` installs
  * at import on the i18n barrel, so every role renders `ui.*` and `errors.*` in an app's language.
+ * raised 1014 → 1022, measured 1022 (2026-11-27, plan 101 bugs and gaps, metafile walk; each new
+ * module on this graph named): `action/src/action-decide.ts` (`decide(rows)`, bound by `invoke`),
+ * `action/src/validate-unknown-keys.ts` and the `schema/src/unknown-keys.ts` walker it calls (an
+ * undeclared input key reported after the parse, #1281), `core/src/config-outbound.ts` and
+ * `core/src/outbound-default-proxy.ts` (`outbound: { proxy, direct }`, the app-wide egress proxy
+ * every `outbound()` call reads), and `jobs/src/job-status{,-memory,-pg}.ts` (`jobStatusFor` /
+ * `cancelJobFor` and the drivers' `tenantJobs`, on the jobs barrel).
  */
-export const MIGRATE_CEILING = 1014;
+export const MIGRATE_CEILING = 1022;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

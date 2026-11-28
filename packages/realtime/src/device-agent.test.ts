@@ -213,3 +213,52 @@ describe('unit · a device agent meets a newer wire', () => {
     }
   });
 });
+
+describe('unit · a device agent redialing against a newer wire', () => {
+  test('each version-skew close backs off further: an opened socket is not a healthy one', async () => {
+    const delays: number[] = [];
+    const pending: (() => void)[] = [];
+    const agent = deviceAgent({
+      url: 'ws://device.test/link',
+      token: () => 't',
+      onRequest: () => null,
+      backoff: { base: 100, max: 100_000, factor: 2, jitter: 'none' },
+      schedule: (run, ms) => {
+        delays.push(ms);
+        pending.push(run);
+        return () => undefined;
+      },
+      dial: () => {
+        const socket = {
+          send() {},
+          close() {
+            socket.onclose?.();
+          },
+          onopen: null as (() => void) | null,
+          onmessage: null as ((event: { readonly data: unknown }) => void) | null,
+          onclose: null as (() => void) | null,
+        };
+        queueMicrotask(() => {
+          socket.onopen?.();
+          socket.onmessage?.({
+            data: JSON.stringify({
+              type: 'hello',
+              v: DEVICE_WIRE_VERSION + 1,
+              heartbeatMs: 5,
+              maxFrameBytes: 9,
+            }),
+          });
+        });
+        return socket;
+      },
+    });
+    cleanups.push(() => agent.close());
+    for (let round = 0; round < 4; round += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      for (const run of pending.splice(0)) run();
+    }
+    expect(delays.length).toBeGreaterThanOrEqual(3);
+    expect(delays.slice(0, 3)).toEqual([...delays.slice(0, 3)].sort((a, b) => a - b));
+    expect(delays[2]).toBeGreaterThan(delays[0] ?? 0);
+  });
+});

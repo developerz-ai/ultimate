@@ -19,8 +19,12 @@ export const INPUT_UNKNOWN_KEY = 'input.unknown_key';
 /** The warning's code, on `fields.code`. A refusal under the same code is `next`'s, not 31.x's. */
 const CODE = 'X_INPUT_UNKNOWN_KEY';
 
-/** Reports already logged. Bounded: the keys are the caller's, and a flood must not grow a set. */
-const MAX_REPORTS = 1_000;
+/**
+ * Reports already logged. Bounded — the keys are the caller's, and a flood must not grow a set —
+ * by evicting the OLDEST (insertion order), never by refusing the newest: a cap that refused went
+ * silent for the life of the process after 1,000 junk keys, real typos included.
+ */
+export const MAX_REPORTS = 1_000;
 const reported = new Set<string>();
 
 /** A path is the caller's text: bounded before it reaches a log line or a span. */
@@ -44,13 +48,18 @@ export function reportUnknownInputKeys(
   const found = unknownKeys(node, raw);
   if (found.length === 0) return;
   const keys = found.map(({ path, key, declared }) => {
-    const nearest = nearestName(key, declared);
+    // A key past `MAX_PATH` is no typo of a declared name, and `nearestName`'s cost grows with it.
+    const nearest = key.length > MAX_PATH ? undefined : nearestName(key, declared);
     return nearest === undefined ? { path: bounded(path) } : { path: bounded(path), nearest };
   });
   const paths = keys.map((entry) => entry.path);
   currentSpan()?.addEvent(INPUT_UNKNOWN_KEY, { code: CODE, query: queryName, keys: paths });
   const report = JSON.stringify([queryName, paths]);
-  if (reported.has(report) || reported.size >= MAX_REPORTS) return;
+  if (reported.has(report)) return;
+  if (reported.size >= MAX_REPORTS) {
+    const oldest = reported.values().next();
+    if (oldest.done !== true) reported.delete(oldest.value);
+  }
   reported.add(report);
   const first = keys[0];
   const rename =

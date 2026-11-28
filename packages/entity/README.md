@@ -1035,7 +1035,7 @@ the search mirror and the `entity.bulk` report are the same.
 |---|---|
 | Bound | a pre-write count past `MAX_ASSERTED_ROWS` is `X_INVARIANT_VIOLATED`. Postgres also bounds returned rows inside a transaction, rolling back if the count drifts. Sweep with `.where(filter).inBatches(1000)`, or use `updateWhere`, which answers a count |
 | Statements on Postgres | one when the filter names the whole primary key and no rule only the app can judge is declared. Otherwise a `count(*)` goes first, without an explicit lock |
-| `defineDriver` store | refuses before writing: the store reports only a count, not the rows it wrote. Use `updateWhere` for a count or a repository implementing atomic `updateWhereReturning` |
+| `defineDriver` store | with `updateChecked` on an unversioned entity: the won compare-and-set names exactly the rows written, read back by key (a raced row is re-judged, one that left the filter is not answered). Otherwise refuses before writing: the store reports only a count, not the rows it wrote — use `updateWhere`, or implement `updateChecked` ("Custom drivers") |
 | `Repo` without it | optional on the contract: the call is `X_INVARIANT_VIOLATED` with nothing written |
 
 | Bulk insert | Resolves | Statement |

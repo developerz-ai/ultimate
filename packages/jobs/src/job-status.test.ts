@@ -80,4 +80,32 @@ describe('jobStatusFor', () => {
       expect(status?.state).toBe('dead');
     }
   });
+
+  test('an empty reason reaches no driver: every one keeps the lastError it had', async () => {
+    const reasons: (string | undefined)[] = [];
+    const row = {
+      id: '019ff1c5-0000-7000-8000-00000000beef',
+      name: 'report.build',
+      state: 'cancelled',
+      attempt: 0,
+      maxAttempts: 1,
+      runAt: 0,
+      createdAt: 0,
+      updatedAt: 0,
+    } as const;
+    const driver: JobDriver = {
+      ...memoryJobDriver(),
+      tenantJobs: {
+        status: () => Promise.resolve(row),
+        cancel: (_query, reason) => {
+          reasons.push(reason);
+          return Promise.resolve(row);
+        },
+      },
+    };
+    const query = { jobId: row.id, tenantId: 'org-a' };
+    await cancelJobFor(driver, { ...query, reason: '' });
+    await cancelJobFor(driver, { ...query, reason: 'by ada' });
+    expect(reasons).toEqual([undefined, 'by ada']);
+  });
 });

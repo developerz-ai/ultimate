@@ -92,6 +92,7 @@ export function defineMemberInvite(input: DefineMemberInviteInput): MemberInvite
     template: input.template,
     ttlMs: input.ttlMs,
     identifier: (raw) => raw,
+    recipient: 'explicit',
   });
   const runtime = (auth: Auth, mail: MailSender): VerificationRuntime => ({
     store: auth.adapter,

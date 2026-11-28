@@ -18,7 +18,8 @@ const PURPOSE = 'realtime-live-cursor';
  * `signed`: the node minted this sig over exactly this cursor, for this subscriber. `unsigned`: no
  * sig — a client older than the signature. `refused`: a sig is present and is not this cursor's —
  * tampered ids or lsn, another subscriber's or another window's, a rotated secret, or no sig format
- * at all. Only the node mints one, so no honest client ever sends the third.
+ * at all (the decoder keeps one as `CURSOR_SIG_MALFORMED`, never as absent). Only the node mints
+ * one, so no honest client ever sends the third.
  */
 export type CursorVerdict = 'signed' | 'unsigned' | 'refused';
 
@@ -83,9 +84,9 @@ export interface CursorDistrusted {
 
 export interface CursorTrustOptions {
   /**
-   * `live.cursors_unsigned`. A resume from a cursor with no sig: a client built before the
-   * signature. Served as it always was, ids trusted — the count is how an operator sees how many
-   * such clients are left before `next` cold-starts them.
+   * `live.cursors_unsigned`. A resume from a cursor with NO sig key: a client built before the
+   * signature — or one that stripped its own, which reads the same. Served as it always was, ids
+   * trusted; the count is how many such resumes are left for `next` to cold-start.
    */
   readonly onUnsignedCursor?: (event: CursorDistrusted) => void;
   /**

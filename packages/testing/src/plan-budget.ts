@@ -3,6 +3,7 @@
 // on that engine. Plans only: `explain (format json)` in a read-only transaction, never `analyze`,
 // so the statement is not executed.
 
+import { finiteCount, finiteOption } from '@ultimat3/core';
 import type { DbClient, SqlFragment } from '@ultimat3/db';
 import { db, sql, withReadTransaction } from '@ultimat3/db';
 import './errors';
@@ -63,6 +64,8 @@ export async function expectPlanWithin(
   budget: PlanBudget,
   options: ExpectPlanOptions = {},
 ): Promise<void> {
+  finiteOption('expectPlanWithin', 'maxCost', budget.maxCost);
+  finiteCount('expectPlanWithin', 'maxSortRows', budget.maxSortRows, 0);
   const read = readPlanBudget(await explainJson(fragment, options.client));
   if (!overBudget(read, budget)) return;
   const index =

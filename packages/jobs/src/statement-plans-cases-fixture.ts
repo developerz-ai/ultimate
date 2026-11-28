@@ -88,6 +88,7 @@ import {
   SQL_TRY_ADVISORY_LOCK,
 } from './driver-pg-sql';
 import { SQL_WAKE } from './driver-pg-wake-sql';
+import { SQL_JOB_CANCEL_FOR, SQL_JOB_STATUS_FOR } from './job-status-pg';
 import {
   SQL_JOBS_RETENTION_BATCH,
   SQL_JOBS_RETENTION_ORPHANS,
@@ -185,6 +186,19 @@ export const planned = (NOW: number): Readonly<Record<string, PlannedStatement>>
   },
   SQL_HEARTBEAT: { sql: SQL_HEARTBEAT, cases: one([SEEDED.running, 30_000, SEEDED.worker, 1]) },
   SQL_CANCEL: { sql: SQL_CANCEL, cases: one([SEEDED.delayed, 'stopped']) },
+  // A tenant's own job: the id under its tenant, any name or one; another tenant answers nothing.
+  SQL_JOB_STATUS_FOR: {
+    sql: SQL_JOB_STATUS_FOR,
+    cases: [
+      { label: 'its own tenant', params: [SEEDED.running, 'org-3', null] },
+      { label: 'by name', params: [SEEDED.running, 'org-3', 'mail.send'] },
+      { label: 'another tenant', params: [SEEDED.running, 'org-4', null] },
+    ],
+  },
+  SQL_JOB_CANCEL_FOR: {
+    sql: SQL_JOB_CANCEL_FOR,
+    cases: one([SEEDED.running, 'org-3', 'mail.send', 'stopped by ada']),
+  },
   SQL_FIND_LIVE_BY_KEY: {
     sql: SQL_FIND_LIVE_BY_KEY,
     cases: one(['mail.send', 'named:running', 'org-3']),

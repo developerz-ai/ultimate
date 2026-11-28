@@ -45,6 +45,12 @@ export async function raceActions<T>(
   options: RaceOptions,
 ): Promise<RaceReport<T>> {
   assertCoded(
+    calls.length >= 2,
+    'X_INVARIANT',
+    `raceActions got ${String(calls.length)} call(s): one call races nothing, so a green result would prove nothing`,
+    'raceActions([() => a(), () => b()], { rounds: 20 })   # at least two calls',
+  );
+  assertCoded(
     Number.isInteger(options.rounds) && options.rounds >= 1,
     'X_INVARIANT',
     'raceActions({ rounds }) needs a whole number of rounds, 1 or more',
@@ -53,7 +59,7 @@ export async function raceActions<T>(
   const settled: PromiseSettledResult<T>[][] = [];
   const serializationFailures: SerializationFailure[] = [];
   for (let round = 0; round < options.rounds; round += 1) {
-    const results = await Promise.allSettled(calls.map((call) => call()));
+    const results = await Promise.allSettled(calls.map((call) => Promise.try(call)));
     results.forEach((result, call) => {
       if (result.status !== 'rejected') return;
       const state = lostRace(result.reason);

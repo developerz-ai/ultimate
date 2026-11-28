@@ -27,6 +27,8 @@ export interface CheckedUpdate<Row> {
   readonly tx: Tx | undefined;
   /** Same-tenant references of the merged rows, judged as a batch. */
   readonly references: (rows: readonly Row[]) => Promise<void>;
+  /** Asked of every read's match count first: `updateWhereReturning`'s `returnedBound`. */
+  readonly bound?: (matched: number) => void;
 }
 
 /** What the write did: how many rows, and the rows as they were judged (for the search mirror). */
@@ -52,6 +54,7 @@ export const checkedUpdate = async <Row>(
     // Every invariant, a SQL-expressible one too: a custom store enforces no CHECK.
     const read = await raw.select({ plan, after: undefined, limit: MAX_ASSERTED_ROWS + 1, tx });
     const found = scope.checked(op, plan, read);
+    write.bound?.(found.length);
     if (found.length > MAX_ASSERTED_ROWS) throw assertedRowsTooMany(entity.$name, op, found.length);
     const [first] = found;
     if (first === undefined) return { written: 0, found };

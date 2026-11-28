@@ -69,4 +69,4 @@ slices:
     percent: 0
 evidence: []
 notes: "Sweep 9 PRs target next, not main. Sweep 10 runs in the downstream app's own repository. Every decision is made; the executor asks nothing and merges each sweep once verify and CI are green."
-last_updated: 2026-11-27
+last_updated: 2026-11-28

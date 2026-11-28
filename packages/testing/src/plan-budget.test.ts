@@ -89,3 +89,18 @@ describe(testName('unit', 'PlanOverBudgetError'), () => {
     expect(error.cause).toContain('900.5');
   });
 });
+
+describe(testName('unit', 'incremental sort'), () => {
+  test('an Incremental Sort counts as a sort', () => {
+    const plan = [
+      {
+        Plan: {
+          'Node Type': 'Limit',
+          'Total Cost': 5,
+          Plans: [{ 'Node Type': 'Incremental Sort', 'Plan Rows': 5_000_000, Plans: [seqScan] }],
+        },
+      },
+    ];
+    expect(readPlanBudget(plan)).toMatchObject({ sortRows: 5_000_000, node: 'Incremental Sort' });
+  });
+});

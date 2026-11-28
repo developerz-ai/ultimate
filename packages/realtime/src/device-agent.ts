@@ -127,6 +127,7 @@ export function deviceAgent(options: DeviceAgentOptions): DeviceAgent {
         current.close(CLOSE.versionSkew, 'X_DEVICE_WIRE_VERSION');
         return;
       }
+      attempt = 0;
       beat(frame.heartbeatMs);
     } else if (frame.type === 'request') void answer(frame.id, frame.frame);
     else if (frame.type === 'frame') options.onFrame?.(frame.frame);
@@ -158,8 +159,9 @@ export function deviceAgent(options: DeviceAgentOptions): DeviceAgent {
     socket = current;
     current.onopen = () => {
       if (current !== socket) return;
+      // Not `attempt = 0`: an open socket is not a healthy one. A node that answers with a wire this
+      // agent cannot read closes it at once, and only an accepted `hello` earns a fresh backoff.
       open = true;
-      attempt = 0;
     };
     current.onmessage = (event) => receive(current, event.data);
     current.onclose = () => {

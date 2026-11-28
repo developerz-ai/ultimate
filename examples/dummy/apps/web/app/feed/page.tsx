@@ -256,11 +256,11 @@ export const config = defineRoute({
   // the feed island +246 B (96,733 → 96,979): `AsyncRegion`'s `failed` branch can be the app's own
   // and `EmptyState` / `Alert` take a heading level, which the feed's states render through.
   // Raised 213.3kb → 213.6kb.
-  // measured: 219483 B (2026-11-24; x build --target static) — why: the client router +834 B
-  // (31,904 → 32,738): a streamed soft visit scrolls to a fragment its hole brings, holds its
-  // recovery while the next visit is on its way, reloads a fragment URL it must load for real,
-  // and drops keep-alive frames as they arrive. Raised 213.6kb → 214.4kb.
-  budget: { js: '214.4kb' },
+  // measured: 219736 B (2026-11-28; x build --target static) — why: the live cursor's signature
+  // +253 B (219,483 → 219,736), the same in every realtime island: the browser keeps the `sig` each
+  // patch carries and hands it back on resume, and a malformed one is kept as a refusal marker
+  // (#1280). Raised 214.4kb → 214.7kb.
+  budget: { js: '214.7kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

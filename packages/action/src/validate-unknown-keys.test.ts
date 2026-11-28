@@ -12,7 +12,12 @@ import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { toRoute } from './http';
 import { invoke } from './invoke';
-import { INPUT_UNKNOWN_KEY, resetUnknownKeyReports } from './validate-unknown-keys';
+import {
+  INPUT_UNKNOWN_KEY,
+  MAX_REPORTS,
+  reportUnknownInputKeys,
+  resetUnknownKeyReports,
+} from './validate-unknown-keys';
 
 afterEach(() => {
   resetInstrumentation();
@@ -124,5 +129,31 @@ describe('an action input carrying an undeclared key', () => {
     const seen = heard();
     await invoke(listTickets, { limit: 1, filter: { status: 'open' } }, { ctx });
     expect(seen).toHaveLength(0);
+  });
+
+  // The key is the caller's: a 1 MiB body can carry one 1M-char key, and asking for its nearest
+  // declared name cost ~300 MB and most of a second of sync CPU on every request, dedupe or not.
+  test('a million-character key is still reported, bounded, and costs no suggestion', () => {
+    const seen = heard();
+    const huge = 'l'.repeat(1_000_000);
+    const started = performance.now();
+    reportUnknownInputKeys(t.object({ limit: t.number }), { limit: 1, [huge]: 1 }, 'probe');
+    expect(performance.now() - started).toBeLessThan(50);
+    expect(seen).toHaveLength(1);
+    const keys = seen[0]?.fields['keys'] as readonly { path: string; nearest?: string }[];
+    expect(keys[0]?.nearest).toBeUndefined();
+    expect(keys[0]?.path.length).toBeLessThanOrEqual(129);
+  });
+
+  test('past MAX_REPORTS distinct reports the oldest is forgotten, never the newest refused', () => {
+    const seen = heard();
+    const schema = t.object({ limit: t.number });
+    for (let i = 0; i <= MAX_REPORTS; i += 1)
+      reportUnknownInputKeys(schema, { [`k${i}`]: 1 }, 'probe');
+    expect(seen).toHaveLength(MAX_REPORTS + 1);
+    // `k0` was evicted to make room, so it is said again; `k${MAX_REPORTS}` is still remembered.
+    reportUnknownInputKeys(schema, { k0: 1 }, 'probe');
+    reportUnknownInputKeys(schema, { [`k${MAX_REPORTS}`]: 1 }, 'probe');
+    expect(seen).toHaveLength(MAX_REPORTS + 2);
   });
 });

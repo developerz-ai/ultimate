@@ -42,8 +42,11 @@ const tableBeneath = (node: Raw): string => {
   return '';
 };
 
+/** Both nodes hold rows to order them: an incremental sort is a sort with a presorted prefix. */
+const SORTS: ReadonlySet<string> = new Set(['Sort', 'Incremental Sort']);
+
 const sortsIn = (node: Raw): readonly Raw[] => [
-  ...(node['Node Type'] === 'Sort' ? [node] : []),
+  ...(SORTS.has(String(node['Node Type'])) ? [node] : []),
   ...children(node).flatMap(sortsIn),
 ];
 

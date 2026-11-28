@@ -57,3 +57,22 @@ describe('unit · the cutoff scales with length', () => {
     expect(nearestName('gem', ['db', 'gen'])).toBe('gen');
   });
 });
+
+describe('unit · a hostile input costs nothing', () => {
+  // The input can be a caller's: `@ultimat3/action` and `@ultimat3/query` ask for the nearest
+  // declared key to an unknown input key, before any dedupe. A grid per candidate made a 1M-char
+  // key ~300 MB and most of a second of sync CPU per request. A length gap past the cutoff can
+  // never be within it, so such a pair is skipped before anything is allocated.
+  test('a million-character input against short candidates answers undefined, at once', () => {
+    const huge = 'a'.repeat(1_000_000);
+    const started = performance.now();
+    expect(nearestName(huge, ['limit', 'offset', 'status'])).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(50);
+  });
+
+  test('the length gate keeps every answer the cutoff gave', () => {
+    expect(nearestName('migr', ['migrate'])).toBe('migrate');
+    expect(nearestName('migratexyz', ['migrate'])).toBe('migrate');
+    expect(nearestName('migratexyzw', ['migrate'])).toBeUndefined();
+  });
+});

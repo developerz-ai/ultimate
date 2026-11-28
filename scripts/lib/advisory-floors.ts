@@ -53,7 +53,7 @@ export type FloorVerdict =
       readonly exposures: readonly Exposure[];
     }
   | Acknowledged<'acknowledged'>
-  | Acknowledged<'expired'>;
+  | (Acknowledged<'expired'> & { readonly today: string });
 
 /** Unfloorable, every exposure named by a ledger row: inside its expiry, or past it. */
 interface Acknowledged<Kind extends 'acknowledged' | 'expired'> {
@@ -83,6 +83,35 @@ export const covers = (
   row.advisories.includes(exposure.advisory) &&
   row.via.includes(exposure.package);
 
+/** The longest an acknowledgement may run: a row dated further out than this is not a decision. */
+export const ACK_MAX_DAYS = 90;
+
+const DAY_MS = 86_400_000;
+
+/** A `YYYY-MM-DD` that is a real calendar day, as UTC milliseconds; else `undefined`. */
+const utcDay = (text: string): number | undefined => {
+  const at = Date.parse(`${text}T00:00:00Z`);
+  return Number.isNaN(at) || new Date(at).toISOString().slice(0, 10) !== text ? undefined : at;
+};
+
+/**
+ * Why `row` acknowledges nothing on `today`, or `undefined` when it is live. The ledger carries no
+ * date it was written on, so the bound is read from `today`: a row more than `ACK_MAX_DAYS` out is
+ * refused the day it is written, and every day after until it comes inside the window.
+ */
+export function lapseOf(row: AcknowledgedAdvisory, today: string): string | undefined {
+  const expires = utcDay(row.expires);
+  const now = utcDay(today);
+  if (expires === undefined) return `its expires ${row.expires} is not a YYYY-MM-DD calendar day`;
+  if (now === undefined) return `the audit's day ${today} is not a YYYY-MM-DD calendar day`;
+  if (expires < now) return `it expired ${row.expires}`;
+  const days = Math.round((expires - now) / DAY_MS);
+  if (days > ACK_MAX_DAYS) {
+    return `its expires ${row.expires} is ${days} days after ${today}, more than ${ACK_MAX_DAYS} days out`;
+  }
+  return undefined;
+}
+
 /**
  * An unfloorable range, read against the ledger: acknowledged when every exposure has a live row,
  * expired when every one has a row but some only a lapsed one. One exposure no row names and the
@@ -96,7 +125,7 @@ function acknowledge(
   const rows = (ack?.rows ?? []).filter((row) =>
     exposures.some((exposure) => covers(row, declaration, exposure)),
   );
-  const live = rows.filter((row) => ack !== undefined && ack.today <= row.expires);
+  const live = rows.filter((row) => ack !== undefined && lapseOf(row, ack.today) === undefined);
   const coveredBy = (set: readonly AcknowledgedAdvisory[]): boolean =>
     exposures.every((exposure) => set.some((row) => covers(row, declaration, exposure)));
   if (rows.length > 0 && coveredBy(live)) {
@@ -104,7 +133,7 @@ function acknowledge(
   }
   if (rows.length > 0 && coveredBy(rows)) {
     const lapsed = rows.filter((row) => !live.includes(row));
-    return { kind: 'expired', declaration, exposures, rows: lapsed };
+    return { kind: 'expired', declaration, exposures, rows: lapsed, today: ack?.today ?? '' };
   }
   return { kind: 'unfloorable', declaration, exposures };
 }

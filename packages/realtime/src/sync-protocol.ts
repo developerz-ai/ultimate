@@ -157,7 +157,7 @@ export interface PatchFrame {
    * The node's signature over the cursor this subscriber holds AFTER folding these patches
    * (`LiveCursor.sig`). The client stores it on its advanced cursor and echoes it on resume; a
    * patch without one leaves that cursor unsigned. Additive and optional, for the reason `writes`
-   * is; a value that is not a short sig-shaped string is DROPPED, never a refused frame.
+   * is. A PRESENT value that is no sig is kept as `CURSOR_SIG_MALFORMED`, never read as absent.
    */
   readonly sig?: string;
 }
@@ -406,8 +406,9 @@ function cursor(value: unknown): LiveCursor {
     }),
     at: num(value, 'at'),
   };
-  // Dropped when malformed, so the cursor reads as an unsigned one — never refused whole: a sig is
-  // optional, and a frame is not lost over a field an older peer does not send at all.
+  // Absent stays absent — a client older than the signature. Present and no sig is KEPT, as the
+  // marker that verifies for nobody: dropped, a tampered cursor read as a legacy one. Never a
+  // refused frame either way — the subscriber is served, from a cold start.
   const sig = wireSig(value['sig']);
   return sig === undefined ? base : { ...base, sig };
 }

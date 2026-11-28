@@ -22,7 +22,7 @@ import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
 import { SyncSocket, type WsLike } from './socket';
-import { decode, type Frame } from './sync-protocol';
+import { decode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 afterEach(() => {
   resetCursorSigning();
@@ -330,6 +330,40 @@ describe('a cursor whose sig does not match cold-starts', () => {
 
     await expectColdStart(registry, cursor);
   });
+
+  // Off the WIRE, where the hole was: the decoder dropped a malformed sig, and the cursor then
+  // took the unsigned path with its forged ids trusted.
+  test.each([['NOT-A-SIG!'], ['H1:AB:CD'], [''], ['x'.repeat(200)], [7], [null], [{}]])(
+    'a malformed sig on a subscribe frame (%p) cold-starts and is counted refused',
+    async (sig) => {
+      const { registry, unsigned } = world();
+      const { cursor } = await aliceAway(registry);
+      await registry.deliver(change('delete', P2, 2));
+      const { sig: _own, ...bare } = cursor;
+      const sent = decode(
+        JSON.stringify({
+          type: 'subscribe',
+          v: PROTOCOL_VERSION,
+          op: 'add',
+          sid: 'a2',
+          target: {
+            kind: 'query',
+            qid: 'liveFeed',
+            input,
+            cursor: { ...bare, ids: [...bare.ids, 'p2'], sig },
+          },
+        }),
+      );
+      if (sent.type !== 'subscribe' || sent.target.kind !== 'query' || !sent.target.cursor) {
+        return expect.unreachable('a subscribe frame with a cursor decodes as one');
+      }
+
+      const ws = await expectColdStart(registry, sent.target.cursor);
+
+      expect(mentions(ws.frames, 'p2')).toEqual([]);
+      expect(unsigned).toEqual([]);
+    },
+  );
 
   test('a sig that is no sig at all', async () => {
     const { registry } = world();

@@ -82,6 +82,15 @@ export function jobStatusScenarios(label: string, harness: JobStatusHarness): vo
     expect((await jobStatusFor(driver, { ...query, name: 'report.build' }))?.state).toBe('ready');
   });
 
+  test(`${label}: an empty name names no job, on status and cancel alike`, async () => {
+    const driver = await harness.driver();
+    const { id } = await enqueue(driver, 'empty-name', ORG_A);
+    const query = { jobId: id, tenantId: ORG_A, name: '' };
+    expect(await jobStatusFor(driver, query)).toBeUndefined();
+    expect(await cancelJobFor(driver, query)).toBeUndefined();
+    expect((await claim(driver)).map((row) => row.id)).toEqual([id]);
+  });
+
   test(`${label}: cancelling another tenant's job is a no-op answering undefined`, async () => {
     const driver = await harness.driver();
     const { id } = await enqueue(driver, 'not-yours', ORG_A);

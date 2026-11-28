@@ -123,6 +123,10 @@ export const config = defineConfig({
   `X_CONFIG_INVALID`. So is a `proxy` that is not an `http:`/`https:` URL — refused at
   `defineConfig`, the credential never echoed; one installed by hand is still refused per hop
   (`X_OUTBOUND_PROXY_INVALID`).
+- **A plain-`http:` target through the proxy is cleartext** — the proxy reads every header, a
+  bearer token or a SigV4 signature included. Routing stays as declared; the first use per host logs
+  one `ultimate outbound proxy cleartext` warn line (host and port, never the path or the proxy URL)
+  whose fix is `defineConfig({ outbound: { direct: ['<host>'] } })`. An in-cluster gateway or MinIO belongs in `direct`.
 - Installed by the container boot (`configureOutboundProxy`, `@ultimat3/core/outbound`), released at
   stop; an app never calls it. The boot logs `ultimate outbound proxy` with the URL's userinfo as
   `***`.

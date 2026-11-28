@@ -16,13 +16,26 @@ export const CURSOR_ID_LIMIT = 512;
  */
 export const CURSOR_SIG_MAX = 64;
 
-/** What a `sig` may be spelled with. Anything else is dropped where the frame is decoded. */
+/** What a `sig` may be spelled with. */
 const CURSOR_SIG = /^[a-z0-9:]+$/;
 
-/** A wire value as a `sig`, or nothing: a malformed one is DROPPED, never a refused frame. */
+/**
+ * What the decoder keeps of a `sig` that was SENT and is no sig: one character outside the sig
+ * alphabet, so it is no node's signature and verifies for nobody (`cursor-sign.ts` refuses it).
+ */
+export const CURSOR_SIG_MALFORMED = '!';
+
+/**
+ * A wire value as a `sig`. Only an ABSENT key is no sig — a client older than the signature. A
+ * present value that is no sig (wrong type, `null`, too long, another alphabet) is never read as
+ * absent: only the node mints one, so no honest client sends it, and dropping it would let a
+ * tampered cursor pass as a legacy one with its ids trusted. It becomes `CURSOR_SIG_MALFORMED` —
+ * bounded, and a cold start rather than a refused frame.
+ */
 export function wireSig(value: unknown): string | undefined {
-  if (typeof value !== 'string' || value.length > CURSOR_SIG_MAX) return undefined;
-  return CURSOR_SIG.test(value) ? value : undefined;
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.length > CURSOR_SIG_MAX) return CURSOR_SIG_MALFORMED;
+  return CURSOR_SIG.test(value) ? value : CURSOR_SIG_MALFORMED;
 }
 
 /**

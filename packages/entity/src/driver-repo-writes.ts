@@ -21,7 +21,7 @@ import {
 } from './driver-write-scope';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
-import { assertedRowsTooMany, MAX_ASSERTED_ROWS } from './invariants';
+import { assertedRowsTooMany, MAX_ASSERTED_ROWS, returnedBound } from './invariants';
 import { mergedRow } from './memory-update';
 import { idPlan, namedColumns, singleKeyOf } from './plan';
 import type { FilteredWriteOptions, Repo, RepoOptions, Tx } from './repo';
@@ -43,6 +43,7 @@ export type DriverWrites<Row> = Pick<
   | 'delete'
   | 'deleteWhere'
   | 'updateWhere'
+  | 'updateWhereReturning'
   | 'insertAllCount'
   | 'upsertAllCount'
   | 'copyAll'
@@ -85,26 +86,8 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
     return read;
   };
 
-  /**
-   * A patch applied to the rows a plan matches. With an invariant declared, every merged row is
-   * judged first, bounded as a judged write is on Postgres; then one store call. Answers how many
-   * rows the store wrote. A searchable entity's version is the STORE's to advance, per row and
-   * atomically (`DriverRepo.update`'s `advance`): a value the kit computed from a read would let a
-   * second process's newer version be written over.
-   */
-  const patched = async (
-    op: string,
-    plan: QueryPlan,
-    patch: object,
-    options: RepoOptions | undefined,
-  ): Promise<number> => {
-    const tx = scope.txOf(op, options);
-    // Nothing to judge: no read-back and no cap — one store call, as Postgres sends one statement.
-    // The patch's tenant was judged by the caller; a soft-delete stamp names none.
-    const movesReference = namedColumns(patch).some(([key]) =>
-      sameTenantProperties(entity).has(key),
-    );
-    const sink = writtenRowsSink();
+  /** What a patch writes: its narrowed values, and the searchable version the store advances. */
+  const shapeOf = (patch: object) => {
     const version = advancingVersionColumn(entity as EntityCore<unknown>);
     const advance =
       version !== undefined && namedColumns(patch).some(([key]) => key === version)
@@ -114,10 +97,38 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       entity.$columns,
       Object.fromEntries(namedColumns(patch)),
     );
+    return { advance, narrowed };
+  };
+
+  /**
+   * A patch applied to the rows a plan matches. With an invariant declared, every merged row is
+   * judged first, bounded as a judged write is on Postgres; then one store call. Answers how many
+   * rows the store wrote. A searchable entity's version is the STORE's to advance, per row and
+   * atomically (`DriverRepo.update`'s `advance`): a value the kit computed from a read would let a
+   * second process's newer version be written over. `found` is the rows a won compare-and-set
+   * compared against — the row as it stood when written, which `updateMany`'s rollback restores;
+   * `cas` takes that path even with nothing to judge, so a CAS store always reports them.
+   */
+  const patchedRows = async (
+    op: string,
+    plan: QueryPlan,
+    patch: object,
+    options: RepoOptions | undefined,
+    cas = false,
+  ): Promise<{ readonly written: number; readonly found: readonly Row[] | undefined }> => {
+    const tx = scope.txOf(op, options);
+    // Nothing to judge: no read-back and no cap — one store call, as Postgres sends one statement.
+    // The patch's tenant was judged by the caller; a soft-delete stamp names none.
+    const movesReference = namedColumns(patch).some(([key]) =>
+      sameTenantProperties(entity).has(key),
+    );
+    const sink = writtenRowsSink();
+    const { advance, narrowed } = shapeOf(patch);
     // A declared version lock is per row (`v = stored + 1`), which one store patch cannot say: the
     // judged path below, one write per row (`driver-versioned-write.ts`).
     const lock = versionOf(entity);
-    if (entity.$invariants.length === 0 && !movesReference && lock === null) {
+    const nothingToJudge = entity.$invariants.length === 0 && !movesReference;
+    if (nothingToJudge && lock === null && !(cas && raw.updateChecked !== undefined)) {
       // The search mirror asked for the rows: read them first, as the judged path does. Past the
       // judged bound they are not handed over — the mirror logs the write it could not name.
       const before =
@@ -132,7 +143,7 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       if (sink !== undefined && before.length <= MAX_ASSERTED_ROWS) {
         sink(await writtenBack(op, plan, before, tx));
       }
-      return written;
+      return { written, found: undefined };
     }
     // Unversioned: the judge and the write are one compare-and-set when the store offers it.
     if (lock === null) {
@@ -148,7 +159,7 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       if (sink !== undefined && checked.found.length > 0) {
         sink(await writtenBack(op, plan, checked.found, tx));
       }
-      return checked.written;
+      return { written: checked.written, found: checked.found };
     }
     // Every invariant, a SQL-expressible one too: a custom store enforces no CHECK.
     const found = scope.checked(
@@ -158,13 +169,15 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
     );
     if (found.length > MAX_ASSERTED_ROWS) throw assertedRowsTooMany(entity.$name, op, found.length);
     const [first] = found;
-    if (first === undefined) return 0;
+    if (first === undefined) return { written: 0, found };
     const results = found.map((row) => mergedRow(entity, row, patch));
     for (const merged of results) {
       assertRowTenant(entity.$name, entity.$tenantColumn, op, merged);
       entity.$assert(merged);
     }
     await references(results);
+    // The row each won write was conditioned on: what `updateMany`'s rollback restores.
+    const won: Row[] = [];
     const written = await versionedWrites(scope, {
       op,
       plan,
@@ -176,10 +189,17 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       narrowed,
       tx,
       references,
+      wrote: (row) => won.push(row),
     });
     if (sink !== undefined) sink(await writtenBack(op, plan, found, tx));
-    return written;
+    return { written, found: won };
   };
+  const patched = async (
+    op: string,
+    plan: QueryPlan,
+    patch: object,
+    options: RepoOptions | undefined,
+  ): Promise<number> => (await patchedRows(op, plan, patch, options)).written;
 
   /** Hard or soft, decided once so `delete(id)` and `deleteWhere` cannot drift apart. */
   const removed = (op: string, plan: QueryPlan, options: RepoOptions | undefined) =>
@@ -205,7 +225,38 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
     return patched(op, plan, patch, options);
   };
 
+  /**
+   * `updateWhereReturning`, offered only over a store with `updateChecked` and an unversioned
+   * entity: the won compare-and-set names exactly the rows written — the ones judged — so they can
+   * be answered, read back under the keys the patch left them. A count-only store cannot tell its
+   * rows from a concurrent writer's, so the typed handle refuses the call there (#1369).
+   */
+  const returning = async (
+    filter: RowPatch<Row>,
+    given: RowPatch<Row>,
+    options: FilteredWriteOptions | undefined,
+  ): Promise<readonly Row[]> => {
+    refuseAbandoned();
+    const op = 'updateWhereReturning';
+    const patch = entity.$parsePatch(given) as RowPatch<Row>;
+    const plan = scope.storePlan(op, updateWherePlan(entity, filter, patch, options, op));
+    assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
+    const tx = scope.txOf(op, options);
+    const bound = (matched: number) => returnedBound(entity.$name, matched);
+    const write = { op, plan, patch, ...shapeOf(patch), tx, references, bound };
+    const { written, found } = await checkedUpdate(scope, write);
+    if (written === 0) return [];
+    // What the won set wrote, as `returning *` answers it: a read-back would carry a later
+    // writer's values, or drop a counted row. Only an advanced version is the store's to tell.
+    const merged = found.map((row) => mergedRow(entity, row, patch));
+    const rows = write.advance === undefined ? merged : await writtenBack(op, plan, merged, tx);
+    writtenRowsSink()?.(rows);
+    return rows;
+  };
+  const answers = raw.updateChecked !== undefined && versionOf(entity) === null;
+
   const writes: DriverWrites<Row> = {
+    ...(answers ? { updateWhereReturning: returning } : {}),
     async insert(values, options) {
       refuseAbandoned();
       const [row] = judged('insert', [values]);
@@ -326,8 +377,10 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
           const result = after.get(keyOf(kind, id));
           if (stored === undefined || result === undefined) continue;
           const one = scope.storePlan(op, idPlan(entity, id, options, op));
-          const count = await patched(op, one, patch, options);
-          if (count > 0) moved.push({ stored, result, patch });
+          // A CAS store reports the row its won set compared against: THAT is what was overwritten,
+          // so the rollback restores it — the batch's first read may predate a newer writer.
+          const { written: count, found: won } = await patchedRows(op, one, patch, options, true);
+          if (count > 0) moved.push({ stored: won?.[0] ?? stored, result, patch });
           written += count;
         }
       } catch (error) {

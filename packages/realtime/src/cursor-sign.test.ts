@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no path API; the import walk resolves relative specifiers against this directory.
 import { join } from 'node:path';
 import { configureCursorSigning, resetCursorSigning, userActor } from '@ultimat3/core';
-import { CURSOR_SIG_MAX, type LiveCursor } from './cursor';
+import { CURSOR_SIG_MALFORMED, CURSOR_SIG_MAX, type LiveCursor, wireSig } from './cursor';
 import { CursorTrust, cursorVerdict, signCursor } from './cursor-sign';
 import type { Subscriber } from './subscriber-gate';
 
@@ -58,6 +58,23 @@ describe('a signature that does not match is refused', () => {
     ['a sig in no format this build mints', { ...signed, sig: 'deadbeef' }],
   ])('%s', (_label, forged) => {
     expect(cursorVerdict(forged, alice)).toBe('refused');
+  });
+
+  // The audit's case: a present sig that is no sig used to be dropped at decode and so read as a
+  // client with none. Only the node mints one, so whatever the wire made of it is refused.
+  test.each([['NOT-A-SIG!'], ['H1:AB:CD'], [''], ['h'.repeat(CURSOR_SIG_MAX + 1)], [7], [null]])(
+    'a malformed sig off the wire (%p) is refused, never unsigned',
+    (raw) => {
+      const sig = wireSig(raw);
+      expect(sig).toBe(CURSOR_SIG_MALFORMED);
+      expect(cursorVerdict({ ...cursor, sig: sig ?? '' }, alice)).toBe('refused');
+      expect(cursorVerdict({ ...cursor, sig: String(raw) }, alice)).toBe('refused');
+    },
+  );
+
+  test('only an ABSENT sig is unsigned', () => {
+    expect(wireSig(undefined)).toBeUndefined();
+    expect(cursorVerdict(cursor, alice)).toBe('unsigned');
   });
 
   test("another subscriber's sig, replayed", () => {

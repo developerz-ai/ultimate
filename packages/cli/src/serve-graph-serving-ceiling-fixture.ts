@@ -384,5 +384,11 @@
  * `core/src/outbound-refusal-headers.ts` keeps selected, redacted response headers on refusals.
  * raised 1577 → 1580, measured 1580 (2026-11-26, framework strings in ro, es and pt-BR): the three on
  * `MIGRATE_CEILING`, `i18n/src/catalogs/{ro,es,pt-BR}.json`.
+ * raised 1580 → 1594, measured 1594 (2026-11-27, plan 101 bugs and gaps, metafile walk): the eight on
+ * `MIGRATE_CEILING`, and six only a serving role evaluates: `cli/src/serve-boot-telemetry.ts` (the
+ * served role's `service.name` and version, #1361), `entity/src/driver-kit-checked-{update,rollback}.ts`
+ * and `entity/src/driver-kit-unchecked-warning.ts` (a `defineDriver` store's compare-and-set update,
+ * #1379), `query/src/validate-unknown-keys.ts` (#1281's query half) and `realtime/src/cursor-sign.ts`
+ * (a live cursor's signature, #1280).
  */
-export const SERVING_ROLE_CEILING = 1580;
+export const SERVING_ROLE_CEILING = 1594;
