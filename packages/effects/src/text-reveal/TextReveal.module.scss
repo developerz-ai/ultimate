@@ -37,3 +37,11 @@
 :global(html[data-motion='paused']) .piece {
   animation: none;
 }
+
+// Reduced motion collapses durations but keeps `animation-delay`, so pieces would stay hidden for
+// i x step and then pop. No animation at all: the finished text, at once.
+@media (prefers-reduced-motion: reduce) {
+  .piece {
+    animation: none;
+  }
+}

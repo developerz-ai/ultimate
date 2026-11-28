@@ -112,6 +112,45 @@ describe('unit · every managed file has front matter the harness reads', () => 
       expect(paths.split(', ')).toContain(glob);
   });
 
+  // A skill pre-approves Bash only scoped to the commands it runs — above all design-research,
+  // whose input is a stranger's web page. `feature` is the one exception: it coordinates a whole
+  // change (tests, generators, git, gh) and a scoped list there is a prompt on every step.
+  const BLANKET_BASH_ALLOWED = new Set(['feature']);
+  const allowedTools = (source: string): readonly string[] => {
+    const value = frontMatter(source)?.['allowed-tools'];
+    if (Array.isArray(value)) return value.map(String);
+    return typeof value === 'string' ? value.split(/,\s*/) : [];
+  };
+
+  test('the allowed-tools reader sees a bare Bash in either spelling', () => {
+    const bare = (tools: readonly string[]) => tools.includes('Bash');
+    expect(bare(allowedTools('---\nallowed-tools: Read, Bash\n---\n'))).toBe(true);
+    expect(bare(allowedTools('---\nallowed-tools:\n  - Read\n  - Bash\n---\n'))).toBe(true);
+    expect(bare(allowedTools('---\nallowed-tools:\n  - Bash(bunx x shot:*)\n---\n'))).toBe(false);
+  });
+
+  for (const file of kitFiles(app).filter((entry) => entry.kind === 'skill')) {
+    test(`${file.path}: Bash is pre-approved only as scoped Bash(<command>:*) rules`, () => {
+      const tools = allowedTools(file.contents);
+      expect(tools.length).toBeGreaterThan(0);
+      for (const tool of tools)
+        expect({ tool, ok: /^[A-Z][A-Za-z]*$|^Bash\([^()]+\)$/.test(tool) }).toEqual({
+          tool,
+          ok: true,
+        });
+      if (!BLANKET_BASH_ALLOWED.has(file.name)) expect(tools).not.toContain('Bash');
+    });
+  }
+
+  test('design-research pre-approves exactly the two commands it drives, and no Agent', () => {
+    const skill = kitFiles(app).find((file) => file.name === 'design-research');
+    expect(allowedTools(skill?.contents ?? '').filter((tool) => tool.startsWith('Bash'))).toEqual([
+      'Bash(bunx x design research:*)',
+      'Bash(bunx x shot:*)',
+    ]);
+    expect(allowedTools(skill?.contents ?? '')).not.toContain('Agent');
+  });
+
   test('audit is read-only: its tools write nothing', () => {
     const audit = kitFiles(app).find((file) => file.name === 'audit');
     const tools = String(frontMatter(audit?.contents ?? '')?.['tools'] ?? '').split(', ');

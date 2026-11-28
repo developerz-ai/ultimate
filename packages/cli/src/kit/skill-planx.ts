@@ -9,7 +9,17 @@ export const planxSkill = (app: NameSet): string => `---
 name: planx
 description: Write a plan for ${app.kebab} to docs/plans/ as a directory — overview.md, one file per path-disjoint slice and a status.yml — for a hive of agents to execute with the feature skill. Plan only; nothing outside the plan directory changes. Use when the request asks for a plan, a design, a breakdown, or when the work is too large for one feature run.
 argument-hint: [what you want planned]
-allowed-tools: Read, Glob, Grep, Bash, Write
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - Write
+  - Bash(bunx x routes:*)
+  - Bash(bunx x actions:*)
+  - Bash(bunx x queries:*)
+  - Bash(bunx x entities:*)
+  - Bash(bunx x impact:*)
+  - Bash(bunx x docs:*)
 ---
 
 ${managedNote('skill', 'planx')}

@@ -2,7 +2,17 @@
 name: planx
 description: Write a plan for docs-site to docs/plans/ as a directory — overview.md, one file per path-disjoint slice and a status.yml — for a hive of agents to execute with the feature skill. Plan only; nothing outside the plan directory changes. Use when the request asks for a plan, a design, a breakdown, or when the work is too large for one feature run.
 argument-hint: [what you want planned]
-allowed-tools: Read, Glob, Grep, Bash, Write
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - Write
+  - Bash(bunx x routes:*)
+  - Bash(bunx x actions:*)
+  - Bash(bunx x queries:*)
+  - Bash(bunx x entities:*)
+  - Bash(bunx x impact:*)
+  - Bash(bunx x docs:*)
 ---
 
 <!-- Managed by Ultimate: `bunx x kit` rewrites this file and `bunx x verify` refuses an edit (X_KIT_DRIFT). To change it, copy it to `.claude/skills/app-planx/SKILL.md` and add "planx" to "off" in .claude/kit.json. -->

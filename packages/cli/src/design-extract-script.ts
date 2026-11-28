@@ -5,12 +5,18 @@
 // the page can overwrite anything these scripts install.
 
 /**
- * Before the document: every Animation the page starts — `Element.animate`, a CSS animation, a CSS
+ * Before the document: no WebSocket (see the comment inside), then every Animation the page starts — `Element.animate`, a CSS animation, a CSS
  * transition — is recorded with the phase it started in (`enter` until the pass moves it on). The
  * recorder is reached through one non-enumerable global the pass reads back.
  */
 export const DESIGN_PREPARE = `(() => {
   if (window.__xDesign) return;
+  // CDP's Fetch domain never pauses a WebSocket handshake, so nothing could screen where one dials:
+  // a reference gets none. Installed before the page's scripts, in every frame, and not writable.
+  const refuse = function WebSocket() { throw new DOMException('x design research opens no WebSocket', 'SecurityError'); };
+  for (const name of ['WebSocket', 'WebSocketStream', 'WebTransport']) {
+    try { Object.defineProperty(window, name, { value: refuse, writable: false, configurable: false }); } catch {}
+  }
   const records = [];
   const seen = new WeakSet();
   const state = { phase: 'enter' };

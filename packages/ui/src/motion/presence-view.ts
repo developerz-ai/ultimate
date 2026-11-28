@@ -27,7 +27,7 @@ export interface PresenceViewOptions {
 
 export interface PresenceView<T> {
   set(next: T | false | null | undefined): void;
-  /** The node is in the document: an `appear` enter may start. */
+  /** The wrapper is in the document: a waiting enter starts on it. Presence calls it from `ref`. */
   mounted(): void;
   state(): PresenceState<T>;
   dispose(): void;
@@ -58,13 +58,22 @@ export function presenceView<T>(
     const mine = driver.play(kind);
     run = mine;
     void mine.finished.then(() => {
-      if (!disposed && run === mine) settle();
+      if (disposed || run !== mine) return;
+      // An exit turned back lands at rest under `fill: 'both'`, holding its first frame over the
+      // element's own style for good: once at rest it goes.
+      if (kind === 'exit' && current.phase === 'entering') mine.cancel();
+      settle();
     });
   };
-  /** Turn a running animation around: the phase flips, the animation plays back from here. */
+  /**
+   * Turn a running animation around: the phase flips, the animation plays back from here. With
+   * none running — an enter still waiting for its wrapper — there is nothing to play back, and the
+   * turn lands at once.
+   */
   const reverse = (phase: 'entering' | 'exiting'): void => {
-    run?.reverse();
     write({ ...current, phase });
+    if (run === null) settle();
+    else run.reverse();
   };
   const settle = (): void => {
     run = null;
@@ -75,8 +84,8 @@ export function presenceView<T>(
     if (queued === null) return;
     const next = queued;
     queued = null;
+    // The enter starts from `mounted()`: the new wrapper does not exist yet.
     write({ phase: 'entering', shown: next });
-    start('enter');
   };
 
   const hide = (): void => {
@@ -89,8 +98,8 @@ export function presenceView<T>(
   };
   const show = (next: T): void => {
     if (current.shown === null) {
+      // The enter starts from `mounted()`, once the wrapper this write renders is in the document.
       write({ phase: 'entering', shown: { value: next } });
-      start('enter');
       return;
     }
     if (current.shown.value === next) {

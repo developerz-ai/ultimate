@@ -12,6 +12,8 @@ export interface FrameLoopOptions {
 
 /** The page, injected: a frame clock, visibility, the motion gate and an on-screen observer. */
 export interface FrameHost {
+  /** Where a throwing tick goes: re-raised off the loop's stack, so the page's error hook sees it. */
+  report(error: unknown): void;
   request(fn: () => void): unknown;
   cancel(id: unknown): void;
   now(): number;
@@ -52,8 +54,13 @@ export function frameLoopOn(
     const now = host.now();
     const dt = last === undefined ? 0 : now - last;
     last = now;
-    tick(dt, now);
+    // The next frame is booked FIRST: a tick that throws must not end the loop it belongs to.
     if (!stopped && holds.size === 0) frame = host.request(run);
+    try {
+      tick(dt, now);
+    } catch (error) {
+      host.report(error);
+    }
   };
   const settle = (): void => {
     if (stopped) return;
@@ -98,6 +105,10 @@ function browserFrameHost(): FrameHost | null {
   const motion = browserMotionHost();
   if (motion === null || typeof requestAnimationFrame !== 'function') return null;
   return {
+    report: (error) =>
+      queueMicrotask(() => {
+        throw error;
+      }),
     // why: this IS the frame loop every other loop is told to use instead.
     request: (fn) => requestAnimationFrame(fn),
     cancel: (id) => cancelAnimationFrame(id as number),

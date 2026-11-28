@@ -105,7 +105,7 @@ describe('presenceRows', () => {
     h.rows.update(items('a', 'b'));
     await h.settle('b');
     expect(h.rendered()).toEqual(['node:a', 'node:b']);
-    expect(h.log).toEqual(['build a', 'build b', 'exit b', 'reverse b']);
+    expect(h.log).toEqual(['build a', 'build b', 'exit b', 'reverse b', 'cancel b']);
   });
 
   test('a key gone after its exit is built afresh when it returns', async () => {
@@ -128,5 +128,26 @@ describe('presenceRows', () => {
     h.rows.update(items());
     h.rows.dispose();
     expect(h.log.filter((line) => line.startsWith('cancel'))).toEqual(['cancel a', 'cancel b']);
+  });
+});
+
+describe('presenceRows — turning back and forth', () => {
+  test('removed again mid-reversal: the same animation turns again, no second exit', () => {
+    const h = harness();
+    h.rows.update(items('a', 'b'));
+    h.rows.update(items('a'));
+    h.rows.update(items('a', 'b'));
+    h.rows.update(items('a'));
+    expect(h.log).toEqual(['build a', 'build b', 'exit b', 'reverse b', 'reverse b']);
+  });
+
+  test('an exit turned back is cancelled once at rest, so its held frame lets go', async () => {
+    const h = harness();
+    h.rows.update(items('a', 'b'));
+    h.rows.update(items('a'));
+    h.rows.update(items('a', 'b'));
+    await h.settle('b');
+    expect(h.log).toEqual(['build a', 'build b', 'exit b', 'reverse b', 'cancel b']);
+    expect(h.rendered()).toEqual(['node:a', 'node:b']);
   });
 });

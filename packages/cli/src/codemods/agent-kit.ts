@@ -7,11 +7,15 @@ import { isReleasedKitForm } from '../app-kit-forms';
 import { KIT_MARKER, kitFiles } from '../kit/registry';
 import { RELEASED_KIT_FORMS } from '../templates/kit-released-forms';
 import { names } from '../templates/naming';
+import { claudeFiles } from '../templates/scaffold-claude';
 import { appName } from './agents-dev-mcp';
 import type { Codemod, CodemodApp, CodemodResult } from './codemod';
 import { unifiedDiff } from './engine-diff';
 
 /** Each old file, and the managed file that now answers the same question. */
+const sameText = (a: string, b: string): boolean =>
+  a.replaceAll('\r\n', '\n') === b.replaceAll('\r\n', '\n');
+
 const OLD_FILES: readonly { readonly path: string; readonly now: string }[] = [
   { path: '.claude/commands/feature.md', now: '.claude/skills/feature/SKILL.md' },
   { path: '.claude/commands/planx.md', now: '.claude/skills/planx/SKILL.md' },
@@ -74,7 +78,42 @@ async function run(
       diff: unifiedDiff(target, held, managed.get(now) ?? ''),
     });
   }
+  await carryReadme(app, { name, forms, changed, skipped });
   return { changed, skipped };
+}
+
+const README = '.claude/README.md';
+
+/**
+ * `.claude/README.md` said "nothing here is enforced" until the kit made the managed files so. An
+ * unedited released copy is replaced by the new one; an edited one is kept and reported with the
+ * diff to the new text, because its prose is the author's.
+ */
+async function carryReadme(
+  app: CodemodApp,
+  input: {
+    readonly name: string;
+    readonly forms: Readonly<Record<string, readonly string[]>>;
+    readonly changed: string[];
+    readonly skipped: CodemodResult['skipped'];
+  },
+): Promise<void> {
+  const held = await app.read(README);
+  const next = claudeFiles(names(input.name === '' ? 'app' : input.name)).find(
+    (file) => file.path === README,
+  )?.contents;
+  if (held === undefined || typeof next !== 'string' || sameText(held, next)) return;
+  const known = Object.hasOwn(input.forms, README) ? input.forms[README] : undefined;
+  if (isReleasedKitForm(held, [input.name], known)) {
+    await app.write(README, next);
+    input.changed.push(README);
+    return;
+  }
+  input.skipped.push({
+    path: README,
+    reason: `${README} was edited, so it is kept; it still says nothing here is enforced, which is no longer true of the managed kit — merge what the new one says (the diff) into it`,
+    diff: unifiedDiff(README, held, next),
+  });
 }
 
 /** The migration over a released-forms table: the committed one, or a test's own. */
@@ -82,7 +121,7 @@ export const agentKitCodemod = (
   forms: Readonly<Record<string, readonly string[]>> = RELEASED_KIT_FORMS,
 ): Codemod => ({
   id: 'agent-kit',
-  since: '31.52.0',
+  since: '31.53.0',
   summary:
     'the agent kit is managed (x kit): unedited .claude/commands and .claude/agents deleted, an edited one kept as app-<name>.md',
   run: (app) => run(app, forms),

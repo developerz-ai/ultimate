@@ -8,6 +8,7 @@
 
 import { trimTrailingSlashes } from '@ultimat3/core';
 import { BadFlagError } from '../errors';
+import { loadVersion } from '../version-loader';
 import type { GeneratedFile } from './naming';
 import { camel, kebab, pascal } from './naming';
 
@@ -224,6 +225,17 @@ export const ${camel(name)}States = defineIslandStates({
 `;
 };
 
+/**
+ * The island imports `@ultimat3/effects`, so the app declares it: a `merge: 'json'` entry on the
+ * root manifest, which adds the one key where the file keeps it sorted and leaves a held one alone.
+ * Exact-pinned like every `@ultimat3/*` (`shapes/landing-motion.ts`'s `effectsDependency`).
+ */
+const effectsDependency = (): GeneratedFile => ({
+  path: 'package.json',
+  contents: `${JSON.stringify({ dependencies: { '@ultimat3/effects': loadVersion() } })}\n`,
+  merge: 'json',
+});
+
 export function islandFiles(rawName: string, options: IslandOptions): readonly GeneratedFile[] {
   const name = kebab(rawName);
   if (options.effect !== undefined && !Object.hasOwn(EFFECT_ENTRIES, options.effect)) {
@@ -241,5 +253,6 @@ export function islandFiles(rawName: string, options: IslandOptions): readonly G
     { path: `${dir}/${name}.module.scss`, contents: islandStyle() },
     { path: `${dir}/${name}.island.states.ts`, contents: islandStates(name, dir) },
     { path: `${dir}/${name}.island.test.ts`, contents: islandTest(name, dir) },
+    ...(options.effect === undefined ? [] : [effectsDependency()]),
   ];
 }

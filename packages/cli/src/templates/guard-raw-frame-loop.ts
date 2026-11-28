@@ -6,6 +6,7 @@
 
 import { guardCode } from './guard';
 import { LOCAL_BINDING_SOURCE } from './guard-local-binding';
+import { TS_BLANK_SOURCE } from './guard-raw-motion-ts-scan';
 import type { GeneratedFile } from './naming';
 
 /** Derived from the guard's name, never a literal: an `X_*` literal here is a FRAMEWORK code. */
@@ -39,21 +40,13 @@ const WHY = /\\/\\/\\s*why:/;
 
 ${LOCAL_BINDING_SOURCE}
 
-/** Comments and string bodies blanked IN PLACE, so a line number still points at the source. */
-const blank = (text: string): string =>
-  text
-    .replaceAll(/\\/\\*[\\s\\S]*?\\*\\//g, (match) => match.replaceAll(/[^\\n]/g, ' '))
-    .replaceAll(/(?<![:\\w])\\/\\/[^\\n]*/g, (match) => ' '.repeat(match.length))
-    .replaceAll(/'(?:[^'\\\\\\n]|\\\\.)*'|"(?:[^"\\\\\\n]|\\\\.)*"|\`(?:[^\`\\\\]|\\\\.)*\`/g, (match) =>
-      match.replaceAll(/[^\\n]/g, ' '),
-    );
-
+${TS_BLANK_SOURCE}
 /** Pure — the caller does the I/O — so the rule is testable without a filesystem. */
 export function rawFrameLoops(files: readonly SourceFile[]): readonly Finding[] {
   const findings: Finding[] = [];
   for (const file of files) {
     const lines = file.source.split('\\n');
-    const text = blank(file.source);
+    const text = blankScript(file.source, true);
     const local = bindsLocally(text, 'requestAnimationFrame');
     for (const match of text.matchAll(CALL)) {
       // A bare call to the file's own \`requestAnimationFrame\` is not the browser's; \`window.\` is.
@@ -114,6 +107,12 @@ unitTest('a why: on the line or the line above admits it', () => {
   expect(rawFrameLoops(same)).toEqual([]);
   const above = file('// why: one frame\\nrequestAnimationFrame(focus);');
   expect(rawFrameLoops(above)).toEqual([]);
+});
+
+unitTest('a comment-like string hides nothing: the call after it is still refused', () => {
+  expect(rawFrameLoops(file("const u = '//cdn'; requestAnimationFrame(tick);"))).toHaveLength(1);
+  const doc = file("const g = 'dist/*'; requestAnimationFrame(t); /** d */");
+  expect(rawFrameLoops(doc)).toHaveLength(1);
 });
 
 unitTest('frameLoop, another object, a comment, a string and a local binding are not calls', () => {

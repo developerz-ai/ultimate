@@ -20,6 +20,8 @@ interface Row<Item, Node> {
   el: Element | undefined;
   leaving: boolean;
   run: MotionHandle | null;
+  /** What `run` started as: an exit turned back still holds its first frame (`fill: 'both'`). */
+  kind: 'enter' | 'exit';
 }
 
 export interface PresenceRows<Item> {
@@ -68,10 +70,15 @@ export function presenceRows<Item, Node>(
     if (row.el === undefined) return;
     const run = play(row.el, kind);
     row.run = run;
+    row.kind = kind;
     void run.finished.then(() => {
       if (disposed || row.run !== run) return;
       row.run = null;
-      if (!row.leaving) return;
+      if (!row.leaving) {
+        // Back at rest after a turned-back exit: let go of the held frame.
+        if (kind === 'exit') run.cancel();
+        return;
+      }
       row.dispose();
       rows.delete(key);
       order = order.filter((kept) => kept !== key);
@@ -81,10 +88,15 @@ export function presenceRows<Item, Node>(
   const create = (item: Item, key: string): Row<Item, Node> =>
     runtime.createRoot((dispose) => {
       const [current, set] = runtime.createSignal(item);
-      const row = { item, set, dispose, el: undefined, leaving: false, run: null } as Omit<
-        Row<Item, Node>,
-        'node'
-      > & { node?: Node };
+      const row = {
+        item,
+        set,
+        dispose,
+        el: undefined,
+        leaving: false,
+        run: null,
+        kind: 'enter',
+      } as Omit<Row<Item, Node>, 'node'> & { node?: Node };
       try {
         row.node = build(current, key, (el) => {
           row.el = el;
@@ -129,6 +141,12 @@ export function presenceRows<Item, Node>(
         leaving.add(key);
         if (row.leaving) continue;
         row.leaving = true;
+        // Mid-flight (an enter, or an exit already turned back): turn the same animation again,
+        // from where it is — a second exit would jump to its first frame.
+        if (row.run !== null) {
+          row.run.reverse();
+          continue;
+        }
         start(row, 'exit', key);
         // No element to animate (a server, a build with no ref): gone at once.
         if (row.run === null) {

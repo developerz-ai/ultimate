@@ -31,6 +31,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   - What it does: measures a public reference page in Chrome over raw CDP. Per URL it writes shots at 390/1440 Ã— light/dark, `reference.json`, a contrast-checked `tokens.proposal.json` that `defineTheme` accepts, `motion-map.json` and `sources.json` with the licence posture.
   - Address screening: every navigation, redirect and subresource is screened browser-wide against private, loopback and link-local addresses (`X_DESIGN_URL_REFUSED`). A failed navigation is `X_DESIGN_REFERENCE_UNREACHABLE`.
   - `x shot <route> --against <ref>` writes a diff and a similarity score into `verdict.json`, recorded but never gating; a missing pair is `X_SHOT_AGAINST_MISSING`.
+  - Hardening: cancellable (`X_ABORTED`), each reference published as a whole directory, a failed `--follow` link recorded in `skipped` without failing the run, page-chosen URLs reported as `origin#hash`, and WebSockets refused inside a reference.
   - The dev MCP gains `ui.research` (24 tools).
   - See [Design research](https://github.com/developerz-ai/ultimate/wiki/Design-Research).
 - The agent kit:
@@ -42,6 +43,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - Guards, report-only in an existing app and gating in a new one: `motion-adapter`, `raw-frame-loop`, `effect-without-fallback`, `raw-motion-script` and `animated-layout-script`. They refuse a third-party animation or GL engine, a bare `requestAnimationFrame`, a canvas outside `EffectCanvas`, and literal timings or layout keys in `.animate()`.
 - `x new --shape dashboard` uses `Presence`, `stagger`, `inView`, `layout` and view-transition names. Every shape's landing sits on a CSS-tier `Aurora` (0 kB). `x g island <name> --effect <entry>` wraps the island in an effect.
 - `x shot`'s verdict `gpu` gains `webgl2`.
+- `MOTION_STORAGE_KEY` (`@ultimat3/core`, `@ultimat3/core/page`): the inlined theme boot stamps `html[data-motion="paused"]` from it before first paint on every page, so a reader's pause holds before any island hydrates.
 
 ### Changed
 

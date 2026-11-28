@@ -8,7 +8,9 @@ import { ANY_HOST, classifyAddress, hostDecision, hostMatches } from '@ultimat3/
 import type { DialResolve } from '@ultimat3/core/outbound';
 import { resolveDialHost, screenDial } from '@ultimat3/core/outbound';
 import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
+import type { DialRefusal } from './cdp-shot-driver-screen';
 import { DesignReferenceUnreachableError, DesignUrlRefusedError } from './cmd-design-errors';
+import { designSlug } from './cmd-design-paths';
 import { BadFlagError } from './errors';
 
 export interface DesignHostPolicy {
@@ -94,14 +96,16 @@ const DIALLED = new Set(['http:', 'https:', 'ws:', 'wss:']);
 
 /**
  * The driver's `dialScreen.screen`: `undefined` when the floor decides alone (a literal, a hostless
- * scheme, a trusted host), else whether to refuse. One resolve per name per session — a page asks
- * for the same CDN a hundred times, and an answer that changed mid-page is the rebinding this
- * cannot close anyway.
+ * scheme, a trusted host), else the refusal or `undefined` to release. A DEFINITE answer — every
+ * address public, or one not — is memoised per name for the session: a page asks for the same CDN a
+ * hundred times. A resolver failure or an empty answer is `unresolved` and asked again next time:
+ * a transient SERVFAIL proves nothing about where the name points, so it is never cached, and
+ * never reported as private.
  */
 export function browserDialScreen(
   policy: DesignHostPolicy,
-): (url: string) => Promise<boolean> | undefined {
-  const known = new Map<string, Promise<boolean>>();
+): (url: string) => Promise<DialRefusal | undefined> | undefined {
+  const known = new Map<string, DialRefusal | 'public'>();
   return (url) => {
     let parsed: URL;
     try {
@@ -114,13 +118,15 @@ export function browserDialScreen(
     if (hostname === '' || classifyAddress(hostname) !== undefined) return undefined;
     if (isTrusted(hostname, policy)) return undefined;
     const held = known.get(hostname);
-    if (held !== undefined) return held;
-    const decided = screenDial(parsed, { resolve: policy.resolve }).then(
-      (verdict) => !('pin' in verdict),
-      () => true,
+    if (held !== undefined) return Promise.resolve(held === 'public' ? undefined : held);
+    return screenDial(parsed, { resolve: policy.resolve }).then(
+      (verdict): DialRefusal | undefined => {
+        if ('unresolved' in verdict) return 'unresolved';
+        known.set(hostname, 'pin' in verdict ? 'public' : 'private');
+        return 'pin' in verdict ? undefined : 'private';
+      },
+      (): DialRefusal => 'unresolved',
     );
-    known.set(hostname, decided);
-    return decided;
   };
 }
 
@@ -159,7 +165,7 @@ export function readDesignAllowHosts(raw: string | undefined): readonly string[]
 
 /**
  * The links `--follow <n>` visits: same origin as the reference, or a host `--allow-hosts` names;
- * http(s) only, the fragment dropped, the reference itself and duplicates skipped, in page order,
+ * http(s) only, the fragment dropped, a page whose slug is already taken skipped, in page order,
  * at most `n`. Each is screened again before it is visited, exactly like the reference.
  */
 export function followTargets(
@@ -169,8 +175,9 @@ export function followTargets(
   n: number,
 ): readonly string[] {
   const origin = new URL(reference);
-  origin.hash = '';
-  const seen = new Set([origin.href]);
+  // Deduped on the DIRECTORY a page is written to, not its href: `/docs/`, `/docs?tab=2` and the
+  // reference's own `/docs` share one slug, and a followed page must never overwrite another's.
+  const seen = new Set([designSlug(reference)]);
   const out: string[] = [];
   for (const link of links) {
     if (out.length >= n) break;
@@ -185,8 +192,9 @@ export function followTargets(
     const allowed =
       parsed.origin === origin.origin ||
       allowHosts.some((rule) => hostMatches(parsed.hostname, rule));
-    if (!allowed || seen.has(parsed.href)) continue;
-    seen.add(parsed.href);
+    const slug = designSlug(parsed.href);
+    if (!allowed || seen.has(slug)) continue;
+    seen.add(slug);
     out.push(parsed.href);
   }
   return out;

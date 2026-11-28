@@ -11,16 +11,21 @@ import { join } from 'node:path';
 import { isUltimateError, renderThrowable } from '@ultimat3/core';
 import { systemClock } from '@ultimat3/core/adapter';
 import { CdpCallFailedError, CdpTimeoutError } from '@ultimat3/scraping/cdp';
-import type { NetworkEntry, ShotDriver, ShotPage } from './browser-launcher-port';
-import type { DialScreen } from './cdp-shot-driver-screen';
-import { DesignReferenceUnreachableError, DesignUrlRefusedError } from './cmd-design-errors';
+import type { CaptureClip, NetworkEntry, ShotDriver, ShotPage } from './browser-launcher-port';
+import type { DialRefusal, DialScreen } from './cdp-shot-driver-screen';
+import {
+  DesignAbortedError,
+  DesignReferenceUnreachableError,
+  DesignUrlRefusedError,
+} from './cmd-design-errors';
 import { DESIGN_SCHEMES, type DesignScheme, referenceShotName } from './cmd-design-paths';
 import type { DesignHostPolicy } from './cmd-design-url';
 import { browserDialScreen } from './cmd-design-url';
 import { type Extraction, extractDesign, mergeExtractions } from './design-extract';
 import { DESIGN_PREPARE } from './design-extract-script';
+import { hash8 } from './shot-diff';
 import { documentStatus } from './shot-verdict';
-import type { ShotViewport } from './shot-viewport';
+import { type ShotViewport, VIEWPORT_MAX } from './shot-viewport';
 
 /** How a capture gets its browser: `cdpShotDriver` with the screen in production, a fake in tests. */
 export type DesignDriverFor = (
@@ -35,14 +40,18 @@ export interface CaptureInput {
   readonly timeoutMs: number;
   readonly policy: DesignHostPolicy;
   readonly driverFor: DesignDriverFor;
+  readonly signal?: AbortSignal | undefined;
 }
 
 export interface Capture {
+  /** Where the page landed, as `pageRef`: `location.href` is page-settable text. */
   readonly finalUrl: string;
   readonly byScheme: Readonly<Record<DesignScheme, Extraction>>;
   readonly shots: readonly string[];
-  /** Hostnames of every request refused — the floor's and the resolver's — never the full URL. */
+  /** Hostnames of every request refused as inward — the floor's and the resolver's — never a URL. */
   readonly refusedHosts: readonly string[];
+  /** Hostnames refused because they did not resolve: unreachable, not private. */
+  readonly unresolvedHosts: readonly string[];
 }
 
 const hostOf = (url: string): string => {
@@ -105,17 +114,53 @@ async function visit(page: ShotPage, input: CaptureInput, scheme: DesignScheme):
 const refusedBy = (network: readonly NetworkEntry[]): string[] =>
   network.filter((entry) => entry.refused !== undefined).map((entry) => hostOf(entry.url));
 
+/**
+ * The capture's clip: the viewport's width (a reference photographed at 390 is 390 wide, whatever
+ * overflows sideways) and the document's height up to `VIEWPORT_MAX` — Chrome's texture limit, past
+ * which a capture is tiles nobody painted, and a page that reports a million pixels of height is
+ * a memory bomb, not a reference. The size is page-reported, so it is clamped, never trusted.
+ */
+async function captureClip(page: ShotPage, viewport: ShotViewport): Promise<CaptureClip> {
+  const reported = await page
+    .evaluate('document.documentElement.scrollHeight')
+    .catch(() => viewport.height);
+  const height = typeof reported === 'number' && Number.isFinite(reported) ? reported : 0;
+  return {
+    x: 0,
+    y: 0,
+    width: viewport.width,
+    height: Math.min(VIEWPORT_MAX, Math.max(viewport.height, Math.ceil(height))),
+  };
+}
+
+/** Every page-supplied URL is reported as its origin and a hash: its path is the page's text. */
+export const pageRef = (url: string): string => {
+  try {
+    return `${new URL(url).origin}#${hash8(url)}`;
+  } catch {
+    return `#${hash8(url)}`;
+  }
+};
+
 export async function captureReference(input: CaptureInput): Promise<Capture> {
+  const { signal } = input;
   const refused: string[] = [];
+  const unresolved: string[] = [];
   const dialScreen = {
     screen: browserDialScreen(input.policy),
-    refused: (url: string) => refused.push(hostOf(url)),
+    refused: (url: string, reason: DialRefusal) =>
+      (reason === 'private' ? refused : unresolved).push(hostOf(url)),
   };
+  const aborted = (): DesignAbortedError => new DesignAbortedError({ url: input.url });
+  // A function, not a read: the flag flips while the awaits below are pending.
+  const isAborted = (): boolean => signal?.aborted === true;
   const perScheme: Record<DesignScheme, Extraction[]> = { light: [], dark: [] };
   const shots: string[] = [];
   let finalUrl = input.url;
   mkdirSync(input.dir, { recursive: true });
   for (const viewport of input.viewports) {
+    // Checked before every launch: a cancelled call must not keep starting browsers.
+    if (isAborted()) throw aborted();
     const driver = await input.driverFor(viewport, dialScreen);
     const session = await driver.open({
       name: 'x design research',
@@ -124,25 +169,38 @@ export async function captureReference(input: CaptureInput): Promise<Capture> {
       timeoutMs: input.timeoutMs,
       viewport,
     });
+    // An abort mid-capture ends the browser at once; the pending CDP call then fails and is
+    // reported as the abort it is, never as an unreachable page.
+    const stop = (): void => void session.close();
+    signal?.addEventListener('abort', stop, { once: true });
     try {
       await session.page.prepare(DESIGN_PREPARE);
       for (const scheme of DESIGN_SCHEMES) {
         await visit(session.page, input, scheme);
         finalUrl = session.page.url();
         perScheme[scheme].push(await extractDesign(session.page));
+        const clip = await captureClip(session.page, viewport);
+        const bytes = await session.page.screenshot({ clip });
+        if (isAborted()) throw aborted();
         const file = join(input.dir, referenceShotName(viewport.width, scheme));
-        await Bun.write(file, await session.page.screenshot({ fullPage: true }));
+        await Bun.write(file, bytes);
         shots.push(file);
       }
       refused.push(...refusedBy(session.page.network()));
+    } catch (error) {
+      throw isAborted() ? aborted() : error;
     } finally {
+      signal?.removeEventListener('abort', stop);
       await session.close();
     }
   }
+  const hosts = (list: readonly string[]) =>
+    [...new Set(list.filter((host) => host !== ''))].sort();
   return {
-    finalUrl,
+    finalUrl: pageRef(finalUrl),
     byScheme: { light: mergeExtractions(perScheme.light), dark: mergeExtractions(perScheme.dark) },
     shots,
-    refusedHosts: [...new Set(refused.filter((host) => host !== ''))].sort(),
+    refusedHosts: hosts(refused),
+    unresolvedHosts: hosts(unresolved),
   };
 }

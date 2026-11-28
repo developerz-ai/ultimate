@@ -2,6 +2,8 @@
 // and `_motion.scss`'s `html[data-motion="paused"]` (WCAG 2.2.2, written by `<MotionToggle>`).
 // Every motion module asks here, so a script never animates what the stylesheet has stilled.
 
+import { MOTION_STORAGE_KEY } from '@ultimat3/core/page';
+
 /** The page, injected: the two reasons and one subscription to either changing. */
 export interface MotionHost {
   reduced(): boolean;
@@ -11,8 +13,6 @@ export interface MotionHost {
 }
 
 export const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
-/** The reader's pause, kept across pages. Read back by `<MotionToggle>` on mount. */
-export const MOTION_STORAGE_KEY = 'ultimate.motion';
 const ATTR = 'data-motion';
 const PAUSED = 'paused';
 

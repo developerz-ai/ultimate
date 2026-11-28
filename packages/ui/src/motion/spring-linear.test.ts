@@ -29,6 +29,14 @@ describe('springPosition — the closed forms', () => {
     expect(springPosition(spec, peakAt)).toBeCloseTo(1 + overshoot, 10);
   });
 
+  test('huge inputs are the same spring as their ratio: k·m never overflows to Infinity', () => {
+    // ζ = c / (2√(k m)): with k = m = c = 1e200, √(k m) overflowed and ζ became 0 — undamped.
+    const huge = { stiffness: 1e200, damping: 1e200, mass: 1e200 };
+    const unit = { stiffness: 1, damping: 1, mass: 1 };
+    for (const t of [0.5, 2, 6])
+      expect(springPosition(huge, t)).toBeCloseTo(springPosition(unit, t), 10);
+  });
+
   test('an overdamped spring never passes its target', () => {
     const spec = { stiffness: 100, damping: 60, mass: 1 };
     for (let t = 0; t < 3; t += 0.01) expect(springPosition(spec, t)).toBeLessThanOrEqual(1);

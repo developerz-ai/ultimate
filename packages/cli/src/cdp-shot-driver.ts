@@ -31,7 +31,9 @@ export interface CdpShotDriverOptions {
   /**
    * The DNS half of the session's interception (`cdp-shot-driver-screen.ts`): every paused request
    * on the page AND the browser session is screened by it before the host allow list decides.
-   * `x design research` sets it, because its allow list is every PUBLIC host.
+   * `x design research` sets it, because its allow list is every PUBLIC host. `Fetch` pauses no
+   * WebSocket handshake (and `Network.setBlockedURLs` blocks none, measured on Chrome 150), so a
+   * caller that sets this also refuses WebSockets in the page itself — `DESIGN_PREPARE` does.
    */
   readonly dialScreen?: Omit<DialScreen, 'owns'> | undefined;
   /** Test seams: the two ways a connection comes to exist, so no test needs a browser. */

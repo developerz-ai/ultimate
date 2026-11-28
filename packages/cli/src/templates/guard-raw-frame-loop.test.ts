@@ -34,4 +34,11 @@ describe('unit · shipped guard · raw-frame-loop', () => {
     });
     expect([...report.findings, ...report.warnings]).toEqual([]);
   });
+
+  test('a comment-like string hides nothing: the call after it is still refused', async () => {
+    const report = await shippedGuardReport('raw-frame-loop', {
+      [FILE]: "const u = '//cdn'; requestAnimationFrame(tick);\n",
+    });
+    expect(report.warnings).toHaveLength(1);
+  });
 });

@@ -85,7 +85,7 @@ async function driftFindings(disk: KitDisk, files: readonly KitFile[]): Promise<
   return found;
 }
 
-/** A `.claude/commands/<skill>.md` an installed skill of the same name silently shadows. */
+/** A `.claude/commands/<skill>.md` an ACTIVE skill of the same name silently shadows: not an "off" one. */
 async function shadowFindings(disk: KitDisk, files: readonly KitFile[]): Promise<Finding[]> {
   const found: Finding[] = [];
   for (const file of files.filter((entry) => entry.kind === 'skill')) {
@@ -140,7 +140,7 @@ export async function judgeKit(disk: KitDisk, managed: readonly KitFile[]): Prom
   const files = activeKit(managed, marker.off);
   return {
     marker,
-    findings: [...(await driftFindings(disk, files)), ...(await shadowFindings(disk, managed))],
+    findings: [...(await driftFindings(disk, files)), ...(await shadowFindings(disk, files))],
     warnings: [],
   };
 }

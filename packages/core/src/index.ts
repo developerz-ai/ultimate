@@ -1004,7 +1004,7 @@ export { ambientClock, noWaitClock } from './sleep-clock';
 export { endOfLiteral, maskLiterals, QUOTES, stripComments } from './source-mask';
 export type { StoreMode } from './store-mode';
 export { storeMode, withStoreMode } from './store-mode';
-export { THEME_STORAGE_KEY } from './theme-storage';
+export { MOTION_STORAGE_KEY, THEME_STORAGE_KEY } from './theme-storage';
 export { timingSafeEqual } from './timing-safe-equal';
 export type { ToolDescriptionSource } from './tool-description';
 // A projected tool's description: `@ultimat3/mcp`'s and `@ultimat3/ai`'s, one tier apart from neither.

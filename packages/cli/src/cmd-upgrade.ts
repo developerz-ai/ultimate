@@ -373,6 +373,17 @@ export const createUpgradeCommand = (
   return {
     spec: upgradeSpec,
     async run(ctx: CommandContext): Promise<CommandResult> {
+      // `--dry-run` is the one read-only form an allowlist may grant (`.claude/settings.json`), and
+      // last-wins parsing would let a trailing `--no-dry-run` turn it into a real hop.
+      if (ctx.args.flags.get('dry-run') === false) {
+        throw new BadFlagError({
+          flag: 'dry-run',
+          command: 'upgrade',
+          reason:
+            '--no-dry-run is refused: a hop is what a bare x upgrade is, so there is nothing to negate',
+          fix: 'x upgrade --dry-run --json   # or, to move the pins: x upgrade --json',
+        });
+      }
       if (ctx.args.subcommand === 'codemods') return runUpgradeCodemods(ctx);
       const { dir: root, app } = await findUpgradeRoot(ctx.cwd);
       const to = readTarget(ctx);

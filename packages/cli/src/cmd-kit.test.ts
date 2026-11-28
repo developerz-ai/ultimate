@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from 'bun:test';
 // why: Bun ships no mkdtemp and no recursive remove.
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -62,12 +62,71 @@ describe('unit · x kit', () => {
     });
   });
 
-  test('a command a skill shadows is left, reported with the git mv', async () => {
+  test('with a marker, a command a skill shadows is left, reported with the git mv', async () => {
     await withApp(async (root) => {
+      await Bun.write(join(root, KIT_MARKER), '{"off":[]}\n');
       await Bun.write(join(root, '.claude/commands/feature.md'), 'old\n');
       const done = await refreshKit(root);
       expect(done.findings.map((f) => f.code)).toEqual(['X_KIT_SHADOWED']);
       expect(await read(root, '.claude/commands/feature.md')).toBe('old\n');
+    });
+  });
+
+  test('with no marker, an edited legacy agent is kept as app-<name>.md before the managed one lands', async () => {
+    await withApp(async (root) => {
+      await Bun.write(
+        join(root, '.claude/agents/data.md'),
+        '---\nname: data\n---\nmy own data brief\n',
+      );
+      const done = await refreshKit(root);
+      expect(await read(root, '.claude/agents/app-data.md')).toContain('my own data brief');
+      expect(await read(root, '.claude/agents/app-data.md')).toContain('name: app-data');
+      expect(await read(root, '.claude/agents/data.md')).toContain('Managed by Ultimate');
+      expect(done.renamed.map((r) => r.path)).toEqual(['.claude/agents/app-data.md']);
+    });
+  });
+
+  test("with a marker, an edit is the gate's to judge: nothing is renamed", async () => {
+    await withApp(async (root) => {
+      await refreshKit(root);
+      await Bun.write(join(root, '.claude/agents/data.md'), 'edited\n');
+      const done = await refreshKit(root);
+      expect(done.renamed).toEqual([]);
+      expect(await read(root, '.claude/agents/app-data.md')).toBeUndefined();
+    });
+  });
+
+  test('with no marker, an edited legacy command is kept as app-<name>.md, so nothing shadows', async () => {
+    await withApp(async (root) => {
+      await Bun.write(join(root, '.claude/commands/feature.md'), 'mine\n');
+      const done = await refreshKit(root);
+      expect(await read(root, '.claude/commands/app-feature.md')).toBe('mine\n');
+      expect(await read(root, '.claude/commands/feature.md')).toBeUndefined();
+      expect(done.findings).toEqual([]);
+    });
+  });
+
+  test('a managed file that is a symlink out of the app is refused, and the target untouched', async () => {
+    await withApp(async (root) => {
+      const outside = await mkdtemp(join(tmpdir(), 'x-kit-outside-'));
+      try {
+        await Bun.write(join(outside, 'secret'), 'keep me\n');
+        await mkdir(join(root, '.claude/skills/feature'), { recursive: true });
+        await symlink(join(outside, 'secret'), join(root, '.claude/skills/feature/SKILL.md'));
+        await mkdir(join(root, '.claude'), { recursive: true });
+        await mkdir(join(outside, 'agents'));
+        await symlink(join(outside, 'agents'), join(root, '.claude/agents'));
+        const done = await refreshKit(root);
+        expect(await Bun.file(join(outside, 'secret')).text()).toBe('keep me\n');
+        expect(await Bun.file(join(outside, 'agents/web.md')).exists()).toBe(false);
+        const refused = done.findings.filter((f) => f.code === 'X_SCAFFOLD_PATH_ESCAPE');
+        expect(refused.map((f) => f.at).sort()).toContain('.claude/skills/feature/SKILL.md');
+        expect(refused.some((f) => f.at?.startsWith('.claude/agents/'))).toBe(true);
+        // The files that stay inside the app are still written.
+        expect(await read(root, '.claude/skills/verify/SKILL.md')).toContain('Managed by Ultimate');
+      } finally {
+        await rm(outside, { recursive: true, force: true });
+      }
     });
   });
 

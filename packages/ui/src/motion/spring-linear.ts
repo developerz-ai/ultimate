@@ -33,7 +33,8 @@ const MAX_STOPS = 80;
  */
 export function springPosition(spec: SpringSpec, t: number): number {
   const omega = Math.sqrt(spec.stiffness / spec.mass);
-  const zeta = spec.damping / (2 * Math.sqrt(spec.stiffness * spec.mass));
+  // √k · √m, never √(k m): the product overflows to Infinity long before either factor does.
+  const zeta = spec.damping / (2 * Math.sqrt(spec.stiffness) * Math.sqrt(spec.mass));
   if (zeta < 1) {
     const damped = omega * Math.sqrt(1 - zeta * zeta);
     const decay = Math.exp(-zeta * omega * t);

@@ -374,7 +374,7 @@ x design research <url…> [--follow <n>] [--out .x/design] [--viewport 390x844,
 x design research --list [--json]
 ```
 
-Measures a public reference page in Chrome over raw CDP into five artefacts per URL — shots at each viewport in light and dark, `reference.json`, a `tokens.proposal.json` that `defineTheme` accepts, `motion-map.json` (observed animation → `@ultimat3/ui/motion` call or `@ultimat3/effects` entry) and `sources.json` (licence posture). Every navigation, redirect and subresource to a private, loopback or link-local address is refused browser-wide (`X_DESIGN_URL_REFUSED`); a navigation that fails or times out is `X_DESIGN_REFERENCE_UNREACHABLE`. Needs no app. Flags, artefacts and the ideas-only rule: [Design research](Design-Research).
+Measures a public reference page in Chrome over raw CDP into five artefacts per URL — shots at each viewport in light and dark, `reference.json`, a `tokens.proposal.json` that `defineTheme` accepts, `motion-map.json` (observed animation → `@ultimat3/ui/motion` call or `@ultimat3/effects` entry) and `sources.json` (licence posture). Every navigation, redirect and subresource to a private, loopback or link-local address is refused browser-wide (`X_DESIGN_URL_REFUSED`); a navigation that fails or times out is `X_DESIGN_REFERENCE_UNREACHABLE`. A cancelled `ui.research` call ends with `X_ABORTED` and publishes nothing half-written; a followed link that fails is listed in `data.skipped`, by code. Needs no app. Flags, artefacts and the ideas-only rule: [Design research](Design-Research).
 
 ## x kit
 

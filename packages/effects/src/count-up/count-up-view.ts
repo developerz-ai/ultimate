@@ -39,7 +39,13 @@ export function countFormatter(
     return (scalar) => formatMoney(fromMinor(Math.round(scalar), currency), locale);
   }
   const format = new Intl.NumberFormat(locale, options);
-  return (scalar) => format.format(scalar);
+  // `Intl` shows up to three fraction digits, so 788.4 would flash by on the way to 1,000: an
+  // integer target with no fraction options counts in whole numbers.
+  const whole =
+    Number.isInteger(target) &&
+    options?.minimumFractionDigits === undefined &&
+    options?.maximumFractionDigits === undefined;
+  return (scalar) => format.format(whole ? Math.round(scalar) : scalar);
 }
 
 /** Ease-out cubic position between `from` and `to`; exactly `to` once `elapsed >= ms`. */

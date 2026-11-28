@@ -41,8 +41,9 @@ export interface DevAgentHost {
   /**
    * `x design research`, in process: each reference's five artefacts under `.x/design/<slug>/`,
    * every request the page makes screened against private, loopback and link-local addresses.
+   * `signal` is the call's cancellation: after it, no browser is launched and nothing published.
    */
-  researchDesign(input: UiResearchInput): Promise<unknown>;
+  researchDesign(input: UiResearchInput, signal?: AbortSignal): Promise<unknown>;
 }
 
 /** The host's capability, or one that refuses: `DevCapabilities` holds these as optional. */

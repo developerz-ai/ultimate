@@ -44,7 +44,7 @@ export function rawMotionScripts(files: readonly ScriptFile[]): readonly Finding
         findings.push({
           code: CODE,
           cause: \`\${at} animates with \\\`\${match[1]}: \${match[2]}\\\` — a time of this call's own, off the motion scale\`,
-          fix: \`\${match[1]}: motionTiming('\${durationFor(ms)}') — import { motionTiming } from '@ultimat3/ui/motion' at \${at} (durations: \${DURATIONS.map(([name]) => name).join(' ')}), then: x verify --only boundaries\`,
+          fix: \`\${match[1]}: motionTiming('\${durationFor(ms)}').duration — import { motionTiming } from '@ultimat3/ui/motion' at \${at} (durations: \${DURATIONS.map(([name]) => name).join(' ')}), then: x verify --only boundaries\`,
           at,
         });
       }
@@ -54,7 +54,7 @@ export function rawMotionScripts(files: readonly ScriptFile[]): readonly Finding
       findings.push({
         code: CODE,
         cause: \`\${at} writes \\\`\${match[0]}\\\` — an easing curve of this file's own, off the motion scale\`,
-        fix: \`motionTiming('base', '\${easingFor(match[1] ?? '')}') — import { motionTiming } from '@ultimat3/ui/motion' at \${at} (easings: \${Object.values(EASINGS).join(' ')}), then: x verify --only boundaries\`,
+        fix: \`easing: motionTiming('base', '\${easingFor(match[1] ?? '')}').easing — import { motionTiming } from '@ultimat3/ui/motion' at \${at} (easings: \${Object.values(EASINGS).join(' ')}), then: x verify --only boundaries\`,
         at,
       });
     }
@@ -87,7 +87,7 @@ unitTest('a number as duration or delay in .animate( is refused, with the token'
   );
   expect(findings).toHaveLength(1);
   expect(findings[0]?.code).toBe('${CODE}');
-  expect(findings[0]?.fix).toStartWith("duration: motionTiming('base') — ");
+  expect(findings[0]?.fix).toStartWith("duration: motionTiming('base').duration — ");
   expect(rawMotionScripts(script('\\nel.animate(k, {\\n  delay: 130,\\n});'))[0]?.at).toBe(
     'apps/web/app/feed/card.island.tsx:3',
   );
@@ -96,7 +96,14 @@ unitTest('a number as duration or delay in .animate( is refused, with the token'
 unitTest('a cubic-bezier string in a script is refused, and the nearest token named', () => {
   const findings = rawMotionScripts(script("const e = 'cubic-bezier(0.2, 0.9, 0.3, 1)';"));
   expect(findings).toHaveLength(1);
-  expect(findings[0]?.fix).toStartWith("motionTiming('base', 'out') — ");
+  expect(findings[0]?.fix).toStartWith("easing: motionTiming('base', 'out').easing — ");
+});
+
+unitTest('a comment-like string hides nothing: the call after it is still read', () => {
+  const source = "const g = 'dist/*'; el.animate(k, { duration: 300 }); /** doc */";
+  expect(rawMotionScripts(script(source))).toHaveLength(1);
+  const cdn = script("const u = '//cdn'; el.animate(k, { delay: 90 });");
+  expect(rawMotionScripts(cdn)).toHaveLength(1);
 });
 
 unitTest('a token read, a zero, another call, a comment and a test are silent', () => {

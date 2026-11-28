@@ -5,6 +5,7 @@
 // that predates it (`severity: 'warning'`); `x new` writes the `"error"` row.
 
 import { guardCode } from './guard';
+import { TS_BLANK_SOURCE } from './guard-raw-motion-ts-scan';
 import type { GeneratedFile } from './naming';
 
 /** Derived from the guard's name, never a literal: an `X_*` literal here is a FRAMEWORK code. */
@@ -16,8 +17,8 @@ const source =
 // \`x verify\` discovers every file in \`guards/\` and runs its \`guard\` inside the \`boundaries\`
 // step — nothing registers this file, so nothing can forget to. Delete it to drop the rule.
 //
-// Read: \`<canvas\`, \`getContext('webgl…')\` and \`navigator.gpu\` in a \`.tsx\` outside tests and
-// outside the framework's own \`effect-canvas.tsx\`. A canvas the app draws is
+// Read: \`<canvas\`, \`getContext('webgl…')\` and \`navigator.gpu\` in a \`.tsx\` outside tests. A canvas
+// the app draws is
 // \`<EffectCanvas draw={…} fallback={…} />\`. REPORT ONLY (\`severity: 'warning'\`) until clean.
 
 import type { Finding, Guard } from '@ultimat3/cli';
@@ -37,19 +38,12 @@ const SIGNATURES: readonly (readonly [RegExp, string])[] = [
   [/(?<![\\w$])navigator\\s*\\.\\s*gpu\\b/g, 'navigator.gpu'],
 ];
 
-/** Comments blanked IN PLACE, so a line number still points at the source. */
-const blank = (text: string): string =>
-  text
-    .replaceAll(/\\/\\*[\\s\\S]*?\\*\\//g, (match) => match.replaceAll(/[^\\n]/g, ' '))
-    .replaceAll(/(?<![:\\w])\\/\\/[^\\n]*/g, (match) => ' '.repeat(match.length));
-
+${TS_BLANK_SOURCE}
 /** Pure — the caller does the I/O — so the rule is testable without a filesystem. */
 export function effectsWithoutFallback(files: readonly SourceFile[]): readonly Finding[] {
   const findings: Finding[] = [];
   for (const file of files) {
-    // The framework's own canvas is the one place a raw one is the point.
-    if (/(?:^|\\/)effect-canvas\\.tsx$/.test(file.path)) continue;
-    const text = blank(file.source);
+    const text = blankScript(file.source);
     for (const [pattern, name] of SIGNATURES) {
       for (const match of text.matchAll(pattern)) {
         const at = \`\${file.path}:\${text.slice(0, match.index).split('\\n').length}\`;
@@ -102,12 +96,16 @@ unitTest('a WebGL context and navigator.gpu are the same rule', () => {
   expect(effectsWithoutFallback(file('const gpu = navigator.gpu;'))).toHaveLength(1);
 });
 
-unitTest('EffectCanvas, a 2d context, a comment and the framework canvas are silent', () => {
+unitTest('a comment-like string hides nothing: the canvas after it is still refused', () => {
+  expect(effectsWithoutFallback(file("const u = '//cdn'; const v = <canvas />;"))).toHaveLength(1);
+});
+
+unitTest('EffectCanvas, a 2d context, a comment and a string are silent', () => {
   expect(effectsWithoutFallback(file('<EffectCanvas draw={d} fallback={<img />} />'))).toEqual([]);
   expect(effectsWithoutFallback(file("const c = el.getContext('2d');"))).toEqual([]);
   expect(effectsWithoutFallback(file('// <canvas /> navigator.gpu'))).toEqual([]);
-  const own = file('<canvas />', 'packages/effects/src/effect-canvas.tsx');
-  expect(effectsWithoutFallback(own)).toEqual([]);
+  const hidden = file("const s = '/* x */'; const t = <canvas />;");
+  expect(effectsWithoutFallback(hidden)).toHaveLength(1);
 });
 `;
 

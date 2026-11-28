@@ -33,3 +33,18 @@ export class DesignReferenceUnreachableError extends UltimateError {
     });
   }
 }
+
+/**
+ * The caller went away (`ui.research` cancelled, the CLI interrupted). Core's `X_ABORTED`, as
+ * `throwIfAborted` raises it: the run stops launching browsers and publishes nothing half-done.
+ */
+export class DesignAbortedError extends UltimateError {
+  constructor(input: { readonly url: string }) {
+    super({
+      code: 'X_ABORTED',
+      cause: `x design research was cancelled while researching ${renderCauseValue(input.url)}; nothing from that reference was published`,
+      fix: `x design research ${renderFixShellArg(input.url, '<url>')} --json   # run it again when you still want it`,
+      meta: { url: input.url },
+    });
+  }
+}

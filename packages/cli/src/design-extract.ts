@@ -110,8 +110,63 @@ const rgbOf = (values: readonly number[]): readonly [number, number, number] => 
   channel(values[2]),
 ];
 
-/** A family name a stylesheet could spell: letters, digits, spaces, dashes, ≤ 3 words. */
-const FAMILY = /^[A-Za-z0-9][A-Za-z0-9_-]*(?: [A-Za-z0-9_-]+){0,2}$/;
+/**
+ * A font family is one bounded token (`Inter`, `system-ui`), then at most three words a family
+ * name is made of (`IBM Plex Sans`, `Roboto Mono`). Free text past the first word is refused:
+ * the family is page-chosen, and a phrase is an instruction, not a typeface.
+ */
+const FAMILY_HEAD = /^[A-Za-z0-9][A-Za-z0-9-]{0,23}$/;
+const FAMILY_WORDS = new Set([
+  'sans',
+  'serif',
+  'mono',
+  'display',
+  'text',
+  'pro',
+  'plex',
+  'code',
+  'condensed',
+  'grotesk',
+  'grotesque',
+  'neue',
+  'ui',
+  'rounded',
+  'slab',
+  'variable',
+  'vf',
+  'std',
+  'new',
+  'one',
+  'next',
+  'narrow',
+  'wide',
+  'extended',
+  'light',
+  'medium',
+  'bold',
+  'book',
+  'regular',
+  'black',
+  'thin',
+  'semibold',
+  'compressed',
+  'round',
+  'italic',
+  'symbol',
+  'emoji',
+  'color',
+  'flex',
+  'serif4',
+]);
+const isFamily = (family: string): boolean => {
+  const [head, ...rest] = family.split(' ');
+  return (
+    head !== undefined &&
+    FAMILY_HEAD.test(head) &&
+    rest.length <= 3 &&
+    rest.every((word) => FAMILY_WORDS.has(word.toLowerCase()) || /^\d{1,3}$/.test(word))
+  );
+};
 const PROPERTY = /^-?[a-zA-Z][a-zA-Z-]{0,39}$/;
 const EASING =
   /^(?:linear|ease|ease-in|ease-out|ease-in-out|step-start|step-end|cubic-bezier\(\s*-?[\d.]+\s*(?:,\s*-?[\d.]+\s*){3}\)|steps\(\s*\d+\s*(?:,\s*[a-z-]+\s*)?\)|linear\([-\d.,%\s]{1,2000}\))$/;
@@ -145,7 +200,7 @@ export function parseExtraction(value: unknown): Extraction {
           ];
     }),
     fonts: raw.fonts
-      .filter((font) => font.family.length <= 40 && FAMILY.test(font.family))
+      .filter((font) => font.family.length <= 48 && isFamily(font.family))
       .map((font) => ({
         family: font.family,
         sizePx: Math.round(clamp(font.sizePx, 1, 400)),

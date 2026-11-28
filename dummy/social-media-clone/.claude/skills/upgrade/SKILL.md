@@ -2,7 +2,18 @@
 name: upgrade
 description: Move social-media-clone to the next Ultimate major — preview with a dry run, hop, read the report (codemods that left work, guards withheld, workarounds a release superseded), refresh the agent kit, and gate. Use when asked to upgrade, bump or update the framework, or when x doctor says the app is behind.
 argument-hint: [target version, optional]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash(bunx x upgrade:*)
+  - Bash(bunx x kit:*)
+  - Bash(bunx x doctor:*)
+  - Bash(bun run verify:*)
+  - Bash(git status)
+  - Bash(git diff:*)
 ---
 
 <!-- Managed by Ultimate: `bunx x kit` rewrites this file and `bunx x verify` refuses an edit (X_KIT_DRIFT). To change it, copy it to `.claude/skills/app-upgrade/SKILL.md` and add "upgrade" to "off" in .claude/kit.json. -->

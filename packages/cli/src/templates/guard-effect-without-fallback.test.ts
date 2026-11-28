@@ -26,13 +26,23 @@ describe('unit · shipped guard · effect-without-fallback', () => {
     expect(report.warnings[0]?.fix).toContain("EffectCanvas } from '@ultimat3/effects'");
   });
 
-  test('EffectCanvas, a 2d context, a comment, a .ts file and the framework canvas are silent', async () => {
+  test('EffectCanvas, a 2d context, a comment, a .ts file are silent; a file named effect-canvas.tsx is not exempt', async () => {
     const report = await shippedGuardReport('effect-without-fallback', {
       [FILE]:
         "// <canvas />\nexport const V = () => <EffectCanvas draw={d} fallback={<img />} />;\nconst c = r.getContext('2d');\n",
       'apps/web/shared/gpu.ts': 'export const has = navigator.gpu;\n',
-      'packages/effects/src/effect-canvas.tsx': 'export const C = () => <canvas />;\n',
     });
     expect([...report.findings, ...report.warnings]).toEqual([]);
+    const named = await shippedGuardReport('effect-without-fallback', {
+      'apps/web/shared/effect-canvas.tsx': 'export const C = () => <canvas />;\n',
+    });
+    expect(named.warnings).toHaveLength(1);
+  });
+
+  test('a comment-like string hides nothing: the canvas after it is still refused', async () => {
+    const report = await shippedGuardReport('effect-without-fallback', {
+      [FILE]: "const u = '//cdn'; export const V = () => <canvas />;\n",
+    });
+    expect(report.warnings).toHaveLength(1);
   });
 });

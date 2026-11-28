@@ -64,6 +64,8 @@ describe('TextReveal', () => {
     const css = await compile('text-reveal', 'TextReveal.module.scss');
     expect(css).toContain('clip-path: inset(50%)');
     expect(css).toContain('animation-delay: calc(var(--i) * var(--reveal-step, 40ms))');
+    // The delay survives reduced motion's duration collapse, so the animation itself must go.
+    expect(css).toMatch(/prefers-reduced-motion: reduce\) \{ \.piece \{ animation: none;/);
   });
 });
 

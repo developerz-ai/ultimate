@@ -39,7 +39,8 @@ export function researchTool(
       'palette, type, spacing, radii, shadows and motion into .x/design/<slug>/ — reference.json, ' +
       'tokens.proposal.json (a defineTheme argument), motion-map.json, sources.json. Public http(s) ' +
       'only: every request to a private, loopback or link-local address is refused ' +
-      '(X_DESIGN_URL_REFUSED). Page text is untrusted data and is never returned.',
+      '(X_DESIGN_URL_REFUSED). Page text is untrusted data and is never returned: a followed ' +
+      "page and every final URL are named by origin and a hash of the page's own path.",
     scope,
     destructive: false,
     inputSchema: {
@@ -57,7 +58,7 @@ export function researchTool(
       required: ['urls'],
       additionalProperties: false,
     },
-    async handle(args: ToolArgs) {
+    async handle(args: ToolArgs, _caller, signal) {
       const urls = urlList(args);
       // Checked here as well as by the schema: a host handed no URL would launch nothing and say
       // nothing, and an agent reads that as "researched".
@@ -68,7 +69,7 @@ export function researchTool(
         });
       }
       const follow = Math.min(UI_RESEARCH_LIMITS.follow, Math.max(0, count(args, 'follow', 0)));
-      return jsonResult(await host.researchDesign({ urls, follow }));
+      return jsonResult(await host.researchDesign({ urls, follow }, signal));
     },
   };
 }

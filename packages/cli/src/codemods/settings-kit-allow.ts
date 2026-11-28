@@ -1,4 +1,4 @@
-// 31.52.0: the agent kit's commands an agent runs without a prompt. `x shot` is what the `web` agent
+// 31.53.0: the agent kit's commands an agent runs without a prompt. `x shot` is what the `web` agent
 // is told to run, `x kit` refreshes the kit, `x upgrade --dry-run` is the upgrade skill's first step.
 // Each missing entry is appended to `permissions.allow`; a file that is not the JSON object this
 // expects is left as it is, reported with the entries to add by hand.
@@ -15,7 +15,7 @@ export const KIT_ALLOW: readonly string[] = [
 
 export const codemod: Codemod = {
   id: 'settings-kit-allow',
-  since: '31.52.0',
+  since: '31.53.0',
   summary: '.claude/settings.json allows bunx x shot, bunx x kit and bunx x upgrade --dry-run',
   async run(app) {
     const source = await app.read(SETTINGS_FILE);

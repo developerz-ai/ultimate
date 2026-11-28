@@ -96,11 +96,9 @@ export function mountShader(
   options: ShaderMountOptions,
 ): ShaderMountResult {
   const gl = canvas.getContext('webgl2');
-  if (gl === null || gl.isContextLost()) return { ok: false, reason: 'no-context' };
-  const first = build(gl, source);
-  if (typeof first === 'string') return { ok: false, reason: first };
-  // `null` while the context is lost: the program died with it.
-  let built: Linked | null = first;
+  if (gl === null) return { ok: false, reason: 'no-context' };
+  // `null` while there is no program: before the first build, and while the context is lost.
+  let built: Linked | null = null;
 
   const budget = options.budget ?? EFFECT_PIXELS;
   const locations = new Map<string, WebGLUniformLocation | null>();
@@ -156,12 +154,28 @@ export function mountShader(
     options.onRestored();
   };
 
+  // Listening BEFORE the first build: a context lost in between would otherwise read as a broken
+  // shader, with no restore listener to bring it back.
+  canvas.addEventListener('webglcontextlost', onLost);
+  canvas.addEventListener('webglcontextrestored', onRestored);
+  const first = gl.isContextLost() ? 'lost' : build(gl, source);
+  // A lost context fails every compile, so a failure is the source's only on a live context.
+  const outcome = typeof first === 'string' && gl.isContextLost() ? 'lost' : first;
+  if (outcome === 'compile' || outcome === 'link') {
+    canvas.removeEventListener('webglcontextlost', onLost);
+    canvas.removeEventListener('webglcontextrestored', onRestored);
+    // Nothing will draw on it: hand the context back now, not whenever GC finds it.
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return { ok: false, reason: outcome };
+  }
   const unobserve = host.observeSize(canvas, (width, height) => {
     box = [width, height];
   });
-  canvas.addEventListener('webglcontextlost', onLost);
-  canvas.addEventListener('webglcontextrestored', onRestored);
-  start();
+  if (outcome === 'lost') options.onLost();
+  else {
+    built = outcome;
+    start();
+  }
 
   return {
     ok: true,

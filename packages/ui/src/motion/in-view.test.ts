@@ -100,3 +100,64 @@ describe('inView', () => {
     expect(entered).toBe(true);
   });
 });
+
+describe('inView — many watches on one element', () => {
+  test('two watches on one element both fire, and one stop leaves the other watching', () => {
+    install();
+    const target = el();
+    const log: string[] = [];
+    const stopA = inView(target, () => void log.push('a'), { once: false });
+    const stopB = inView(target, () => void log.push('b'), { once: false });
+    const observer = FakeObserver.made.at(-1) as FakeObserver;
+    observer.show(target, true);
+    expect(log).toEqual(['a', 'b']);
+    stopA();
+    expect(observer.targets.has(target)).toBe(true);
+    observer.show(target, false);
+    observer.show(target, true);
+    expect(log).toEqual(['a', 'b', 'b']);
+    stopB();
+  });
+
+  test('a once watch that re-arms inView on its element keeps the new watch', () => {
+    install();
+    const target = el();
+    const log: string[] = [];
+    let stopSecond = (): void => {};
+    inView(target, () => {
+      log.push('first');
+      stopSecond = inView(target, () => void log.push('second'), { once: false });
+      return undefined;
+    });
+    const observer = FakeObserver.made.at(-1) as FakeObserver;
+    observer.show(target, true);
+    expect(observer.targets.has(target)).toBe(true);
+    observer.show(target, false);
+    observer.show(target, true);
+    expect(log).toEqual(['first', 'second']);
+    stopSecond();
+  });
+
+  test('a pool emptied inside a callback never deletes the pool created after it', () => {
+    install();
+    const a = el();
+    const b = el();
+    let stopB = (): void => {};
+    const stop = inView(a, () => {
+      // The pool's last watch stops itself; the next inView with the same options is a NEW pool.
+      stop();
+      stopB = inView(b, () => undefined, { once: false });
+      return undefined;
+    });
+    const first = FakeObserver.made.at(-1) as FakeObserver;
+    first.show(a, true);
+    const second = FakeObserver.made.at(-1) as FakeObserver;
+    expect(second).not.toBe(first);
+    expect(second.targets.has(b)).toBe(true);
+    // The new pool is still the one handed out: a third watch joins it, no third observer.
+    const stopC = inView(el(), () => undefined, { once: false });
+    expect(FakeObserver.made.length).toBe(2);
+    stopB();
+    stopC();
+  });
+});

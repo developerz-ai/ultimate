@@ -7,6 +7,7 @@ import { kitFiles } from '../kit/registry';
 import { RELEASED_KIT_FORMS } from '../templates/kit-released-forms';
 import { names } from '../templates/naming';
 import { agentKitCodemod, codemod } from './agent-kit';
+import { frozenReadme } from './agent-kit-frozen-readme-fixture';
 import { memoryCodemodApp } from './codemod';
 
 const OLD_COMMAND = 'old feature command for blog\n';
@@ -86,6 +87,24 @@ describe('unit · agent-kit codemod', () => {
   test("an app with the kit marker is the kit's to judge, not the codemod's", async () => {
     const target = app({ '.claude/kit.json': '{"off":[]}', '.claude/agents/shape.md': 'edited\n' });
     expect(await agentKitCodemod(forms).run(target)).toEqual({ changed: [], skipped: [] });
+  });
+
+  test('an unedited released README is replaced by the new one; an edited one is kept with a diff', async () => {
+    const OLD = '# .claude/\n\nNothing here is enforced by blog.\n';
+    const table = { '.claude/README.md': [kitFormHash(OLD, 'blog')] };
+    const fresh = app({ '.claude/README.md': OLD });
+    const done = await agentKitCodemod(table).run(fresh);
+    expect(done.changed).toEqual(['.claude/README.md']);
+    expect(fresh.files['.claude/README.md']).toContain('X_KIT_DRIFT');
+    const edited = app({ '.claude/README.md': `${OLD}my note\n` });
+    const kept = await agentKitCodemod(table).run(edited);
+    expect(edited.files['.claude/README.md']).toBe(`${OLD}my note\n`);
+    expect(kept.skipped[0]?.diff).toContain('X_KIT_DRIFT');
+  });
+
+  test('the README of release 31.51.0 is a recorded form', () => {
+    const forms = RELEASED_KIT_FORMS['.claude/README.md'] ?? [];
+    expect(forms).toContain(kitFormHash(frozenReadme(names('shop')), 'shop'));
   });
 
   test('a second run changes nothing', async () => {

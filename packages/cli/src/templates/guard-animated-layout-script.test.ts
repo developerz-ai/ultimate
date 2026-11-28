@@ -31,4 +31,16 @@ describe('unit · shipped guard · animated-layout-script', () => {
     });
     expect(findings).toEqual([]);
   });
+
+  test('only keyframe keys count, and a comment-like string hides nothing', async () => {
+    const findings = await shippedGuardFindings('animated-layout-script', {
+      [FILE]: [
+        "const g = 'dist/*'; el.animate({ width: 1 }, o); /** doc */",
+        'el.animate({ transform: up ? top : bottom }, { duration: t, left: 1 });',
+        "el.animate({ id: 'width: grow' }, o);",
+        '',
+      ].join('\n'),
+    });
+    expect(findings.map((finding) => finding.at)).toEqual([`${FILE}:1`]);
+  });
 });

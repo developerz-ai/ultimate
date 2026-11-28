@@ -33,6 +33,8 @@ import {
   boardColumns,
   canMovePost,
   isSchedulable,
+  moveTo,
+  revertMove,
 } from './board-columns';
 
 export interface BoardIslandProps {
@@ -71,14 +73,11 @@ export function PostBoard(props: BoardIslandProps): JSX.Element {
     const to = move.toGroup;
     // A reorder inside one column asks nothing: a status has no order to keep.
     if (from === to || !isSchedulable(from) || !isSchedulable(to)) return;
-    const before = posts();
-    settle(() =>
-      setPosts(before.map((post) => (post.id === move.id ? { ...post, status: to } : post))),
-    );
+    settle(() => setPosts((now) => moveTo(now, move.id, to)));
     try {
       await browserClient.movePostStatus({ id: move.id, from, to });
     } catch (error) {
-      settle(() => setPosts(before));
+      settle(() => setPosts((now) => revertMove(now, move.id, from, to)));
       throw error;
     }
   };

@@ -5,6 +5,7 @@
 // that predates it (`severity: 'warning'`); `x new` writes the `"error"` row.
 
 import { guardCode } from './guard';
+import { TS_BLANK_SOURCE } from './guard-raw-motion-ts-scan';
 import type { GeneratedFile } from './naming';
 
 /** Derived from the guard's name, never a literal: an `X_*` literal here is a FRAMEWORK code. */
@@ -60,16 +61,12 @@ const packageOf = (specifier: string): string =>
     .slice(0, specifier.startsWith('@') ? 2 : 1)
     .join('/');
 
-const blank = (text: string): string =>
-  text
-    .replaceAll(/\\/\\*[\\s\\S]*?\\*\\//g, (match) => match.replaceAll(/[^\\n]/g, ' '))
-    .replaceAll(/(?<![:\\w])\\/\\/[^\\n]*/g, (match) => ' '.repeat(match.length));
-
+${TS_BLANK_SOURCE}
 /** Pure — the caller does the I/O — so the rule is testable without a filesystem. */
 export function motionAdapter(files: readonly ScriptFile[]): readonly Finding[] {
   const findings: Finding[] = [];
   for (const file of files) {
-    const text = blank(file.source);
+    const text = blankScript(file.source);
     for (const match of text.matchAll(SPECIFIER)) {
       const engine = packageOf(match[2] ?? '');
       if (!Object.hasOwn(ENGINES, engine)) continue;
@@ -135,6 +132,11 @@ unitTest('every engine, its subpaths, import(), require() and re-exports are the
     "export { animate } from 'motion';",
   ];
   for (const line of engines) expect(motionAdapter(file(line))).toHaveLength(1);
+});
+
+unitTest('a comment-like string hides nothing: the import after it is still refused', () => {
+  expect(motionAdapter(file("const g = 'dist/*'; import('gsap'); /** d */"))).toHaveLength(1);
+  expect(motionAdapter(file("const u = '//cdn'; const t = require('three');"))).toHaveLength(1);
 });
 
 unitTest('the adapter, a lookalike package, a comment and a string are silent', () => {

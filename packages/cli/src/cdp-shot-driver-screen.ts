@@ -4,20 +4,25 @@
 // watch is handed a connection whose `Fetch.requestPaused` events are screened first: a refused
 // request is failed here and never reaches the watch, an admitted one is handed on unchanged.
 // Chrome re-resolves the name itself (rebinding stays open, as `@ultimat3/scraping`'s browser leg
-// documents): this closes the static case, not the race.
+// documents): this closes the static case, not the race. A WebSocket handshake is never paused by
+// `Fetch` at all — whoever screens a session refuses sockets in the page (`DESIGN_PREPARE`).
 
 import type { CdpConnection, CdpEventListener } from '@ultimat3/scraping/cdp';
+
+/** Why a request was refused: it resolves inward, or it could not be resolved at all. */
+export type DialRefusal = 'private' | 'unresolved';
 
 export interface DialScreen {
   /** The sessions whose pauses are this session's to decide; another's pass through untouched. */
   readonly owns: (sessionId: string | undefined) => boolean;
   /**
-   * `undefined` when there is nothing to resolve (the watch decides alone), else whether the
-   * request must be REFUSED. A rejection refuses too: an unscreened request is never released.
+   * `undefined` when there is nothing to resolve (the watch decides alone), else a promise of the
+   * refusal — `undefined` when the request may go. A rejection refuses as `unresolved`: an
+   * unscreened request is never released, and a resolver that failed proved nothing private.
    */
-  readonly screen: (url: string) => Promise<boolean> | undefined;
-  /** Told of each refusal, so the caller can report what the page tried to reach. */
-  readonly refused: (url: string) => void;
+  readonly screen: (url: string) => Promise<DialRefusal | undefined> | undefined;
+  /** Told of each refusal and why, so the caller can report what the page tried to reach. */
+  readonly refused: (url: string, reason: DialRefusal) => void;
 }
 
 const urlOf = (params: Record<string, unknown>): string => {
@@ -36,10 +41,10 @@ export function screenedConnection(connection: CdpConnection, dial: DialScreen):
       const pending = dial.screen(url);
       if (pending === undefined) return listener(params, on);
       void pending
-        .catch(() => true)
-        .then((refuse) => {
-          if (!refuse) return listener(params, on);
-          dial.refused(url);
+        .catch((): DialRefusal => 'unresolved')
+        .then((refusal) => {
+          if (refusal === undefined) return listener(params, on);
+          dial.refused(url, refusal);
           return connection
             .send(
               'Fetch.failRequest',

@@ -24,45 +24,58 @@ interface Watch {
 interface Pool {
   readonly key: string;
   readonly observer: IntersectionObserver;
-  readonly watches: Map<Element, Watch>;
+  /** Every watch on an element: two `inView`s (a reveal and a `frameLoop`) on one node are two. */
+  readonly watches: Map<Element, Set<Watch>>;
 }
 
 const pools = new Map<string, Pool>();
+
+function report(pool: Pool, entry: IntersectionObserverEntry, amount: number): void {
+  // A copy: a callback may add or stop a watch on this element while the loop runs.
+  for (const watch of [...(pool.watches.get(entry.target) ?? [])]) {
+    const inside = entry.isIntersecting && entry.intersectionRatio >= amount;
+    if (inside === watch.inside) continue;
+    watch.inside = inside;
+    if (inside) {
+      const leave = watch.enter(entry);
+      watch.leave = typeof leave === 'function' ? leave : undefined;
+      // Only THIS watch goes: a callback that re-armed on the element keeps what it armed.
+      if (watch.once) release(pool, entry.target, watch);
+    } else {
+      watch.leave?.(entry);
+      watch.leave = undefined;
+    }
+  }
+}
 
 function poolFor(margin: string, amount: number): Pool {
   const key = `${margin}|${amount}`;
   const kept = pools.get(key);
   if (kept !== undefined) return kept;
-  const watches = new Map<Element, Watch>();
-  const observer = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        const watch = watches.get(entry.target);
-        if (watch === undefined) continue;
-        const inside = entry.isIntersecting && entry.intersectionRatio >= amount;
-        if (inside === watch.inside) continue;
-        watch.inside = inside;
-        if (inside) {
-          const leave = watch.enter(entry);
-          watch.leave = typeof leave === 'function' ? leave : undefined;
-          if (watch.once) release(pool, entry.target);
-        } else {
-          watch.leave?.(entry);
-          watch.leave = undefined;
-        }
-      }
-    },
-    { rootMargin: margin, threshold: amount },
-  );
-  const pool: Pool = { key, observer, watches };
+  const pool: Pool = {
+    key,
+    observer: new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) report(pool, entry, amount);
+      },
+      { rootMargin: margin, threshold: amount },
+    ),
+    watches: new Map(),
+  };
   pools.set(key, pool);
   return pool;
 }
 
-function release(pool: Pool, el: Element): void {
+/** Drop ONE watch; the element is unobserved only when it holds none, the pool only when empty. */
+function release(pool: Pool, el: Element, watch: Watch): void {
+  const set = pool.watches.get(el);
+  if (set === undefined || !set.delete(watch)) return;
+  if (set.size > 0) return;
   pool.watches.delete(el);
   pool.observer.unobserve(el);
-  // An empty pool goes: an observer with no targets is a page-lifetime leak for nothing.
+  // An empty pool goes: an observer with no targets is a page-lifetime leak for nothing. Reached
+  // once per pool — a watch already released returns above — so a successor made by a callback is
+  // never the one deleted.
   if (pool.watches.size === 0) {
     pool.observer.disconnect();
     pools.delete(pool.key);
@@ -81,14 +94,22 @@ export function inView(el: Element, onEnter: Enter, options: InViewOptions = {})
     return () => {};
   }
   const pool = poolFor(options.margin ?? '0px', options.amount ?? 0);
-  pool.watches.set(el, {
+  const watch: Watch = {
     enter: onEnter,
     once: options.once ?? true,
     leave: undefined,
     inside: false,
-  });
-  pool.observer.observe(el);
-  return () => {
-    if (pool.watches.has(el)) release(pool, el);
   };
+  const set = pool.watches.get(el);
+  if (set === undefined) {
+    pool.watches.set(el, new Set([watch]));
+    pool.observer.observe(el);
+  } else {
+    set.add(watch);
+    // An element already observed gets no fresh first report, so the new watch would wait for the
+    // next crossing: observing it again asks for one (the others skip it — nothing changed).
+    pool.observer.unobserve(el);
+    pool.observer.observe(el);
+  }
+  return () => release(pool, el, watch);
 }

@@ -34,7 +34,7 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...TEMPLATE_CODEMOD_HISTORY,
   ...['data', 'server', 'shape', 'web'].map((name) => ({
     template: `.claude/agents/${name}.md`,
-    since: '31.52.0',
+    since: '31.53.0',
     codemod: 'agent-kit',
   })),
   ...[
@@ -45,30 +45,26 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     '.claude/skills/planx/SKILL.md',
     '.claude/skills/upgrade/SKILL.md',
     '.claude/skills/verify/SKILL.md',
-  ].map((template) => ({ template, since: '31.52.0', none: KIT_MANAGED_WHY })),
-  {
-    template: '.claude/README.md',
-    since: '31.52.0',
-    none: "the README describes the kit; it is prose beside files the app may delete, and an existing app's copy stays true of the files it holds, so x upgrade leaves it alone",
-  },
+  ].map((template) => ({ template, since: '31.53.0', none: KIT_MANAGED_WHY })),
+  { template: '.claude/README.md', since: '31.53.0', codemod: 'agent-kit' },
   ...['apps/web/DESIGN.md', 'packages/cli/src/templates/scaffold-design.ts'].map((template) => ({
     template,
-    since: '31.52.0',
+    since: '31.53.0',
     none: 'x new writes an app-owned DESIGN.md stub the design-research skill fills; it is never managed, so an existing app writes its own when it wants one',
   })),
   {
     template: 'packages/cli/src/templates/motion-scale.ts',
-    since: '31.52.0',
+    since: '31.53.0',
     none: 'the shared duration/easing snap table is embedded in the new report-only guards and read by x design research; it writes no app file',
   },
   ...['guards/shipped.json', 'packages/cli/src/templates/scaffold-guards.ts'].map((template) => ({
     template,
-    since: '31.52.0',
+    since: '31.53.0',
     none: 'the five new guards run built in as warnings in an existing app; only x new writes their error rows into guards/shipped.json, because a stricter row written on upgrade would be a break on 31.x',
   })),
   ...['x.verify.json', 'packages/cli/src/templates/scaffold-verify-floor.ts'].map((template) => ({
     template,
-    since: '31.52.0',
+    since: '31.53.0',
     none: 'x new now declares agentsMdMaxBytes for the larger brief it writes; an existing app keeps its own x.verify.json and the AGENTS.md it holds, whose size the gate already judges against that floor, so x upgrade leaves it alone',
   })),
   ...[
@@ -96,21 +92,21 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     'packages/cli/src/templates/shapes/dashboard-motion.ts',
     'packages/cli/src/templates/shapes/landing-motion.ts',
     'packages/cli/src/templates/shapes/saas.ts',
-  ].map((template) => ({ template, since: '31.52.0', none: SHAPE_ONLY_WHY })),
+  ].map((template) => ({ template, since: '31.53.0', none: SHAPE_ONLY_WHY })),
   {
     template: 'packages/cli/src/templates/island.ts',
-    since: '31.52.0',
+    since: '31.53.0',
     none: 'written only by x g island --effect',
   },
-  { template: '.claude/settings.json', since: '31.52.0', codemod: 'settings-kit-allow' },
+  { template: '.claude/settings.json', since: '31.53.0', codemod: 'settings-kit-allow' },
   {
     template: 'packages/cli/src/templates/scaffold-claude.ts',
-    since: '31.52.0',
+    since: '31.53.0',
     codemod: 'settings-kit-allow',
   },
   ...['AGENTS.md', 'CLAUDE.md', 'packages/cli/src/templates/scaffold-docs.ts'].map((template) => ({
     template,
-    since: '31.52.0',
+    since: '31.53.0',
     codemod: 'docs-visual-quality',
   })),
   {
@@ -403,32 +399,32 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     'packages/cli/src/templates/scaffold-i18n.ts',
   ].map((template) => ({
     template,
-    since: '31.52.0',
+    since: '31.53.0',
     none: 'x new still writes flat catalogs and the same index; the split form (catalogs/<locale>/ with its barrel) is opt-in, and x i18n split writes it and rewrites the index import for the app that asks, so x upgrade leaves a flat app alone',
   })),
   {
     template: 'packages/cli/src/templates/scaffold-gitattributes.ts',
-    since: '31.52.0',
+    since: '31.53.0',
     none: "the catalog merge rule widened to catalogs/**/*.json plus each split locale's barrel; an existing app's catalogs/*.json rule still covers its flat files, and x i18n split widens that line in the app that splits, so x upgrade leaves .gitattributes alone",
   },
   {
     template: '.gitattributes',
-    since: '31.52.0',
+    since: '31.53.0',
     none: "the catalog merge rule widened to catalogs/**/*.json plus each split locale's barrel; an existing app's catalogs/*.json rule still covers its flat files, and x i18n split widens that line in the app that splits, so x upgrade leaves .gitattributes alone",
   },
   {
     template: 'packages/cli/src/templates/shapes/offline.ts',
-    since: '31.52.0',
+    since: '31.53.0',
     none: "the offline shape's /posts budget moves 156kb → 157kb for a new app: the page boot keeps the live cursor's sig (+253 B, #1280). An existing app keeps its own budget; one that lands over it gets X_BUDGET_EXCEEDED naming the measured bytes, and raises its budget there with the reason",
   },
   {
     template: 'apps/web/app/posts/page.tsx',
-    since: '31.52.0',
+    since: '31.53.0',
     none: "the offline shape's /posts budget moves 156kb → 157kb for a new app: the page boot keeps the live cursor's sig (+253 B, #1280). An existing app keeps its own budget; one that lands over it gets X_BUDGET_EXCEEDED naming the measured bytes, and raises its budget there with the reason",
   },
   {
     template: 'apps/web/app/posts/page.test.ts',
-    since: '31.52.0',
+    since: '31.53.0',
     none: "the offline shape's /posts budget moves 156kb → 157kb for a new app: the page boot keeps the live cursor's sig (+253 B, #1280). An existing app keeps its own budget; one that lands over it gets X_BUDGET_EXCEEDED naming the measured bytes, and raises its budget there with the reason",
   },
 ];

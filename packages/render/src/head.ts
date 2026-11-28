@@ -7,7 +7,7 @@
  * catalog and so the tag vocabulary keeps exactly one owner (`@ultimat3/seo`).
  */
 
-import { escapeHtml, finiteCount, THEME_STORAGE_KEY } from '@ultimat3/core';
+import { escapeHtml, finiteCount, MOTION_STORAGE_KEY, THEME_STORAGE_KEY } from '@ultimat3/core';
 import type { RouteMeta } from '@ultimat3/seo';
 import { BudgetExceededError } from './errors';
 // The raw-text escapers are `html.ts`'s and the text/attribute table is core's `escapeHtml` — a
@@ -173,12 +173,17 @@ export function themeScriptBody(options: ThemeScriptOptions = {}): string {
   // The fallback itself goes on the document too, OUTSIDE the `try`: a storage read that throws
   // still leaves the app's own opinion where `@ultimat3/ui`'s `clearTheme` / `watchOsTheme` read
   // it, so a fixed `theme.defaultMode` is never overridden by an OS flip or a "system" pick.
+  // The reader's motion pause (WCAG 2.2.2, `@ultimat3/ui`'s `MotionToggle`) is stamped in the same
+  // pass, before first paint: CSS entrances and effects must not run until an island hydrates, and
+  // a page with no toggle on it still honours a pause made on another.
   return (
     `var d=document.documentElement;` +
     `d.setAttribute(${JSON.stringify(`${attribute}-default`)},${JSON.stringify(fallback)});` +
     `try{var s=localStorage.getItem(${JSON.stringify(storageKey)}),` +
     `t=s==="light"||s==="dark"?s:${otherwise};` +
-    `d.setAttribute(${JSON.stringify(attribute)},t)}catch(e){}`
+    `d.setAttribute(${JSON.stringify(attribute)},t);` +
+    `if(localStorage.getItem(${JSON.stringify(MOTION_STORAGE_KEY)})==="paused")` +
+    `d.setAttribute("data-motion","paused")}catch(e){}`
   );
 }
 

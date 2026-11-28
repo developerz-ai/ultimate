@@ -77,9 +77,9 @@ export async function loadThemeHost(
 }
 
 /**
- * The proposal `defineTheme` accepts, by `defineTheme`'s own verdict. Colours are the only part
- * the contrast table judges; if `defineTheme` still refuses (a palette rule this CLI predates),
- * they are dropped rather than written as a proposal that would not boot.
+ * The proposal `defineTheme` accepts, by `defineTheme`'s own verdict: as mapped, else without its
+ * colours (a palette rule this CLI predates), else `{}` marked unvalidated — never a proposal that
+ * would not boot, and never a thrown run.
  */
 export function acceptedProposal(
   proposal: DesignProposal,
@@ -89,12 +89,19 @@ export function acceptedProposal(
   readonly validated: boolean;
 } {
   if (host === undefined) return { proposal, validated: false };
+  if (accepts(host, proposal)) return { proposal, validated: true };
+  const { colors: _dropped, ...rest } = proposal;
+  if (accepts(host, rest)) return { proposal: rest, validated: true };
+  // A rule this CLI does not know refuses more than colours: an empty proposal is still a
+  // `defineTheme` argument, and a research run never dies over a token it could not validate.
+  return { proposal: {}, validated: false };
+}
+
+const accepts = (host: ThemeHost, proposal: DesignProposal): boolean => {
   try {
     host.defineTheme(proposal);
-    return { proposal, validated: true };
+    return true;
   } catch {
-    const { colors: _dropped, ...rest } = proposal;
-    host.defineTheme(rest);
-    return { proposal: rest, validated: true };
+    return false;
   }
-}
+};

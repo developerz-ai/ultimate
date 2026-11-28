@@ -109,6 +109,15 @@ describe('proposeRadius / proposeMotion', () => {
     expect(proposed.easing?.['in-out']).toBe('cubic-bezier(0.42, 0, 0.58, 1)');
   });
 
+  test('a curve point that is not a plain decimal is never proposed: 1e+23 is a refusal, not a tempo', () => {
+    const proposed = proposeMotion([
+      motion({ easing: 'cubic-bezier(0.5, 1.23e+23, 0.5, 1)' }),
+      motion({ easing: 'cubic-bezier(0.5, 123456789012, 0.5, 1)' }),
+    ]);
+    expect(proposed.easing).toBeUndefined();
+    expect(() => defineTheme({ motion: proposed })).not.toThrow();
+  });
+
   test('a loop and a zero duration never set the tempo', () => {
     expect(
       proposeMotion([motion({ trigger: 'loop', durationMs: 9000 }), motion({ durationMs: 0 })])

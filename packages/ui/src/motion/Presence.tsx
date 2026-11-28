@@ -55,7 +55,12 @@ export function Presence<T>(props: PresenceProps<T>): JSX.Element {
       fill: kind === 'exit' ? 'both' : 'backwards',
     });
   };
-  const view = presenceView<T>(props.when, { play }, setState, {
+  // A wrapper that has left the document is never animated again: the next one is a new node.
+  const publish = (next: PresenceState<T>): void => {
+    if (next.shown === null) node = undefined;
+    setState(next);
+  };
+  const view = presenceView<T>(props.when, { play }, publish, {
     exitBeforeEnter: props.exitBeforeEnter,
     appear: props.appear,
     onExit: () => props.onExit?.(),
@@ -63,11 +68,14 @@ export function Presence<T>(props: PresenceProps<T>): JSX.Element {
   setState(view.state());
 
   rt.createEffect(() => view.set(props.when));
-  rt.createEffect(() => view.mounted());
   rt.onCleanup(() => view.dispose());
 
+  // The enter starts HERE, on the wrapper just built — never from the effect that flipped `when`,
+  // which runs before Solid has built it (the first open found no node and popped in; later ones
+  // animated the detached wrapper of the last exit).
   const ref = (el: HTMLElement): void => {
     node = el;
+    view.mounted();
   };
   // Three reads, so a phase change rewrites one attribute and a swapped value only the content —
   // the wrapper itself is rebuilt only when it enters the document, never mid-animation.
@@ -111,5 +119,7 @@ export function Presence<T>(props: PresenceProps<T>): JSX.Element {
   };
 
   // The branch inside the JSX: in an island the body runs once.
-  return <>{present() ? wrap() : null}</>;
+  // An accessor child, not an expression: Solid inserts it reactively either way, and the server's
+  // inert factory (and `nodesOf`) call it when walked, so the branch read is always the current one.
+  return <>{() => (present() ? wrap() : null)}</>;
 }

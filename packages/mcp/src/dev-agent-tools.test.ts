@@ -131,6 +131,22 @@ describe('ui.research', () => {
     expect(asked).toEqual([]);
   });
 
+  test("the server's AbortSignal reaches the host, so a cancelled call stops launching browsers", async () => {
+    const signals: unknown[] = [];
+    const tool = agentTools(
+      agentHostOf({
+        researchDesign: async (_input, signal) => {
+          signals.push(signal);
+          return {};
+        },
+      }),
+      { ...SCOPES, test: DEV_SCOPES.test },
+    ).find((entry) => entry.name === 'ui.research');
+    const controller = new AbortController();
+    await tool?.handle({ urls: ['https://example.com/'] }, caller, controller.signal);
+    expect(signals).toEqual([controller.signal]);
+  });
+
   test('a catalog built without the dev:test scope carries no ui.research', () => {
     expect(agentTools(agentHostOf({}), SCOPES).map((tool) => tool.name)).not.toContain(
       'ui.research',

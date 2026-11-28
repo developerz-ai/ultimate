@@ -12,7 +12,7 @@ import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
 import { cdpShotDriver } from './cdp-shot-driver';
 import type { DesignDriverFor } from './cmd-design-capture';
 import { DESIGN_DIR, DESIGN_VIEWPORTS } from './cmd-design-paths';
-import { type ResearchedReference, researchDesign, researchJson } from './cmd-design-run';
+import { type ResearchOutcome, researchDesign, researchJson } from './cmd-design-run';
 import { designSpec } from './cmd-design-spec';
 import { loadThemeHost } from './cmd-design-theme';
 import { designHostPolicy, readDesignAllowHosts } from './cmd-design-url';
@@ -59,12 +59,12 @@ export interface DesignRunInput {
   readonly driver?: ((viewport: ShotViewport) => Promise<ShotDriver>) | undefined;
   readonly resolve?: DialResolve | undefined;
   readonly trustedHosts?: readonly string[] | undefined;
+  /** `ui.research`'s cancellation: no browser is launched, and nothing published, after it. */
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** The one body behind the command and `ui.research`. */
-export async function runDesignResearch(
-  input: DesignRunInput,
-): Promise<readonly ResearchedReference[]> {
+export async function runDesignResearch(input: DesignRunInput): Promise<ResearchOutcome> {
   const driverFor: DesignDriverFor = async (viewport, dialScreen) => {
     if (input.driver !== undefined) return input.driver(viewport);
     // The same choice `x shot` makes, from the environment: a local Chrome or an attach URL.
@@ -91,6 +91,7 @@ export async function runDesignResearch(
     driverFor,
     themeHost: await loadThemeHost(),
     now: () => new Date(),
+    signal: input.signal,
   });
 }
 
@@ -113,24 +114,26 @@ export function designListResult(): CommandResult {
   };
 }
 
-export function designResult(
-  references: readonly ResearchedReference[],
-  out: string,
-): CommandResult {
+export function designResult(outcome: ResearchOutcome, out: string): CommandResult {
   return {
     ok: true,
     command: 'design',
-    summary: msg('cli.design.summary', { count: references.length, out }),
-    lines: references.flatMap((reference) => [
-      msg('cli.design.reference', { url: reference.url, dir: reference.dir }),
-      msg('cli.design.facts', {
-        colors: reference.colors,
-        animations: reference.animations,
-        refused: reference.refused,
-      }),
-      ...(reference.validated ? [] : [msg('cli.design.unvalidated')]),
-    ]),
-    data: researchJson(references),
+    summary: msg('cli.design.summary', { count: outcome.references.length, out }),
+    lines: [
+      ...outcome.references.flatMap((reference) => [
+        msg('cli.design.reference', { url: reference.url, dir: reference.dir }),
+        msg('cli.design.facts', {
+          colors: reference.colors,
+          animations: reference.animations,
+          refused: reference.refused,
+        }),
+        ...(reference.validated ? [] : [msg('cli.design.unvalidated')]),
+      ]),
+      ...outcome.skipped.map((entry) =>
+        msg('cli.design.skipped', { url: entry.url, code: entry.code }),
+      ),
+    ],
+    data: researchJson(outcome),
   };
 }
 
@@ -163,7 +166,7 @@ export const designCommand: CliCommand = {
     const allowHosts = readDesignAllowHosts(flagString(ctx.args, 'allow-hosts'));
     const flag = flagString(ctx.args, 'out');
     const outDir = flag === undefined ? join(ctx.cwd, DESIGN_DIR) : resolve(ctx.cwd, flag);
-    const references = await runDesignResearch({
+    const outcome = await runDesignResearch({
       urls,
       outDir,
       env: ctx.env,
@@ -172,6 +175,6 @@ export const designCommand: CliCommand = {
       allowHosts,
       timeoutMs,
     });
-    return designResult(references, outDir);
+    return designResult(outcome, outDir);
   },
 };

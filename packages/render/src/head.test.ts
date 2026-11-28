@@ -3,6 +3,7 @@
 // merge/dedupe order, the tag renderer's escaping rules, and the inlined theme script's guard.
 
 import { describe, expect, test } from 'bun:test';
+import { MOTION_STORAGE_KEY } from '@ultimat3/core';
 import type { RouteMeta } from '@ultimat3/seo';
 import { BudgetExceededError } from './errors';
 import {
@@ -345,6 +346,45 @@ describe('themeScript', () => {
         new TextEncoder().encode(themeScriptBody({ fallback })).byteLength,
       ).toBeLessThanOrEqual(THEME_SCRIPT_MAX_BYTES);
     }
+  });
+});
+
+describe('themeScript — the reader’s motion pause, before first paint', () => {
+  /** Run the body against a document and a storage that answer only what they were given. */
+  const run = (stored: Record<string, string>, throwing = false): Map<string, string> => {
+    const attrs = new Map<string, string>();
+    const document = {
+      documentElement: { setAttribute: (k: string, v: string) => attrs.set(k, v) },
+    };
+    const localStorage = {
+      getItem: (key: string) => {
+        if (throwing) throw new TypeError('storage refused');
+        return stored[key] ?? null;
+      },
+    };
+    const matchMedia = () => ({ matches: false });
+    new Function('document', 'localStorage', 'matchMedia', themeScriptBody())(
+      document,
+      localStorage,
+      matchMedia,
+    );
+    return attrs;
+  };
+
+  test('a stored pause stamps html[data-motion="paused"], under the key MotionToggle writes', () => {
+    expect(MOTION_STORAGE_KEY).toBe('ultimate.motion');
+    expect(run({ [MOTION_STORAGE_KEY]: 'paused' }).get('data-motion')).toBe('paused');
+  });
+
+  test('no stored pause, or any other value, stamps nothing', () => {
+    expect(run({}).has('data-motion')).toBe(false);
+    expect(run({ [MOTION_STORAGE_KEY]: 'yes' }).has('data-motion')).toBe(false);
+  });
+
+  test('a storage that throws still leaves the theme default and stamps no pause', () => {
+    const attrs = run({}, true);
+    expect(attrs.get('data-theme-default')).toBe('system');
+    expect(attrs.has('data-motion')).toBe(false);
   });
 });
 

@@ -22,8 +22,8 @@ describe('unit · shipped guard · raw-motion-script', () => {
       ['X_RAW_MOTION_SCRIPT', `${FILE}:1`],
       ['X_RAW_MOTION_SCRIPT', `${FILE}:2`],
     ]);
-    expect(report.warnings[1]?.fix).toStartWith("delay: motionTiming('fast') — ");
-    expect(report.warnings[2]?.fix).toStartWith("motionTiming('base', 'out') — ");
+    expect(report.warnings[1]?.fix).toStartWith("delay: motionTiming('fast').duration — ");
+    expect(report.warnings[2]?.fix).toStartWith("easing: motionTiming('base', 'out').easing — ");
   });
 
   test('stylesheets stay raw-motion’s: a scss literal is not this guard’s finding', async () => {
@@ -31,5 +31,13 @@ describe('unit · shipped guard · raw-motion-script', () => {
       'apps/web/site/page.module.scss': '.a { transition: opacity 120ms; }\n',
     });
     expect([...report.findings, ...report.warnings]).toEqual([]);
+  });
+
+  test('a comment-like string hides nothing: the call after it is still read', async () => {
+    const report = await shippedGuardReport('raw-motion-script', {
+      [FILE]:
+        "const g = 'dist/*'; el.animate(k, { duration: 300 }); /** doc */\nconst u = '//cdn'; el.animate(k, { delay: 90 });\n",
+    });
+    expect(report.warnings.map((finding) => finding.at)).toEqual([`${FILE}:1`, `${FILE}:2`]);
   });
 });

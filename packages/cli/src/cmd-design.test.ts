@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 // why: Bun exposes no tmpdir().
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -14,7 +14,8 @@ import { defineTheme } from '@ultimat3/ui';
 import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import type { ShotDriver } from './browser-launcher-port';
 import { designCommand, runDesignResearch } from './cmd-design';
-import { referenceShotName } from './cmd-design-paths';
+import { pageRef } from './cmd-design-capture';
+import { designSlug, referenceShotName } from './cmd-design-paths';
 import { designSpec } from './cmd-design-spec';
 import type { CommandContext } from './command';
 import { DESIGN_PASS } from './design-extract-script';
@@ -90,7 +91,9 @@ const codeOf = async (run: () => Promise<unknown>): Promise<string> => {
 describe('runDesignResearch', () => {
   test('writes the four shots and the four JSON artefacts, and the proposal is one defineTheme accepts', async () => {
     const out = scratch();
-    const [reference] = await runDesignResearch({
+    const {
+      references: [reference],
+    } = await runDesignResearch({
       urls: ['https://example.com/'],
       outDir: out,
       env: {},
@@ -139,7 +142,7 @@ describe('runDesignResearch', () => {
       ['https://example.com/b', []],
       ['https://example.com/c', []],
     ] as const;
-    const references = await runDesignResearch({
+    const { references } = await runDesignResearch({
       urls: ['https://example.com/'],
       outDir: scratch(),
       env: {},
@@ -147,10 +150,11 @@ describe('runDesignResearch', () => {
       resolve: publicDns,
       driver: async () => site(pages),
     });
+    // A followed page is named by origin and hash: its path is the page's own text.
     expect(references.map((r) => [r.url, r.followedFrom])).toEqual([
       ['https://example.com/', null],
-      ['https://example.com/a', 'https://example.com/'],
-      ['https://example.com/b', 'https://example.com/'],
+      [pageRef('https://example.com/a'), 'https://example.com/'],
+      [pageRef('https://example.com/b'), 'https://example.com/'],
     ]);
   });
 
@@ -225,5 +229,146 @@ describe('x design research', () => {
         ),
       ),
     ).toBe('X_DESIGN_URL_REFUSED');
+  });
+});
+
+describe('runDesignResearch under concurrency, cancellation and partial failure', () => {
+  test('an aborted call is X_ABORTED before any browser opens', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    expect(
+      await codeOf(() =>
+        runDesignResearch({
+          urls: ['https://example.com/'],
+          outDir: scratch(),
+          env: {},
+          resolve: publicDns,
+          signal: controller.signal,
+          driver: () => expect.unreachable('a browser opened for a cancelled call'),
+        }),
+      ),
+    ).toBe('X_ABORTED');
+  });
+
+  test('an abort mid-capture closes the browser, opens no further one and publishes nothing', async () => {
+    const controller = new AbortController();
+    const out = scratch();
+    let opened = 0;
+    let closed = 0;
+    const base = site([['https://example.com/', []]]);
+    const driver: ShotDriver = {
+      name: base.name,
+      open: async (init) => {
+        opened += 1;
+        const session = await base.open(init);
+        return {
+          page: {
+            ...session.page,
+            screenshot: async (options) => {
+              controller.abort();
+              return session.page.screenshot(options);
+            },
+          },
+          close: async () => {
+            closed += 1;
+          },
+        };
+      },
+    };
+    expect(
+      await codeOf(() =>
+        runDesignResearch({
+          urls: ['https://example.com/'],
+          outDir: out,
+          env: {},
+          resolve: publicDns,
+          signal: controller.signal,
+          driver: async () => driver,
+        }),
+      ),
+    ).toBe('X_ABORTED');
+    expect(opened).toBe(1);
+    expect(closed).toBeGreaterThanOrEqual(1);
+    expect(readdirSync(out)).toEqual([]);
+  });
+
+  test('a failed run leaves the previous reference directory whole, never a mix of two runs', async () => {
+    const out = scratch();
+    await runDesignResearch({
+      urls: ['https://example.com/'],
+      outDir: out,
+      env: {},
+      resolve: publicDns,
+      driver: async () => site([['https://example.com/', []]]),
+    });
+    const dir = join(out, 'example-com');
+    const before = readdirSync(dir).sort();
+    let calls = 0;
+    const flaky = async (): Promise<ShotDriver> => {
+      calls += 1;
+      // The second viewport's browser fails: the narrower half-run must not land.
+      if (calls === 2) return site([]);
+      return site([['https://example.com/', []]]);
+    };
+    expect(
+      await codeOf(() =>
+        runDesignResearch({
+          urls: ['https://example.com/'],
+          outDir: out,
+          env: {},
+          resolve: publicDns,
+          driver: flaky,
+        }),
+      ),
+    ).toBe('X_DESIGN_REFERENCE_UNREACHABLE');
+    expect(readdirSync(dir).sort()).toEqual(before);
+    expect(readdirSync(out)).toEqual(['example-com']);
+  });
+
+  test('a --follow link that fails is recorded and the run goes on; the typed reference still fails hard', async () => {
+    const out = scratch();
+    const outcome = await runDesignResearch({
+      urls: ['https://example.com/'],
+      outDir: out,
+      env: {},
+      follow: 2,
+      resolve: publicDns,
+      driver: async () =>
+        site([
+          ['https://example.com/', ['https://example.com/gone', 'https://example.com/b']],
+          ['https://example.com/b', []],
+        ]),
+    });
+    expect(outcome.references.map((r) => r.url)).toEqual([
+      'https://example.com/',
+      pageRef('https://example.com/b'),
+    ]);
+    expect(outcome.skipped).toEqual([
+      expect.objectContaining({
+        url: pageRef('https://example.com/gone'),
+        followedFrom: 'https://example.com/',
+        code: 'X_DESIGN_REFERENCE_UNREACHABLE',
+      }),
+    ]);
+  });
+
+  test('two typed URLs that share a slug get two directories, the second with a hash suffix', async () => {
+    const out = scratch();
+    const outcome = await runDesignResearch({
+      urls: ['https://example.com/docs', 'https://example.com/docs?tab=2'],
+      outDir: out,
+      env: {},
+      resolve: publicDns,
+      driver: async () =>
+        site([
+          ['https://example.com/docs', []],
+          ['https://example.com/docs?tab=2', []],
+        ]),
+    });
+    const [first, second] = outcome.references.map((r) => r.dir);
+    expect(first).toBe(join(out, designSlug('https://example.com/docs')));
+    expect(second).not.toBe(first);
+    expect(second?.startsWith(`${first ?? ''}-`)).toBe(true);
+    expect(readdirSync(out).length).toBe(2);
   });
 });

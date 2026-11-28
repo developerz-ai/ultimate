@@ -106,6 +106,52 @@ describe('unit · shader mount', () => {
     expect(link.canvas.listening()).toBe(0);
   });
 
+  test('a failed compile or link releases the context now, not at GC', () => {
+    const compile = setup();
+    if (compile.canvas.gl) compile.canvas.gl.compiles = false;
+    mount(compile);
+    expect(compile.canvas.gl?.count('loseContext')).toBe(1);
+
+    const link = setup();
+    if (link.canvas.gl) link.canvas.gl.links = false;
+    mount(link);
+    expect(link.canvas.gl?.count('loseContext')).toBe(1);
+  });
+
+  test('a context lost DURING the build is lost, not broken: it recovers on restore', () => {
+    const s = setup();
+    const gl = s.canvas.gl ?? expect.unreachable('the fake has a context');
+    // A lost context fails every compile; the cause is the loss, not the source.
+    gl.compiles = false;
+    gl.lost = true;
+    const result = mount(s);
+    expect(result.ok).toBe(true);
+    expect(s.lost).toEqual(['lost']);
+    expect(gl.count('loseContext')).toBe(0);
+    s.host.frame();
+    expect(gl.count('drawArrays')).toBe(0);
+
+    gl.compiles = true;
+    gl.lost = false;
+    s.canvas.dispatch('webglcontextrestored');
+    expect(s.lost).toEqual(['lost', 'restored']);
+    s.host.frame();
+    expect(gl.count('drawArrays')).toBe(1);
+  });
+
+  test('a context already lost at mount waits for its restore instead of giving up', () => {
+    const s = setup();
+    const gl = s.canvas.gl ?? expect.unreachable('the fake has a context');
+    gl.lost = true;
+    expect(mount(s).ok).toBe(true);
+    expect(s.lost).toEqual(['lost']);
+    expect(s.canvas.listening()).toBe(2);
+    gl.lost = false;
+    s.canvas.dispatch('webglcontextrestored');
+    s.host.frame();
+    expect(gl.count('drawArrays')).toBe(1);
+  });
+
   test('context loss stops drawing and asks the browser for it back; restore recompiles', () => {
     const s = setup();
     mount(s);

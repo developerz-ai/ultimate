@@ -4,6 +4,9 @@
 import type { EffectHost } from '../effect-host';
 import { countFrame } from './count-up-view';
 
+/** The longest one frame may advance the tween: a stopped-and-resumed loop does not jump. */
+const MAX_STEP_MS = 100;
+
 export interface CountRun {
   readonly from: number;
   readonly to: number;
@@ -27,16 +30,30 @@ export function runCountUp(
   host: EffectHost,
 ): () => void {
   if (run.ms === 0 || !host.motion.allowed()) return () => {};
-  const start = host.now();
   node.textContent = run.format(run.from);
+  // The clock starts on the first tick, not at mount: a counter below the fold is not frameLoop's
+  // to run until it scrolls in, and a clock started earlier would have spent the whole tween.
+  let elapsed = 0;
+  let last: number | undefined;
   let stop: (() => void) | undefined;
+  const finish = (): void => {
+    stop?.();
+    node.textContent = run.format(run.to);
+  };
   stop = host.motion.loop(() => {
-    const elapsed = host.now() - start;
+    const now = host.now();
+    // Accumulated, capped per frame: time spent paused or offscreen is not time spent counting.
+    elapsed += last === undefined ? 0 : Math.min(now - last, MAX_STEP_MS);
+    last = now;
     node.textContent = run.format(countFrame(run.from, run.to, elapsed, run.ms));
     if (elapsed >= run.ms) stop?.();
   }, el);
+  // A pause (MotionToggle, reduced motion) stops the loop where it stands; the figure must not.
+  const unsubscribe = host.motion.onChange(() => {
+    if (!host.motion.allowed()) finish();
+  });
   return () => {
-    stop?.();
-    node.textContent = run.format(run.to);
+    unsubscribe();
+    finish();
   };
 }

@@ -122,7 +122,7 @@ export interface UiCapabilities {
    * the page is somebody else's. Spread into `DevCapabilities` by `mcp-host.ts`, where
    * `@ultimat3/mcp`'s `DevAgentHost.researchDesign` reads it.
    */
-  researchDesign(research: UiResearchInput): Promise<JsonValue>;
+  researchDesign(research: UiResearchInput, signal?: AbortSignal): Promise<JsonValue>;
   /** Stops the scratch server, if one was booted. Never boots one in order to stop it. */
   close(): Promise<void>;
 }
@@ -211,16 +211,17 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
     // files needs neither a server nor a browser.
     diffShots: (diff) => diffShots({ root }, diff),
 
-    async researchDesign(research) {
-      const references = await runDesignResearch({
+    async researchDesign(research, signal) {
+      const outcome = await runDesignResearch({
         urls: research.urls,
         follow: research.follow,
         outDir: join(root, DESIGN_DIR),
         env,
         // The injected test browser when there is one; otherwise the screened CDP driver.
         ...(input.driver === undefined ? {} : { driver: input.driver }),
+        signal,
       });
-      return researchJson(references);
+      return researchJson(outcome);
     },
 
     async shotIsland(island) {

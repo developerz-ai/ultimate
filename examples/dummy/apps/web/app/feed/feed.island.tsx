@@ -172,7 +172,7 @@ function Feed(props: FeedIslandProps): JSX.Element {
                 label={props.labels.list}
                 estimate={ROW_ESTIMATE_PX}
                 renderItem={(post: FeedRow) => (
-                  <article ref={revealRow}>
+                  <article ref={(row: HTMLElement) => onCleanup(revealRow(row))}>
                     <a href={postHref(post)}>{post.title}</a>
                     <DateTime value={post.publishedAt ?? post.createdAt} format={dayOnly} />
                     <p>{post.excerpt}</p>

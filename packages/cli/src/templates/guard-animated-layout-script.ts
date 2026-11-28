@@ -17,8 +17,8 @@ const source =
 // \`x verify\` discovers every file in \`guards/\` and runs its \`guard\` inside the \`boundaries\`
 // step — nothing registers this file, so nothing can forget to. Delete it to drop the rule.
 //
-// Read: a layout property (\`width\`, \`marginLeft\`, \`'box-shadow'\`) as a key of what a \`.animate(\`
-// call is given, in a script outside tests. REPORT ONLY (\`severity: 'warning'\`).
+// Read: a layout property (\`width\`, \`marginLeft\`, \`'box-shadow'\`) as a KEY of the keyframes a
+// \`.animate(\` call is given (its first argument), in a script outside tests. REPORT ONLY (\`severity: 'warning'\`).
 
 import type { Finding, Guard } from '@ultimat3/cli';
 
@@ -45,8 +45,41 @@ const isLayoutProperty = (property: string): boolean =>
   /^(?:min|max)-(?:width|height)$/.test(property);
 
 ${TS_ANIMATE_SCAN_SOURCE}
-/** A keyframe key: \`width\`, \`'margin-left'\`, \`marginLeft\` — spelled either way in a script. */
-const KEYFRAME_KEY = /(?<![\\w$.])(['"]?)([A-Za-z][\\w-]*)\\1\\s*:/g;
+/**
+ * A keyframe key: \`width\`, \`'margin-left'\`, \`marginLeft\` — spelled either way in a script, and
+ * only in KEY position (after \`{\` or \`,\`): \`up ? top : bottom\` is a value, not a key.
+ */
+const KEYFRAME_KEY = /(?<=[{,]\\s*)(['"]?)([A-Za-z][\\w-]*)\\1\\s*:(?!:)/g;
+
+/** The text up to a call's first top-level comma: the keyframes, never the options object. */
+const firstArgument = (body: string): string => {
+  let depth = 0;
+  let quote = '';
+  for (let i = 0; i < body.length; i += 1) {
+    const ch = body[i] ?? '';
+    if (quote !== '') {
+      if (ch === '\\\\') i += 1;
+      else if (ch === quote) quote = '';
+    } else if (ch === "'" || ch === '"' || ch === '\`') quote = ch;
+    else if ('([{'.includes(ch)) depth += 1;
+    else if (')]}'.includes(ch)) depth -= 1;
+    else if (ch === ',' && depth === 0) return body.slice(0, i);
+  }
+  return body;
+};
+
+/** Whether \`index\` sits inside a string literal; a quoted key's opening quote does not. */
+const insideString = (text: string, index: number): boolean => {
+  let quote = '';
+  for (let i = 0; i < index; i += 1) {
+    const ch = text[i] ?? '';
+    if (quote !== '') {
+      if (ch === '\\\\') i += 1;
+      else if (ch === quote) quote = '';
+    } else if (ch === "'" || ch === '"' || ch === '\`') quote = ch;
+  }
+  return quote !== '';
+};
 const kebab = (key: string): string => key.replaceAll(/[A-Z]/g, (ch) => \`-\${ch.toLowerCase()}\`);
 
 /** Pure — the caller does the I/O — so the rule is testable without a filesystem. */
@@ -56,7 +89,9 @@ export function animatedLayoutScripts(files: readonly ScriptFile[]): readonly Fi
     if (!isAppScript(file.path)) continue;
     const text = blankScriptComments(file.source);
     for (const call of animateCalls(text)) {
-      for (const match of call.body.matchAll(KEYFRAME_KEY)) {
+      const keyframes = firstArgument(call.body);
+      for (const match of keyframes.matchAll(KEYFRAME_KEY)) {
+        if (insideString(keyframes, match.index)) continue;
         const property = kebab(match[2] ?? '');
         if (!isLayoutProperty(property)) continue;
         const at = \`\${file.path}:\${scriptLineOf(text, call.start + match.index)}\`;
@@ -99,6 +134,23 @@ unitTest('a layout key in .animate( is refused in any spelling, and layout() is 
   expect(findings[0]?.code).toBe('${CODE}');
   expect(findings[0]?.fix).toStartWith('animate the box with layout() — ');
   expect(findings[0]?.at).toBe('apps/web/app/feed/card.island.tsx:1');
+});
+
+unitTest('only keyframe keys count: values, strings and the options object are silent', () => {
+  const silent = [
+    'el.animate({ transform: up ? top : bottom }, { duration: t });',
+    "el.animate({ id: 'width: grow' }, { duration: t });",
+    'el.animate({ opacity: 1 }, { duration: t, top: 1, width: 2 });',
+    "el.animate({ label: 'a, left: 1' }, o);",
+  ];
+  for (const source of silent) expect(animatedLayoutScripts(script(source))).toEqual([]);
+  const array = script('el.animate([{ left: 0 }, { left: 9 }], { duration: t });');
+  expect(animatedLayoutScripts(array)).toHaveLength(2);
+});
+
+unitTest('a comment-like string does not hide the call after it', () => {
+  const source = "const g = 'dist/*'; el.animate({ width: 1 }, o); /** doc */";
+  expect(animatedLayoutScripts(script(source))).toHaveLength(1);
 });
 
 unitTest('transform, opacity, other calls, a comment and a test file are silent', () => {

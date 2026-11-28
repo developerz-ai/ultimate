@@ -1,4 +1,4 @@
-// 31.52.0: CLAUDE.md names the motion and effect guards, the Visual quality section and the agent
+// 31.53.0: CLAUDE.md names the motion and effect guards, the Visual quality section and the agent
 // kit that replaced `.claude/commands`. Prose: each edit lands where the text stands as `x new` wrote
 // it, within the brief's byte budget; one that cannot be placed is reported with the row to add.
 
@@ -61,7 +61,7 @@ const swap =
 
 export const codemod: Codemod = {
   id: 'docs-visual-quality',
-  since: '31.52.0',
+  since: '31.53.0',
   summary:
     "CLAUDE.md names the motion and effect guards, the Visual quality section and the agent kit's skills",
   async run(app): Promise<CodemodResult> {

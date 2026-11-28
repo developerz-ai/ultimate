@@ -62,3 +62,39 @@ describe('revealRow', () => {
     expect(starts).toEqual([0, 0]);
   });
 });
+
+describe('revealRow, leaving before it was ever seen', () => {
+  const log: string[] = [];
+  class FakeObserver {
+    observe(): void {
+      log.push('observe');
+    }
+    unobserve(): void {
+      log.push('unobserve');
+    }
+    disconnect(): void {
+      log.push('disconnect');
+    }
+  }
+  const real = Object.getOwnPropertyDescriptor(globalThis, 'IntersectionObserver');
+
+  beforeEach(() => {
+    log.length = 0;
+    Object.defineProperty(globalThis, 'IntersectionObserver', {
+      value: FakeObserver,
+      configurable: true,
+      writable: true,
+    });
+  });
+  afterEach(() => {
+    if (real === undefined) Reflect.deleteProperty(globalThis, 'IntersectionObserver');
+    else Object.defineProperty(globalThis, 'IntersectionObserver', real);
+  });
+
+  test('the stop it returns releases the watch, so a dropped row leaks no observer', () => {
+    const stop = revealRow(row([]));
+    expect(log).toEqual(['observe']);
+    stop();
+    expect(log).toEqual(['observe', 'unobserve', 'disconnect']);
+  });
+});

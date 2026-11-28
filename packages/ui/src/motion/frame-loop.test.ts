@@ -22,7 +22,9 @@ function harness(start: { reduced?: boolean; paused?: boolean; hidden?: boolean 
       return () => motionWatchers.delete(fn);
     },
   };
+  const reported: unknown[] = [];
   const host: FrameHost = {
+    report: (error) => reported.push(error),
     request: frames.request,
     cancel: (id) => frames.cancel(id as number),
     now: () => state.now,
@@ -52,6 +54,7 @@ function harness(start: { reduced?: boolean; paused?: boolean; hidden?: boolean 
     frames,
     step,
     observed: () => observed,
+    reported,
     setMotion(next: { reduced?: boolean; paused?: boolean }) {
       Object.assign(state, next);
       for (const fn of motionWatchers) fn();
@@ -157,3 +160,20 @@ describe('frameLoop', () => {
 });
 
 function h0(): void {}
+
+describe('frameLoop — a tick that throws', () => {
+  test('the loop survives it, and the throw is reported, never swallowed', () => {
+    const h = harness();
+    const boom = new TypeError('tick failed');
+    let calls = 0;
+    frameLoopOn(h.host, () => {
+      calls += 1;
+      if (calls === 1) throw boom;
+    });
+    h.step();
+    h.step();
+    expect(calls).toBe(2);
+    expect(h.reported).toEqual([boom]);
+    expect(h.frames.pending()).toBe(1);
+  });
+});

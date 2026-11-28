@@ -49,4 +49,11 @@ describe('unit · shipped guard · motion-adapter', () => {
     });
     expect([...report.findings, ...report.warnings]).toEqual([]);
   });
+
+  test('a comment-like string hides nothing: the import after it is still refused', async () => {
+    const report = await shippedGuardReport('motion-adapter', {
+      [FILE]: "const u = '//cdn'; const t = require('three'); /** doc */\n",
+    });
+    expect(report.warnings).toHaveLength(1);
+  });
 });

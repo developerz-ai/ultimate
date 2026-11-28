@@ -72,8 +72,8 @@ describe('screenReference', () => {
 describe('browserDialScreen', () => {
   test('a name resolving inward is refused, a public one released, a literal left to the floor', async () => {
     const screen = browserDialScreen(designHostPolicy({ resolve }));
-    expect(await screen('http://inward.test/x.png')).toBe(true);
-    expect(await screen('https://cdn.example.com/a.css')).toBe(false);
+    expect(await screen('http://inward.test/x.png')).toBe('private');
+    expect(await screen('https://cdn.example.com/a.css')).toBeUndefined();
     expect(screen('http://10.0.0.1/')).toBeUndefined();
     expect(screen('data:text/plain,hi')).toBeUndefined();
   });
@@ -91,6 +91,37 @@ describe('browserDialScreen', () => {
     await screen('https://cdn.example.com/a.css');
     await screen('https://cdn.example.com/b.css');
     expect(asked).toBe(1);
+  });
+
+  test('a resolver failure is unresolved, not private, and is asked again next time', async () => {
+    let asked = 0;
+    const screen = browserDialScreen(
+      designHostPolicy({
+        resolve: async (host) => {
+          asked += 1;
+          if (asked === 1) throw new TypeError('SERVFAIL');
+          return resolve(host);
+        },
+      }),
+    );
+    expect(await screen('https://cdn.example.com/a.css')).toBe('unresolved');
+    expect(await screen('https://cdn.example.com/a.css')).toBeUndefined();
+    expect(asked).toBe(2);
+  });
+
+  test('a name with no address is unresolved, and not memoised either', async () => {
+    let asked = 0;
+    const screen = browserDialScreen(
+      designHostPolicy({
+        resolve: async () => {
+          asked += 1;
+          return [];
+        },
+      }),
+    );
+    expect(await screen('https://gone.example/')).toBe('unresolved');
+    expect(await screen('https://gone.example/')).toBe('unresolved');
+    expect(asked).toBe(2);
   });
 });
 
@@ -134,5 +165,24 @@ describe('followTargets', () => {
       'https://example.com/b',
       'https://docs.example.org/d',
     ]);
+  });
+});
+
+describe('followTargets dedupes on the directory a page would be written to', () => {
+  test('a trailing slash, a query or /a-b beside /a/b is one slug: only the first is followed, never the reference itself', () => {
+    expect(
+      followTargets(
+        'https://example.com/docs',
+        [
+          'https://example.com/docs/',
+          'https://example.com/docs?tab=2',
+          'https://example.com/a-b',
+          'https://example.com/a/b',
+          'https://example.com/c',
+        ],
+        [],
+        5,
+      ),
+    ).toEqual(['https://example.com/a-b', 'https://example.com/c']);
   });
 });

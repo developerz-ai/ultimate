@@ -16,9 +16,13 @@ const flush = (): void => {
   stagger(rows, PRESENCE_ENTER, { each: 'fast', duration: 'base', easing: 'gentle' });
 };
 
-/** Hand a rendered row to the reveal; returns nothing to clean up — a removed row just stops. */
-export function revealRow(row: Element): void {
-  inView(row, () => {
+/**
+ * Hand a rendered row to the reveal. Returns the stop: a once-watch is released only on
+ * intersection, so a row the list drops before it was seen must call it (from `onCleanup`), or
+ * its observer and node stay in the shared pool.
+ */
+export function revealRow(row: Element): () => void {
+  return inView(row, () => {
     if (batch.length === 0) queueMicrotask(flush);
     batch.push(row);
     return undefined;

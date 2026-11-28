@@ -32,4 +32,12 @@ describe('acceptedProposal', () => {
     });
     expect(acceptedProposal(refused, undefined).validated).toBe(false);
   });
+
+  test('a proposal defineTheme refuses even without colours becomes {}, unvalidated — never a thrown run', () => {
+    const host = themeHostOf(ui);
+    const bad = {
+      motion: { easing: { out: 'cubic-bezier(0.5, 1.2345678901234569e+23, 0.5, 1)' } },
+    };
+    expect(acceptedProposal(bad, host)).toEqual({ proposal: {}, validated: false });
+  });
 });

@@ -38,14 +38,14 @@ describe('screenedConnection', () => {
     const seen: string[] = [];
     const screened = screenedConnection(connection, {
       owns: (on) => on === 'page',
-      screen: (url) => (url.includes('inward') ? Promise.resolve(true) : undefined),
-      refused: (url) => refused.push(url),
+      screen: (url) => (url.includes('inward') ? Promise.resolve('private' as const) : undefined),
+      refused: (url, reason) => refused.push(`${reason} ${url}`),
     });
     screened.on('Fetch.requestPaused', (params) => seen.push(String(params['requestId'])));
     fire('Fetch.requestPaused', paused('http://inward.test/'), 'page');
     await tick();
     expect(seen).toEqual([]);
-    expect(refused).toEqual(['http://inward.test/']);
+    expect(refused).toEqual(['private http://inward.test/']);
     expect(sent).toEqual([
       {
         method: 'Fetch.failRequest',
@@ -60,7 +60,7 @@ describe('screenedConnection', () => {
     const seen: string[] = [];
     const screened = screenedConnection(connection, {
       owns: () => true,
-      screen: (url) => (url.includes('public') ? Promise.resolve(false) : undefined),
+      screen: (url) => (url.includes('public') ? Promise.resolve(undefined) : undefined),
       refused: () => undefined,
     });
     screened.on('Fetch.requestPaused', (params) => seen.push(String(params['requestId'])));
@@ -71,12 +71,13 @@ describe('screenedConnection', () => {
     expect(sent).toEqual([]);
   });
 
-  test('a screen that throws refuses: failing closed', async () => {
+  test('a screen that throws refuses as unresolved: failing closed, never called private', async () => {
     const { connection, sent, fire } = fakeConnection();
+    const reasons: string[] = [];
     const screened = screenedConnection(connection, {
       owns: () => true,
       screen: () => Promise.reject(new TypeError('resolver down')),
-      refused: () => undefined,
+      refused: (_url, reason) => reasons.push(reason),
     });
     screened.on('Fetch.requestPaused', () =>
       expect.unreachable('a refused request reached the watch'),
@@ -84,6 +85,7 @@ describe('screenedConnection', () => {
     fire('Fetch.requestPaused', paused('http://any.test/'), 'page');
     await tick();
     expect(sent.map((call) => call.method)).toEqual(['Fetch.failRequest']);
+    expect(reasons).toEqual(['unresolved']);
   });
 
   test("another session's pause and every other event pass through untouched", async () => {
@@ -91,7 +93,7 @@ describe('screenedConnection', () => {
     const seen: string[] = [];
     const screened = screenedConnection(connection, {
       owns: (on) => on === 'page',
-      screen: () => Promise.resolve(true),
+      screen: () => Promise.resolve('private' as const),
       refused: () => undefined,
     });
     screened.on('Fetch.requestPaused', (_params, on) => seen.push(`paused:${String(on)}`));

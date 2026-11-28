@@ -88,6 +88,23 @@ const isSpring = (easing: string): boolean =>
 
 const curveText = (points: readonly number[]): string => `cubic-bezier(${points.join(', ')})`;
 
+/** How far a curve may overshoot: past it a `y` is a page's typo or a probe, not a tempo. */
+const CURVE_Y_LIMIT = 10;
+const PLAIN_DECIMAL = /^-?\d+(?:\.\d+)?$/;
+
+/**
+ * A curve `defineTheme` will take as written: x values in [0, 1], every point a plain decimal (a
+ * page's `1.23e+23` prints as exponent notation, which no CSS curve pattern accepts) and no `y`
+ * past `CURVE_Y_LIMIT`. Anything else is dropped from the proposal, never repaired.
+ */
+const isProposableCurve = (points: readonly number[]): boolean => {
+  const [x1, y1, x2, y2] = points;
+  if (x1 === undefined || y1 === undefined || x2 === undefined || y2 === undefined) return false;
+  if (x1 < 0 || x1 > 1 || x2 < 0 || x2 > 1) return false;
+  if (Math.abs(y1) > CURVE_Y_LIMIT || Math.abs(y2) > CURVE_Y_LIMIT) return false;
+  return points.every((point) => PLAIN_DECIMAL.test(String(point)));
+};
+
 /** The weighted median: what most of the page actually waits. */
 function median(values: readonly { readonly value: number; readonly weight: number }[]): number {
   const sorted = [...values].sort((a, b) => a.value - b.value);
@@ -113,8 +130,8 @@ export function proposeMotion(motion: readonly ObservedMotion[]): MotionProposal
     const rung = snapDuration(m.durationMs);
     durations.set(rung, [...(durations.get(rung) ?? []), { value: m.durationMs, weight: m.count }]);
     const points = easingPoints(m.easing);
-    if (points === undefined || points[0] === undefined || points[2] === undefined) continue;
-    if (points[0] < 0 || points[0] > 1 || points[2] < 0 || points[2] > 1) continue;
+    if (points === undefined) continue;
+    if (!isProposableCurve(points)) continue;
     const token = snapEasing(points);
     const text = curveText(points);
     const counts = curves.get(token) ?? new Map<string, number>();

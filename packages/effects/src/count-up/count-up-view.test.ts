@@ -41,6 +41,18 @@ describe('countFormatter', () => {
   });
 });
 
+describe('an integer target never shows a fraction mid-count', () => {
+  test('frames are whole numbers when the final value is', () => {
+    expect(countFormatter(1000, 'en-US')(788.4)).toBe('788');
+  });
+  test('an explicit fraction option keeps the fraction', () => {
+    expect(countFormatter(10, 'en-US', { maximumFractionDigits: 1 })(7.84)).toBe('7.8');
+  });
+  test('a fractional target keeps the locale default', () => {
+    expect(countFormatter(2.5, 'en-US')(1.234)).toBe('1.234');
+  });
+});
+
 describe('countMs', () => {
   test('refuses negatives and NaN', () => {
     expect(() => countMs(-1)).toThrow(EffectsInvalidValueError);

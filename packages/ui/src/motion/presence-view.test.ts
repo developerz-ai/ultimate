@@ -91,6 +91,7 @@ describe('presenceView', () => {
   test('leaving mid-enter reverses the enter the same way', async () => {
     const { d, view } = harness<string>(false);
     view.set('a');
+    view.mounted();
     view.set(false);
     expect(d.log).toEqual(['play enter', 'reverse enter']);
     await d.finish();
@@ -100,6 +101,7 @@ describe('presenceView', () => {
   test('a stale run settling after a newer one started changes nothing', async () => {
     const { d, view } = harness<string>(false);
     view.set('a');
+    view.mounted();
     const first = d.runs[0];
     await d.finish();
     view.set(false);
@@ -114,6 +116,8 @@ describe('presenceView', () => {
     expect(view.state()).toEqual({ phase: 'exiting', shown: { value: 'a' } });
     await d.finish();
     expect(view.state()).toEqual({ phase: 'entering', shown: { value: 'b' } });
+    expect(d.log).toEqual(['play exit']);
+    view.mounted();
     expect(d.log).toEqual(['play exit', 'play enter']);
   });
 
@@ -143,5 +147,43 @@ describe('presenceView — swaps while leaving', () => {
     view.set('b');
     expect(d.log).toEqual(['play exit', 'reverse exit']);
     expect(view.state()).toEqual({ phase: 'entering', shown: { value: 'b' } });
+  });
+});
+
+describe('presenceView — the enter waits for its wrapper', () => {
+  test('showing from absent plays nothing until the new wrapper is mounted', async () => {
+    const { d, view } = harness<string>(false);
+    view.set('a');
+    expect(view.state()).toEqual({ phase: 'entering', shown: { value: 'a' } });
+    expect(d.log).toEqual([]);
+    view.mounted();
+    expect(d.log).toEqual(['play enter']);
+    await d.finish();
+    expect(view.state().phase).toBe('present');
+  });
+
+  test('hidden again before its wrapper mounted: gone at once, onExit told, no animation', () => {
+    const { d, view, exits } = harness<string>(false);
+    view.set('a');
+    view.set(false);
+    expect(view.state()).toEqual({ phase: 'absent', shown: null });
+    expect(exits()).toBe(1);
+    expect(d.log).toEqual([]);
+  });
+
+  test('exitBeforeEnter swap before the wrapper mounted: the queued value enters at once', () => {
+    const { view } = harness<string>(false, { exitBeforeEnter: true });
+    view.set('a');
+    view.set('b');
+    expect(view.state()).toEqual({ phase: 'entering', shown: { value: 'b' } });
+  });
+
+  test('an exit turned back is cancelled once at rest, so its held frame lets go', async () => {
+    const { d, view } = harness('a');
+    view.set(false);
+    view.set('a');
+    await d.finish();
+    expect(d.log).toEqual(['play exit', 'reverse exit', 'cancel exit']);
+    expect(view.state().phase).toBe('present');
   });
 });

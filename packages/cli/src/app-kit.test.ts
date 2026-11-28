@@ -89,6 +89,18 @@ describe('unit · app kit verdict', () => {
     expect(verdict.findings).toEqual([]);
   });
 
+  test('a command beside a skill that is off is not shadowed', async () => {
+    const verdict = await judgeKit(
+      diskOf({
+        [KIT_MARKER]: '{"off":["feature"]}',
+        '.claude/commands/feature.md': 'mine\n',
+        '.claude/agents/audit.md': 'audit v2\n',
+      }),
+      MANAGED,
+    );
+    expect(verdict.findings).toEqual([]);
+  });
+
   test('an unreadable marker is its own finding and judges nothing else', async () => {
     const verdict = await judgeKit(diskOf({ [KIT_MARKER]: '{"off": "feature"}' }), MANAGED);
     expect(verdict.findings.map((f) => [f.code, f.at])).toEqual([['X_KIT_DRIFT', KIT_MARKER]]);

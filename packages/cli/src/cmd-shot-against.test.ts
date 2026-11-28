@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove.
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 // why: Bun exposes no tmpdir().
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -15,6 +15,9 @@ import type { ShotRun } from './cmd-shot';
 import { planAgainst, runAgainst } from './cmd-shot-against';
 import type { ShotServer } from './shot-server';
 import type { ShotArtifacts, ShotVerdict } from './shot-verdict';
+
+/** Where a test's references live: the bound `planAgainst` holds a reference under. */
+const WITHIN = [tmpdir()];
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -58,7 +61,7 @@ describe('planAgainst', () => {
       [390, 'light'],
       [1440, 'dark'],
     ]);
-    const plan = planAgainst({ reference: dir });
+    const plan = planAgainst({ within: WITHIN, reference: dir });
     expect(plan.map((pair) => [pair.viewport.width, pair.scheme])).toEqual([
       [390, 'light'],
       [1440, 'dark'],
@@ -67,18 +70,22 @@ describe('planAgainst', () => {
 
   test('a viewport or theme with no reference shot of its own is X_SHOT_AGAINST_MISSING', async () => {
     const dir = await reference([[390, 'light']]);
-    expect(missing(() => planAgainst({ reference: dir, theme: 'dark' }))).toBe(
+    expect(missing(() => planAgainst({ within: WITHIN, reference: dir, theme: 'dark' }))).toBe(
       'X_SHOT_AGAINST_MISSING',
     );
     expect(
-      missing(() => planAgainst({ reference: dir, viewports: [{ width: 800, height: 600 }] })),
+      missing(() =>
+        planAgainst({ within: WITHIN, reference: dir, viewports: [{ width: 800, height: 600 }] }),
+      ),
     ).toBe('X_SHOT_AGAINST_MISSING');
   });
 
   test('a directory with no shot, and a path that is not there, are X_SHOT_AGAINST_MISSING', async () => {
     const empty = await reference([]);
-    expect(missing(() => planAgainst({ reference: empty }))).toBe('X_SHOT_AGAINST_MISSING');
-    expect(missing(() => planAgainst({ reference: join(empty, 'nope.png') }))).toBe(
+    expect(missing(() => planAgainst({ within: WITHIN, reference: empty }))).toBe(
+      'X_SHOT_AGAINST_MISSING',
+    );
+    expect(missing(() => planAgainst({ within: WITHIN, reference: join(empty, 'nope.png') }))).toBe(
       'X_SHOT_AGAINST_MISSING',
     );
   });
@@ -88,6 +95,7 @@ describe('planAgainst', () => {
     const file = join(dir, 'mock.png');
     await Bun.write(file, png([1, 2, 3, 255]));
     const [pair] = planAgainst({
+      within: WITHIN,
       reference: file,
       viewports: [{ width: 390, height: 844 }],
       theme: 'dark',
@@ -97,6 +105,39 @@ describe('planAgainst', () => {
       scheme: 'dark',
       reference: file,
     });
+  });
+});
+
+describe('planAgainst refuses what it cannot honour', () => {
+  test('a lone PNG with more than one --viewport is X_CLI_BAD_FLAG: it is one picture of one size', async () => {
+    const file = join(scratch(), 'mock.png');
+    await Bun.write(file, png([1, 2, 3, 255]));
+    expect(
+      missing(() =>
+        planAgainst({
+          within: WITHIN,
+          reference: file,
+          viewports: [
+            { width: 390, height: 844 },
+            { width: 1440, height: 900 },
+          ],
+        }),
+      ),
+    ).toBe('X_CLI_BAD_FLAG');
+  });
+
+  test('a reference outside the app root and the cwd is X_CLI_BAD_FLAG, a link out of them too', async () => {
+    const inside = scratch();
+    const outside = scratch();
+    const file = join(outside, 'mock.png');
+    await Bun.write(file, png([1, 2, 3, 255]));
+    expect(missing(() => planAgainst({ within: [inside], reference: file }))).toBe(
+      'X_CLI_BAD_FLAG',
+    );
+    symlinkSync(file, join(inside, 'link.png'));
+    expect(
+      missing(() => planAgainst({ within: [inside], reference: join(inside, 'link.png') })),
+    ).toBe('X_CLI_BAD_FLAG');
   });
 });
 
@@ -124,7 +165,7 @@ describe('runAgainst', () => {
     const dir = await reference([[390, 'light']]);
     const seen: ShotRun[] = [];
     const result = await runAgainst({
-      pairs: planAgainst({ reference: dir }),
+      pairs: planAgainst({ within: WITHIN, reference: dir }),
       outDir: join(scratch(), 'out'),
       boot: () => Promise.resolve(server),
       shoot: shootWith(png([10, 20, 30, 255]), true, seen),
@@ -148,7 +189,7 @@ describe('runAgainst', () => {
   test('a different capture lowers similarity and never changes the verdict', async () => {
     const dir = await reference([[390, 'light']]);
     const result = await runAgainst({
-      pairs: planAgainst({ reference: dir }),
+      pairs: planAgainst({ within: WITHIN, reference: dir }),
       outDir: join(scratch(), 'out'),
       boot: () => Promise.resolve(server),
       shoot: shootWith(png([250, 250, 250, 255]), true, []),

@@ -13,16 +13,7 @@ const REPO = join(import.meta.dir, '../../../..');
  * Symbols whose owner has not landed them yet, each with who ships it. Pending is not skipped
  * forever: once a symbol IS exported, the expiry test below fails until its row here is deleted.
  */
-const PENDING: Readonly<Record<string, string>> = {
-  '@ultimat3/ui#MotionToggle': 'M1 ships MotionToggle on the ui barrel (plan 101, 06)',
-  '@ultimat3/effects#Aurora': 'E1 ships the backgrounds (plan 101, 07)',
-  '@ultimat3/effects#GradientOrbs': 'E1 ships the backgrounds (plan 101, 07)',
-  '@ultimat3/effects#MosaicGrid': 'E1 ships the backgrounds (plan 101, 07)',
-  '@ultimat3/effects#GridGlow': 'E1 ships the backgrounds (plan 101, 07)',
-  '@ultimat3/effects#Noise': 'E1 ships the backgrounds (plan 101, 07)',
-  '@ultimat3/effects#ShaderBackground': 'E1 ships the shader backgrounds (plan 101, 07)',
-  '@ultimat3/effects#EffectCanvas': 'E1 ships effect-canvas.tsx (plan 101, 07)',
-};
+const PENDING: Readonly<Record<string, string>> = {};
 
 const PackageJson = (value: unknown): Readonly<Record<string, string>> => {
   const exports =

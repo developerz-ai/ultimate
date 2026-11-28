@@ -172,7 +172,9 @@ runtime resolution is the `exports` map either way.
   `html[data-motion="paused"]`; the stylesheet's half is `reset.scss` (reduced) and `_motion.scss`'s
   `guards` (paused), both collapsing to `$still` rather than `animation-play-state: paused`, which
   would freeze an entrance at opacity 0. `MotionToggle` remembers the pause in `localStorage`
-  (`ultimate.motion`) and re-applies it on mount — after first paint, since no boot script reads it.
+  (core's `MOTION_STORAGE_KEY`, `ultimate.motion`), and render's inlined theme boot
+  (`themeScriptBody`) stamps `html[data-motion="paused"]` from it before first paint — on every
+  page, with or without a toggle on it.
 - **The subpath is a measurement.** Minified island bytes, Bun 1.4.4: motionTiming 2,704 ·
   animate 3,858 · inView+stagger 5,010 · layout 4,562 · frameLoop 2,662 · scrollLinked 2,004 ·
   Presence 32,019 · PresenceList 31,577 · springLinear 11,554 (it reaches the error registry) ·

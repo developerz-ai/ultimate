@@ -35,21 +35,24 @@ export interface DashboardMotionProps {
   readonly waiting: { readonly text: string; readonly href: string } | null;
 }
 
-/** The cards that enter in one tick start together, one beat apart. */
-const revealCards = (cards: readonly HTMLElement[]): void => {
+/**
+ * The cards that enter in one tick start together, one beat apart. Returns the stops: a
+ * once-watch is released only on intersection, so leaving the page first must release them.
+ */
+const revealCards = (cards: readonly HTMLElement[]): Array<() => void> => {
   let batch: Element[] = [];
   const flush = (): void => {
     const entered = batch;
     batch = [];
     stagger(entered, PRESENCE_ENTER, { each: 'fast', duration: 'base', easing: 'gentle' });
   };
-  for (const card of cards) {
+  return cards.map((card) =>
     inView(card, () => {
       if (batch.length === 0) queueMicrotask(flush);
       batch.push(card);
       return undefined;
-    });
-  }
+    }),
+  );
 };
 
 export function mount(el: HTMLElement, props: DashboardMotionProps): () => void {
@@ -99,7 +102,7 @@ export function mount(el: HTMLElement, props: DashboardMotionProps): () => void 
       ),
     );
   }
-  revealCards([...el.querySelectorAll<HTMLElement>('[data-reveal]')]);
+  disposers.push(...revealCards([...el.querySelectorAll<HTMLElement>('[data-reveal]')]));
   return () => {
     for (const dispose of disposers) dispose();
   };

@@ -178,7 +178,7 @@ describe('unit · shipped guards · the framework passes the motion rules it shi
       (finding) =>
         (finding.at ?? '').startsWith('packages/ui/') && /\.tsx?:\d+$/.test(finding.at ?? ''),
     );
-    // The theme's grammar file names curves as EXAMPLES in its refusal messages and holds the
+    // `tokens.ts` DECLARES the easing scale (a curve per rung); the theme's grammar file names curves as EXAMPLES in its refusal messages and holds the
     // pattern that parses one: pinned by file and code, never by line, so an edit above it holds.
     // A curve written anywhere else in `packages/ui` is a finding; the motion module, which IS the
     // adapter, passes with no exemption (its `requestAnimationFrame` calls carry a `// why:`).
@@ -188,7 +188,10 @@ describe('unit · shipped guards · the framework passes the motion rules it shi
           (finding) =>
             !(
               finding.code === 'X_RAW_MOTION_SCRIPT' &&
-              finding.at?.startsWith('packages/ui/src/theme/brand-declarations.ts:')
+              [
+                'packages/ui/src/theme/brand-declarations.ts:',
+                'packages/ui/src/tokens/tokens.ts:',
+              ].some((file) => finding.at?.startsWith(file))
             ),
         )
         .map((finding) => `${finding.at} ${finding.code}`),

@@ -5,9 +5,9 @@
 
 // why: Bun has no synchronous directory listing or existence check, and the plan is decided
 // before anything boots.
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 // why: Bun exposes no path primitives.
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { renderCauseValue, UltimateError } from '@ultimat3/core';
 import {
   DESIGN_SCHEMES,
@@ -55,8 +55,31 @@ export interface AgainstPair {
 export interface AgainstPlanInput {
   /** Absolute: a PNG, or a `x design research` slug directory. */
   readonly reference: string;
+  /** The directories a reference must lie under (the app root, the cwd) — through any link too. */
+  readonly within: readonly string[];
   readonly viewports?: readonly ShotViewport[] | undefined;
   readonly theme?: ShotTheme | undefined;
+}
+
+/** `true` when `path` is `dir` or under it, on whole segments. */
+const under = (path: string, dir: string): boolean => path === dir || path.startsWith(dir + sep);
+
+/**
+ * Through every link, the reference lies under one of `within` — `ui.diff`'s rule
+ * (`mcp-ui-diff.ts`). `--against` reads and decodes the file, and a flag that reads any path on
+ * the box is a read primitive for whoever composes the command line.
+ */
+function assertWithin(reference: string, within: readonly string[]): void {
+  const real = realpathSync(reference);
+  const roots = within.flatMap((dir) => (existsSync(dir) ? [realpathSync(dir)] : []));
+  // The real path is what is read: a link inside the app pointing out of it is outside.
+  if (roots.some((root) => under(real, root))) return;
+  throw new BadFlagError({
+    flag: 'against',
+    command: 'shot',
+    reason: `${renderCauseValue(reference)} is not inside the app or the current directory`,
+    fix: 'x shot / --against .x/design/<slug> --json   # a reference under the app root, e.g. what x design research wrote',
+  });
 }
 
 /** The height a width is laid out at: the design viewport of that width, else the desktop's. */
@@ -73,7 +96,17 @@ export function planAgainst(input: AgainstPlanInput): readonly AgainstPair[] {
   if (!existsSync(reference)) {
     throw new ShotAgainstMissingError({ reference, wanted: 'file or directory' });
   }
+  assertWithin(reference, input.within);
   if (!statSync(reference).isDirectory()) {
+    if ((input.viewports?.length ?? 0) > 1) {
+      throw new BadFlagError({
+        flag: 'viewport',
+        command: 'shot',
+        reason:
+          'a lone PNG reference is one picture of one size; compare one --viewport against it, or a design research directory against several',
+        fix: 'x shot / --against .x/design/<slug> --viewport 390x844,1440x900 --json',
+      });
+    }
     const viewport = input.viewports?.[0] ?? LONE_VIEWPORT;
     return [{ viewport, scheme: input.theme ?? 'light', reference }];
   }

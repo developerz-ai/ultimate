@@ -94,6 +94,7 @@ export const DESIGN_MESSAGES = {
   'cli.design.reference': '  {url} → {dir}',
   'cli.design.facts':
     '    {colors} colour cluster(s), {animations} animation(s), {refused} request(s) refused',
+  'cli.design.skipped': '  skipped {url}: {code} — a followed link; the rest of the run went on',
   'cli.design.unvalidated':
     '    colours left out of the proposal: @ultimat3/ui did not resolve here, so no contrast check could run',
   'cli.shot.against.summary':

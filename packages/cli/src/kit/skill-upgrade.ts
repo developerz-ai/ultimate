@@ -9,7 +9,18 @@ export const upgradeSkill = (app: NameSet): string => `---
 name: upgrade
 description: Move ${app.kebab} to the next Ultimate major — preview with a dry run, hop, read the report (codemods that left work, guards withheld, workarounds a release superseded), refresh the agent kit, and gate. Use when asked to upgrade, bump or update the framework, or when x doctor says the app is behind.
 argument-hint: [target version, optional]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash(bunx x upgrade:*)
+  - Bash(bunx x kit:*)
+  - Bash(bunx x doctor:*)
+  - Bash(bun run verify:*)
+  - Bash(git status)
+  - Bash(git diff:*)
 ---
 
 ${managedNote('skill', 'upgrade')}

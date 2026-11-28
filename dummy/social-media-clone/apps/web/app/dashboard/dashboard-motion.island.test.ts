@@ -21,6 +21,20 @@ const SHELL =
   '<p data-stat="dashboard-posts">12</p><p data-stat="dashboard-likes">340</p>' +
   '<ul><li data-reveal="">a</li><li data-reveal="">b</li></ul>';
 
+/** What an observer was asked to watch and let go of: a watch left behind is a leak. */
+const watching = new Set<unknown>();
+class FakeObserver {
+  observe(el: unknown): void {
+    watching.add(el);
+  }
+  unobserve(el: unknown): void {
+    watching.delete(el);
+  }
+  disconnect(): void {
+    watching.clear();
+  }
+}
+
 let mounted: MountedIsland;
 
 beforeAll(async () => {
@@ -34,6 +48,7 @@ beforeAll(async () => {
       waiting: { text: '2 friend requests are waiting on you', href: '/friends' },
     },
     shell: SHELL,
+    globals: { IntersectionObserver: FakeObserver },
   });
 }, 60_000);
 
@@ -59,5 +74,12 @@ describe('the dashboard motion island', () => {
       '2 friend requests are waiting on you',
     );
     expect(mounted.find('[data-slot="waiting"] a')?.getAttribute('href')).toBe('/friends');
+  });
+
+  // The cards are watched until they scroll in; a soft visit that leaves first must let go.
+  test('leaving the page before the cards are seen releases every watch', () => {
+    expect(watching.size).toBe(2);
+    mounted[Symbol.dispose]();
+    expect(watching.size).toBe(0);
   });
 });

@@ -244,7 +244,12 @@ export const shotCommand: CliCommand = {
     const outDir = shotOutDir(ctx.cwd, out, join(root, SHOT_DIR, shotSlug(path)));
     if (against !== undefined) {
       // Relative to where the caller stands, `--out`'s rule: the path they typed.
-      const pairs = planAgainst({ reference: resolve(ctx.cwd, against), viewports, theme });
+      const pairs = planAgainst({
+        reference: resolve(ctx.cwd, against),
+        within: [root, ctx.cwd],
+        viewports,
+        theme,
+      });
       return againstResult(
         await runAgainst({ pairs, outDir, boot, shoot: runShot, base: { ...single } }),
       );
