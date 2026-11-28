@@ -46,6 +46,12 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     '.claude/skills/upgrade/SKILL.md',
     '.claude/skills/verify/SKILL.md',
   ].map((template) => ({ template, since: '31.53.0', none: KIT_MANAGED_WHY })),
+  // The audit agent stops running branch tests; feature and planx merge only on every required check.
+  ...[
+    '.claude/agents/audit.md',
+    '.claude/skills/feature/SKILL.md',
+    '.claude/skills/planx/SKILL.md',
+  ].map((template) => ({ template, since: '31.53.1', none: KIT_MANAGED_WHY })),
   { template: '.claude/README.md', since: '31.53.0', codemod: 'agent-kit' },
   ...['apps/web/DESIGN.md', 'packages/cli/src/templates/scaffold-design.ts'].map((template) => ({
     template,

@@ -55,6 +55,7 @@ export const PARKED_BREAKS: readonly ParkedBreak[] = [
       { path: `${P11}/05-entity.md`, anchor: '| E12 | shipped (warning only)' },
       { path: `${P14}/03-db-entity-policy.md`, anchor: '2. E2: in 31.x' },
     ],
+    removes: [{ path: 'packages/entity/src/all-truncated.ts', symbol: 'ALL_TRUNCATED' }],
   },
   {
     ids: 'E9',
@@ -98,13 +99,14 @@ export const PARKED_BREAKS: readonly ParkedBreak[] = [
     ids: 'ERROR_DOCS_URL',
     title: 'error docs links move to the docs site',
     change:
-      '`ERROR_DOCS_URL` points at the docs site’s `/errors/<code>`, once the site has served for two weeks; a test pinning the old string updates',
+      '`ERROR_DOCS_URL` is removed: every framework error links its own docs-site page, `errorDocsUrl(code)` (`/errors/<CODE>/`), once the site has served for two weeks; a test pinning the old string updates',
     sources: [
       {
         path: 'docs/plans/2026/11/02/101-absorb-reinvented-patterns/42-adopt-docs-site.md',
         anchor: 'flips `ERROR_DOCS_URL` to',
       },
     ],
+    removes: [{ path: 'packages/core/src/error-codes.ts', symbol: 'ERROR_DOCS_URL' }],
   },
   {
     ids: 'Q2',

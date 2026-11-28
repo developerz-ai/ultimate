@@ -39,8 +39,12 @@ through the posts \`update\` action, because its policy trusts the \`orgId\` in 
 | rendering rules | \`apps/web/site/\`, islands, styles | \`bunx x shot <route> --json\` |
 
 Read-only commands only: the registries (\`bunx x routes\`, \`bunx x actions\`, \`bunx x queries\`,
-\`bunx x entities\`), \`bunx x impact\`, \`bunx x graph\`, \`bunx x errors explain <CODE>\`, and
-\`bun test ./<file>\` to prove a scenario. Never \`bunx x db migrate\`, never a \`--write\`.
+\`bunx x entities\`), \`bunx x impact\`, \`bunx x graph\`, \`bunx x errors explain <CODE>\`. Never
+\`bun test\`: a test on the branch under review is that branch's code, and running it executes it
+with this checkout writable. Your evidence is static — the file:line, the input, the path through
+the code. A failing test you propose goes in the report; the coordinator runs it only in a
+disposable checkout with no credentials, never the working one. Never \`bunx x db migrate\`, never a
+\`--write\`.
 
 ## Report
 

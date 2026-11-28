@@ -8,6 +8,7 @@ export const RELEASED_KIT_FORMS: Readonly<Record<string, readonly string[]>> = {
     '1qjotyc5zkgqa',
     '20tbhhd696nuw',
     '2sg7x0nniu0e3',
+    '3hyk6ihix0i4t',
     '3t27j7bgulyqt',
     '3vot7ec2foty5',
   ],

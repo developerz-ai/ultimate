@@ -10,7 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Deprecated
+
+- `ERROR_DOCS_URL` (`@ultimat3/core`): every framework error links its own docs-site page at the next major (`errorDocsUrl(code)`). `recountSql` and `recountDriftSql` (`@ultimat3/db`): no longer exported at the next major; `x db recount` reads and repairs drift. `ALL_TRUNCATED` (`@ultimat3/entity`): a truncated `.all()` refuses at the next major, so there is no log message to match.
+
+### Fixed
+
+- The agent kit's `audit` agent no longer runs `bun test` on the branch it reviews — a test there is that branch's code, run with the checkout writable — the `feature` skill's merge gate is every required check on the head passed (the review included) and every thread resolved, then `gh pr merge --squash`, whose refusal is final (never `--admin`); `planx` records that gate in a plan's acceptance criteria. `scripts/lib/kit-refresh-forms.ts` reads a release whose templates import the kit (31.53.0 onward).
 
 ## Releases
 
