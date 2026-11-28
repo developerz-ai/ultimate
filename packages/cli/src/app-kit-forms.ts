@@ -11,9 +11,17 @@ export const KIT_FORM_NAME = 'zz-kit-form-zz';
 export const kitFormHash = (text: string, kebab: string): string =>
   guardFormHash(kebab === '' ? text : text.replaceAll(kebab, KIT_FORM_NAME));
 
-/** True when `text` is one of `known` for some name the app could have been scaffolded under. */
+/**
+ * True when `text` is one of `known` for some name the app could have been scaffolded under. These
+ * are identities of public template text, never a secret, so a set lookup is the right comparison —
+ * `timingSafeEqual` would guard a value nobody is trying to learn byte by byte.
+ */
 export const isReleasedKitForm = (
   text: string,
   names: readonly string[],
   known: readonly string[] | undefined,
-): boolean => known !== undefined && names.some((name) => known.includes(kitFormHash(text, name)));
+): boolean => {
+  if (known === undefined) return false;
+  const released = new Set(known);
+  return names.some((name) => released.has(kitFormHash(text, name)));
+};

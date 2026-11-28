@@ -99,7 +99,8 @@ describe('browserDialScreen', () => {
       designHostPolicy({
         resolve: async (host) => {
           asked += 1;
-          if (asked === 1) throw new TypeError('SERVFAIL');
+          // The resolver's transient failure, as the subject's input.
+          if (asked === 1) return Promise.reject(new TypeError('SERVFAIL'));
           return resolve(host);
         },
       }),

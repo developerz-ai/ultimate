@@ -1,6 +1,8 @@
 // "Has this element scrolled into view?" — the one IntersectionObserver module. One observer per
 // (margin, amount) for the page, many targets each, so a feed of a hundred cards is one observer.
 
+import { assertCoded, finiteOption } from '@ultimat3/core/page';
+
 export interface InViewOptions {
   /** Report the first entry only, then stop watching. Default `true`. */
   readonly once?: boolean | undefined;
@@ -89,11 +91,18 @@ function release(pool: Pool, el: Element, watch: Watch): void {
  * Returns the stop.
  */
 export function inView(el: Element, onEnter: Enter, options: InViewOptions = {}): () => void {
+  const amount = finiteOption('inView', 'amount', options.amount ?? 0);
+  assertCoded(
+    amount >= 0 && amount <= 1,
+    'X_UI_INVALID_VALUE',
+    `inView amount is ${String(amount)}, but it is the fraction of the element that must show`,
+    'inView(el, onEnter, { amount: 0.5 })   // a fraction from 0 (any pixel) to 1 (all of it)',
+  );
   if (typeof IntersectionObserver !== 'function') {
     onEnter({ target: el, isIntersecting: true } as IntersectionObserverEntry);
     return () => {};
   }
-  const pool = poolFor(options.margin ?? '0px', options.amount ?? 0);
+  const pool = poolFor(options.margin ?? '0px', amount);
   const watch: Watch = {
     enter: onEnter,
     once: options.once ?? true,

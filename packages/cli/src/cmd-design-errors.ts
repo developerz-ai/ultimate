@@ -28,7 +28,7 @@ export class DesignReferenceUnreachableError extends UltimateError {
     super({
       code: 'X_DESIGN_REFERENCE_UNREACHABLE',
       cause: `${renderCauseValue(input.url)} could not be researched: ${input.reason}`,
-      fix: `x design research ${renderFixShellArg(input.url, '<url>')} --timeout ${String(input.timeoutMs * 2)}   # or drop the URL from the list`,
+      fix: `x design research ${renderFixShellArg(input.url, '<url>')} --timeout ${renderFixShellArg(String(input.timeoutMs * 2), '<ms>')}   # or drop the URL from the list`,
       meta: { url: input.url, timeoutMs: input.timeoutMs },
     });
   }

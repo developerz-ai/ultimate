@@ -19,7 +19,7 @@ falloff, CSS gradient-line geometry).
 | Tier label | every root carries `data-effect-backend` (`static`/`css`/`canvas`/`webgl2`), decided ONLY by `backend.ts`'s `pickBackend` |
 | First frame | the server frame is computed by the same function as animated frame 0 (`meshPoints(0)`, `mosaicCell(c, r, 0)`, `dotsRamp(0) = 0`); the canvas never flashes in over a different picture |
 | Colour | role tokens only: `var(--color-<role>)` in sheets and inline custom properties, `resolvePalette()` (resolved `--color-*` channels) for canvas and GLSL. Re-read on a theme change |
-| Pause | frames run through `frameLoop` (`motion-port.ts` is the one importer of `@ultimat3/ui/motion`); CSS animations hold under `data-effect-paused` and `html[data-motion='paused']` (`_effect.scss`) |
+| Pause | frames run through `frameLoop` (`motion-port.ts`); on-screen is ui's `inView` (`effect-host.ts`), never a second IntersectionObserver; CSS animations hold under `data-effect-paused` (`_effect.scss`); `html[data-motion='paused']` is ui's global guard, landing them on frame 0 |
 | Pixels | `EFFECT_PIXELS` is the one DPR floor/cap/pixel-ceiling token; no mount picks its own |
 | Network | none, from any entry: `network-seal.test.ts` mounts all fourteen for 1,000 frames with the four APIs sealed |
 | GLSL | only in `src/shader-background/presets/*.ts`, each loaded by its own literal `import()` (`load-preset.ts`); `shader-mount.ts` is lazy too. The vertex shader is duplicated per preset on purpose (a shared module would be a fourth chunk) |

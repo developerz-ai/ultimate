@@ -1,5 +1,5 @@
 // `@ultimat3/ui/motion` — the one animation engine: the browser's WAAPI driven by the motion token
-// scale. A subpath, not the barrel, on measurement (`scripts/ui-barrel-bytes.test.ts`): a barrel
+// scale. A subpath, not the barrel, on measurement (`scripts/ui-motion-bytes.test.ts`): a barrel
 // island pays nothing for it. Explicit exports only.
 
 export type { SpringName } from '../tokens/tokens';

@@ -4,7 +4,7 @@
 // the package really exports — the scaffold can never advertise an API that is not shipped.
 
 import { describe, expect, test } from 'bun:test';
-import { join } from 'node:path';
+import { join } from 'node:path'; // why: Bun ships no path API.
 import { planNewApp } from '../../cmd-new';
 import type { NewShape } from '../../new-shapes';
 import type { GeneratedFile } from '../naming';

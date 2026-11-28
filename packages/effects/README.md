@@ -11,9 +11,19 @@ bun add @ultimat3/effects
 
 ```tsx
 import { Aurora, ShaderBackground } from '@ultimat3/effects';
+import type { JSX } from 'solid-js';
 
-<Aurora intensity={0.6}><h1>{t('home.title')}</h1></Aurora>   // CSS only: 0 B JS on a site/ page
-<ShaderBackground preset="mesh">…</ShaderBackground>           // island: WebGL2, else Canvas2D, else the frame
+// CSS only: 0 B of JavaScript on a site/ page.
+export const Hero = (props: { title: string }): JSX.Element => (
+  <Aurora intensity={0.6}>
+    <h1>{props.title}</h1>
+  </Aurora>
+);
+
+// An island: WebGL2, else Canvas2D, else the server frame.
+export const Backdrop = (props: { children: JSX.Element }): JSX.Element => (
+  <ShaderBackground preset="mesh">{props.children}</ShaderBackground>
+);
 ```
 
 Guide: [Effects](https://github.com/developerz-ai/ultimate/wiki/Effects) · props: [CATALOG.md](CATALOG.md).
@@ -38,7 +48,7 @@ Every root carries `data-effect-backend`:
 | `src/canvas-mount.ts` | the Canvas2D twin: same clock, budget and loop |
 | `src/effect-mount.ts` | what every animated entry's island effect calls: palette → backend → mount → relabel → release |
 | `src/use-effect-mount.ts` | the Solid shell around it (signal + refs + one effect) |
-| `src/effect-host.ts` · `src/motion-port.ts` | the browser, injected; the one door to `@ultimat3/ui/motion` |
+| `src/effect-host.ts` · `src/motion-port.ts` | the browser, injected: `frameLoop`, `motionAllowed`, `onMotionChange` and `inView` from `@ultimat3/ui/motion` |
 | `src/pixel-budget.ts` | `EFFECT_PIXELS`: the DPR floor, DPR cap and pixel ceiling, one token |
 | `src/palette.ts` · `src/props.ts` | resolved role channels; the prop screens (`X_EFFECTS_INVALID_VALUE`) |
 | `src/<entry>/` | `<Name>.tsx` (markup) + `<Name>.module.scss` + `<name>-view.ts` (the rules, pure) |

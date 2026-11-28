@@ -2,6 +2,7 @@
 // transform parts compose into one `transform`; timing is `motionTiming`'s, so a stilled page
 // still finishes. No layout property is animatable here — that is `layout()`'s FLIP.
 
+import { finiteOption } from '@ultimat3/core/page';
 import type { DurationName, EasingName, SpringName } from '../tokens/tokens';
 import { motionTiming, STILL_MS } from './motion-timing';
 
@@ -87,13 +88,15 @@ export function animate(
   frames: readonly MotionFrame[],
   options: AnimateOptions = {},
 ): MotionHandle {
+  // `??` lets a NaN through, and WAAPI reads a NaN delay as a TypeError or as 0.
+  const delay = finiteOption('animate', 'delay', options.delay ?? 0);
   if (typeof el.animate !== 'function') return SETTLED;
   const timing = motionTiming(options.duration ?? 'base', options.easing ?? 'out');
   const keyframes = frames.map(toKeyframe);
   const settings: KeyframeAnimationOptions = {
     duration: timing.duration,
     easing: timing.easing,
-    delay: timing.duration === STILL_MS ? 0 : (options.delay ?? 0),
+    delay: timing.duration === STILL_MS ? 0 : delay,
     fill: options.fill ?? 'backwards',
   };
   let animation: Animation;

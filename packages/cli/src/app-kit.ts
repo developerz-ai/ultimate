@@ -3,7 +3,7 @@
 // gate, `x kit`, `x doctor` and `x upgrade` all ask one function. `.claude/kit.json` is the opt-in:
 // present, the findings are errors; absent, one warning — `main` never reddens on a new rule.
 
-import { ERROR_DOCS_URL, isJsonObject } from '@ultimat3/core';
+import { ERROR_DOCS_URL, isJsonObject, renderFixShellArg } from '@ultimat3/core';
 import type { KitFile } from './kit/registry';
 import { KIT_MARKER } from './kit/registry';
 import type { Finding } from './output';
@@ -95,7 +95,7 @@ async function shadowFindings(disk: KitDisk, files: readonly KitFile[]): Promise
       finding(
         KIT_SHADOWED,
         `${path} is shadowed by the managed skill ${file.name}: the skill runs, the command never does`,
-        `git mv ${path} ${COMMANDS_DIR}/app-${file.name}.md`,
+        `git -C .claude/commands mv ${renderFixShellArg(`${file.name}.md`, '<command>.md')} ${renderFixShellArg(`app-${file.name}.md`, 'app-<command>.md')}`,
         path,
       ),
     );

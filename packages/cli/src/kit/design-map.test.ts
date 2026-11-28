@@ -4,6 +4,7 @@
 // is tier 5 beside `cli`, and an import — even a test's — is the sideways edge `boundaries` refuses.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { DESIGN_MAP, designMapTable } from './design-map';
 

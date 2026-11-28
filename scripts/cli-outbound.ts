@@ -36,6 +36,20 @@ export const CLI_OUTBOUND_ALLOWLIST = Object.freeze<Record<string, string>>({
     'the Chrome .deb in the X_VERIFY_E2E_BROWSER_MISSING fix (`verify-e2e.ts`, `mcp-errors.ts`): an install command the person runs — printed, never fetched by x',
   'fcm.googleapis.com':
     "`x exercise`'s stand-in push endpoint (`exercise-push-device.ts`): a host `pushHostAllowed` lists, under a path no browser hands out; the sealed exercise captures the send and never dials it",
+  'reactbits.dev':
+    '`x design research --list` names it as a reference catalogue (`messages-design.ts`); nothing is fetched unless the person passes it as a URL',
+  '21st.dev':
+    '`x design research --list` names it as a reference catalogue (`messages-design.ts`); nothing is fetched unless the person passes it as a URL',
+  'shaders.paper.design':
+    '`x design research --list` names it as a reference catalogue (`messages-design.ts`); nothing is fetched unless the person passes it as a URL',
+  'shaders.com':
+    '`x design research --list` names it as a reference catalogue (`messages-design.ts`); nothing is fetched unless the person passes it as a URL',
+  'reui.io':
+    '`x design research --list` names it as a reference catalogue (`messages-design.ts`); nothing is fetched unless the person passes it as a URL',
+  'ui.shadcn.com':
+    '`x design research --list` names it as a reference catalogue (`messages-design.ts`); nothing is fetched unless the person passes it as a URL',
+  'motion.dev':
+    '`x design research --list` names it as a reference catalogue (`messages-design.ts`); nothing is fetched unless the person passes it as a URL',
   'your.domain':
     'a placeholder in the X_ISR fix line telling the author to set APP_URL to their own origin — printed, never fetched',
 });

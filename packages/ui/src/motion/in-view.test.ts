@@ -161,3 +161,13 @@ describe('inView — many watches on one element', () => {
     stopC();
   });
 });
+
+describe('inView — amount is screened', () => {
+  test('a NaN, infinite or out-of-range amount is refused, never a silent threshold', () => {
+    install();
+    for (const amount of [Number.NaN, Number.POSITIVE_INFINITY, -0.1, 1.5]) {
+      expect(() => inView(el(), () => undefined, { amount })).toThrow();
+    }
+    expect(FakeObserver.made).toEqual([]);
+  });
+});

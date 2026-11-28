@@ -1,8 +1,9 @@
-// The dev tools that answer an agent's next question without a shell round trip: `docs.search`
-// (`x docs`), `db.explain` (a plan, `ANALYZE` inside the read-only transaction), `requests.statements`
-// (`x dev`'s per-request statement ledger), `verify.narrow` (what to run after editing a file) and
-// `ui.research` (`x design research`). Each is a projection: the CLI answers through `DevAgentHost`,
-// from the command that already exists.
+// The dev tools that answer an agent's next question without a shell round trip, each a projection
+// the CLI answers through `DevAgentHost` from the command that already exists.
+//
+// `docs.search` (`x docs`), `db.explain` (a plan, `ANALYZE` inside the read-only transaction),
+// `requests.statements` (`x dev`'s statement ledger), `verify.narrow` (what to run after an edit)
+// and `ui.research` (`x design research`, `dev-agent-tools-research.ts`).
 
 import { NotImplementedError } from '@ultimat3/core';
 import type { UiResearchInput } from './dev-agent-tools-research';

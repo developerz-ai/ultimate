@@ -2,6 +2,7 @@
 // `.animate(` and a `cubic-bezier(` string come off the motion scale (`motionTiming()` from
 // `@ultimat3/ui/motion`), so a script moves at the tempo the stylesheets do. A guard of its own,
 // REPORT ONLY (`severity: 'warning'`), because `raw-motion` gates and a stricter rule on `main`
+//
 // is a break; `x new` writes the `"error"` row.
 
 import { guardCode } from './guard';

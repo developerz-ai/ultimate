@@ -358,7 +358,8 @@ describe('themeScript — the reader’s motion pause, before first paint', () =
     };
     const localStorage = {
       getItem: (key: string) => {
-        if (throwing) throw new TypeError('storage refused');
+        // What a browser with storage blocked throws: a DOMException, never a plain Error.
+        if (throwing) throw new DOMException('storage refused', 'SecurityError');
         return stored[key] ?? null;
       },
     };

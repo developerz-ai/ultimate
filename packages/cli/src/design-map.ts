@@ -1,8 +1,8 @@
 // A reference's measurements as framework vocabulary: `tokens.proposal.json` (a `defineTheme`
-// argument — colours, radius, motion) and `motion-map.json` (each observed animation as the
-// `@ultimat3/ui/motion` call or `@ultimat3/effects` entry that reproduces it). Durations and easings
-// snap through the motion scale the shipped guards use (`templates/motion-scale.ts`), so research and
-// the gate agree on what "base" means. Pure: no browser, no file.
+// argument) and `motion-map.json` (each animation as a `@ultimat3/ui/motion` call or effects entry).
+//
+// Durations and easings snap through the motion scale the shipped guards use
+// (`templates/motion-scale.ts`), so research and the gate agree on what "base" means. Pure.
 
 import type { Extraction, ObservedMotion } from './design-extract';
 import {
@@ -65,16 +65,17 @@ export function proposeRadius(
 }
 
 /** CSS's easing keywords as the control points they are. */
-const KEYWORD_CURVES: Readonly<Record<string, readonly number[]>> = {
-  ease: [0.25, 0.1, 0.25, 1],
-  'ease-in': [0.42, 0, 1, 1],
-  'ease-out': [0, 0, 0.58, 1],
-  'ease-in-out': [0.42, 0, 0.58, 1],
-};
+/** A Map: the key is a page's easing string, and `'constructor'` must miss, not hit a prototype. */
+const KEYWORD_CURVES: ReadonlyMap<string, readonly number[]> = new Map([
+  ['ease', [0.25, 0.1, 0.25, 1]],
+  ['ease-in', [0.42, 0, 1, 1]],
+  ['ease-out', [0, 0, 0.58, 1]],
+  ['ease-in-out', [0.42, 0, 0.58, 1]],
+]);
 
 /** A curve's four control points, or `undefined` for `linear`, `steps()`, `linear()` and `other`. */
 export function easingPoints(easing: string): readonly number[] | undefined {
-  const keyword = KEYWORD_CURVES[easing];
+  const keyword = KEYWORD_CURVES.get(easing);
   if (keyword !== undefined) return keyword;
   const match = /^cubic-bezier\(([^)]*)\)$/.exec(easing);
   if (match === null) return undefined;

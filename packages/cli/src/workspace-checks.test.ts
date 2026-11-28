@@ -202,13 +202,33 @@ describe('unit · the package shape', () => {
     await rm(bad, { recursive: true, force: true });
   });
 
+  // A JSX-preserve compile writes `Foo.jsx` beside `Foo.tsx`. The tarball ships it, and an
+  // extensionless import in the packed package then resolves to it before the `.tsx`: Bun compiles it
+  // natively against solid-js, which has no `jsxDEV` (the upgrade e2e's `Export named 'jsxDEV'`).
+  test('a Foo.jsx beside Foo.tsx is a build artifact, and the sweep names it', async () => {
+    const bad = await mkdtemp(join(tmpdir(), 'ultimate-jsx-artifact-'));
+    try {
+      for (const file of PACKAGE_FILES) await Bun.write(join(bad, 'packages/p', file), '{}\n');
+      await Bun.write(join(bad, 'packages/p/package.json'), '{"name":"p","version":"1.0.0"}\n');
+      await Bun.write(join(bad, 'packages/p/src/Foo.tsx'), 'export const Foo = () => null;\n');
+      await Bun.write(join(bad, 'packages/p/src/Foo.jsx'), 'export const Foo = () => null;\n');
+      const found = (await checkPackageShape(bad)).filter((f) => f.at === 'packages/p/src/');
+      expect(found).toHaveLength(1);
+      expect(found[0]?.cause).toContain('1 build artifacts');
+      expect(found[0]?.fix).toContain("-name '*.jsx'");
+    } finally {
+      await rm(bad, { recursive: true, force: true });
+    }
+  });
+
   // Axiom 4: the fix is the remediation, not a description of it. This one is the sweep itself, so
   // it has to name the directory it clears, the three suffixes, and every file it must not take.
   test('the artifact fix is the sweep, runnable as written', () => {
     const { fix } = buildArtifactsFinding('p', 3);
     expect(fix.startsWith('find packages/p/src ')).toBe(true);
     expect(fix.endsWith(' -delete')).toBe(true);
-    for (const suffix of ['*.d.ts', '*.js', '*.map']) expect(fix).toContain(`-name '${suffix}'`);
+    for (const suffix of ['*.d.ts', '*.js', '*.jsx', '*.map'])
+      expect(fix).toContain(`-name '${suffix}'`);
     for (const path of ARTIFACT_ALLOWLIST) expect(fix).toContain(`! -path '${path}'`);
     expect(fixProblem(fix)).toBeUndefined();
   });

@@ -2,6 +2,7 @@
 // `@ultimat3/effects`, never a second engine imported into app code. Every engine here is the
 // framework's own (WAAPI for motion, a WebGL2 mount for shaders); a second one is a second tempo,
 // a second reduced-motion story and a second bundle graph nobody budgeted. REPORT ONLY in an app
+//
 // that predates it (`severity: 'warning'`); `x new` writes the `"error"` row.
 
 import { guardCode } from './guard';

@@ -69,7 +69,7 @@ describe('unit · app kit verdict', () => {
       [
         'X_KIT_SHADOWED',
         '.claude/commands/feature.md',
-        'git mv .claude/commands/feature.md .claude/commands/app-feature.md',
+        'git -C .claude/commands mv feature.md app-feature.md',
       ],
     ]);
   });

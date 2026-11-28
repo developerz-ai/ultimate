@@ -126,3 +126,14 @@ describe('stagger', () => {
     expect(made.map((m) => m.log)).toEqual([['cancel'], ['cancel']]);
   });
 });
+
+describe('animate — delay is screened', () => {
+  test('a NaN or infinite delay is refused, never handed to WAAPI', () => {
+    page();
+    const { el, calls } = fakeElement();
+    for (const delay of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => animate(el, [{ opacity: 0 }, { opacity: 1 }], { delay })).toThrow();
+    }
+    expect(calls).toEqual([]);
+  });
+});

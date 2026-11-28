@@ -2,6 +2,7 @@
 // (a guard imports nothing but types, so a helper is embedded, as `LOCAL_BINDING_SOURCE` is).
 // `TS_BLANK_SOURCE` is the string-aware comment blanker every script guard embeds;
 // `TS_ANIMATE_SCAN_SOURCE` adds the `.animate(` call reader `raw-motion-script` and
+//
 // `animated-layout-script` share.
 
 /**

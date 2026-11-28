@@ -14,6 +14,7 @@ describe('<PresenceList> — inert server render', () => {
     expect(byTag(nodes, 'ul').length).toBe(1);
     expect(byTag(nodes, 'li').length).toBe(2);
     const text = JSON.stringify(nodes);
+    expect(text).toContain('a:a');
     expect(text.indexOf('a:a')).toBeLessThan(text.indexOf('b:b'));
   });
 

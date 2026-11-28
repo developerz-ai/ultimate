@@ -371,6 +371,6 @@ export function readEffect(raw: string | undefined, kind: Generator): EffectEntr
       kind === 'island'
         ? `"${raw}" is no entry that wraps a panel — one of: ${entries.join(', ')}`
         : `only an island has a panel to wrap, and this is a ${kind}`,
-    fix: `x g island <name> --effect ${entries[0]}`,
+    fix: 'x g island <name> --effect aurora',
   });
 }

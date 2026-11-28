@@ -1,8 +1,8 @@
 // `x design research` and `ui.research`, one body: each reference screened, captured, mapped and
-// written as its five artefacts under `<out>/<slug>/`, then up to `follow` of its links visited the
-// same way. Each directory is built aside and published whole (`cmd-design-publish.ts`). The browser
-// and the theme host are arguments, so a test runs the whole thing with a fake driver — and a
-// fixture server reached through `trustedHosts`, which only a harness can pass.
+// published whole as its five artefacts under `<out>/<slug>/`, then up to `follow` of its links.
+//
+// The browser and the theme host are arguments, so a test runs the whole thing with a fake driver —
+// and a fixture server reached through `trustedHosts`, which only a harness can pass.
 
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';

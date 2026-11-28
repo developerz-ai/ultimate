@@ -2,6 +2,7 @@
 // bare `requestAnimationFrame(`. A raw loop keeps painting in a hidden tab, offscreen and under
 // reduced motion; `frameLoop` stops for each of those and for a user's pause (WCAG 2.2.2). A
 // `// why:` on the call's line, or the line above it, admits a one-shot that is not a loop —
+//
 // as `raw-interval` admits a tick. REPORT ONLY in an app that predates it.
 
 import { guardCode } from './guard';

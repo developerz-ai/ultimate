@@ -2,6 +2,7 @@
 // `@ultimat3/effects`, whose `fallback` is required by type. A raw `<canvas`, a WebGL context or
 // `navigator.gpu` in a page is an effect with no static frame: blank under reduced motion, no
 // WebGL, a lost context, and in every screenshot and server-rendered byte. REPORT ONLY in an app
+//
 // that predates it (`severity: 'warning'`); `x new` writes the `"error"` row.
 
 import { guardCode } from './guard';

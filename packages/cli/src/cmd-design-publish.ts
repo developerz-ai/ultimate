@@ -1,8 +1,9 @@
-// A reference directory appears WHOLE or not at all. `x shot --against` diffs whatever shots a
-// `<slug>/` holds, so a slug mixing two runs — a cancelled one beside its retry, a failed or narrower
-// rerun over an older one — is a comparison against a reference that never existed. Each run builds
-// in `<dir>.tmp-<pid>-<id>` and is swapped in only once complete (`repro-archive-write.ts`'s rule);
-// runs into one directory in this process take turns.
+// A reference directory appears WHOLE or not at all: built in `<dir>.tmp-<pid>-<id>`, swapped in
+// only once complete, runs into one directory in this process taking turns.
+//
+// `x shot --against` diffs whatever shots a `<slug>/` holds, so a slug mixing two runs — a cancelled
+// one beside its retry, a failed or narrower rerun over an older one — is a comparison against a
+// reference that never existed (`repro-archive-write.ts`'s rule).
 
 // why: Bun has no directory rename or recursive remove.
 import { mkdir, rename, rm } from 'node:fs/promises';

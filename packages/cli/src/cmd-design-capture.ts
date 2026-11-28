@@ -1,8 +1,9 @@
 // One reference URL photographed and measured: one browser per viewport, both colour schemes, the
-// recorder installed before the document, the scroll-and-hover pass after load, a full-page PNG per
-// (viewport, scheme). Every request the page makes is screened browser-wide (`dialScreen`), and a
-// navigation the screen or the floor stopped is `X_DESIGN_URL_REFUSED`, never a picture of an
-// error page.
+// recorder installed before the document, the scroll-and-hover pass after load, a clipped PNG per
+// (viewport, scheme).
+//
+// Every request the page makes is screened browser-wide (`dialScreen`), and a navigation the screen
+// or the floor stopped is `X_DESIGN_URL_REFUSED`, never a picture of an error page.
 
 // why: Bun has no recursive directory create.
 import { mkdirSync } from 'node:fs';
@@ -154,7 +155,10 @@ export async function captureReference(input: CaptureInput): Promise<Capture> {
   const aborted = (): DesignAbortedError => new DesignAbortedError({ url: input.url });
   // A function, not a read: the flag flips while the awaits below are pending.
   const isAborted = (): boolean => signal?.aborted === true;
-  const perScheme: Record<DesignScheme, Extraction[]> = { light: [], dark: [] };
+  const perScheme = new Map<DesignScheme, Extraction[]>(
+    DESIGN_SCHEMES.map((scheme) => [scheme, []]),
+  );
+  const of = (scheme: DesignScheme): Extraction[] => perScheme.get(scheme) ?? [];
   const shots: string[] = [];
   let finalUrl = input.url;
   mkdirSync(input.dir, { recursive: true });
@@ -178,7 +182,7 @@ export async function captureReference(input: CaptureInput): Promise<Capture> {
       for (const scheme of DESIGN_SCHEMES) {
         await visit(session.page, input, scheme);
         finalUrl = session.page.url();
-        perScheme[scheme].push(await extractDesign(session.page));
+        of(scheme).push(await extractDesign(session.page));
         const clip = await captureClip(session.page, viewport);
         const bytes = await session.page.screenshot({ clip });
         if (isAborted()) throw aborted();
@@ -198,7 +202,7 @@ export async function captureReference(input: CaptureInput): Promise<Capture> {
     [...new Set(list.filter((host) => host !== ''))].sort();
   return {
     finalUrl: pageRef(finalUrl),
-    byScheme: { light: mergeExtractions(perScheme.light), dark: mergeExtractions(perScheme.dark) },
+    byScheme: { light: mergeExtractions(of('light')), dark: mergeExtractions(of('dark')) },
     shots,
     refusedHosts: hosts(refused),
     unresolvedHosts: hosts(unresolved),

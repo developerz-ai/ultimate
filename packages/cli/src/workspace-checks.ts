@@ -259,13 +259,13 @@ export const ARTIFACT_ALLOWLIST: readonly string[] = ['packages/ui/src/scss.d.ts
 
 /** `-name` matches the same suffixes the check globs; `! -path` spares each allowlisted file. */
 const SWEEP_PREDICATE = [
-  `\\( -name '*.d.ts' -o -name '*.js' -o -name '*.map' \\)`,
+  `\\( -name '*.d.ts' -o -name '*.js' -o -name '*.jsx' -o -name '*.map' \\)`,
   ...ARTIFACT_ALLOWLIST.map((path) => `! -path '${path}'`),
 ].join(' ');
 
 export const buildArtifactsFinding = (dir: string, count: number): Finding => ({
   code: 'X_PACKAGE_SHAPE',
-  cause: `packages/${dir}/src/ contains ${count} build artifacts (.d.ts, .js, .map files)`,
+  cause: `packages/${dir}/src/ contains ${count} build artifacts (.d.ts, .js, .jsx, .map files)`,
   fix: `find packages/${dir}/src ${SWEEP_PREDICATE} -delete`,
   docs: ERROR_DOCS_URL,
   at: `packages/${dir}/src/`,
@@ -420,7 +420,7 @@ export async function checkPackageShape(
     }
     // `src/` is authored source only; anything a build emitted there ships in the tarball too.
     const artifacts: string[] = [];
-    for await (const path of new Bun.Glob('src/**/*.{d.ts,js,map}').scan({
+    for await (const path of new Bun.Glob('src/**/*.{d.ts,js,jsx,map}').scan({
       cwd: join(root, 'packages', dir),
       absolute: false,
     })) {

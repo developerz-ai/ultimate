@@ -182,17 +182,23 @@ export function mount(el: HTMLElement, props: CounterProps): () => void {
 
 describe('unit · x g island --effect', () => {
   const effectEntry = (effect: EffectEntry): string =>
-    String(islandFiles('counter', { dir: DIR, effect })[0]?.contents ?? '');
+    String(
+      islandFiles('counter', { dir: DIR, effect }).find((file) => file.path === ENTRY)?.contents,
+    );
 
   test('the panel is wrapped in the named effects entry, and the runtime is registered first', () => {
     const source = effectEntry('aurora');
     expect(source).toContain("import { Aurora } from '@ultimat3/effects';");
     expect(source).toContain('return <Aurora>{panel}</Aurora>;');
+    expect(source).toContain('setSolidRuntime({');
+    expect(source).toContain('return mountOver(');
     expect(source.indexOf('setSolidRuntime({')).toBeLessThan(source.indexOf('return mountOver('));
   });
 
   test('without --effect the island is byte-for-byte what it was', () => {
-    expect(String(islandFiles('counter', { dir: DIR })[0]?.contents)).not.toContain('effects');
+    const files = islandFiles('counter', { dir: DIR });
+    expect(String(files.find((file) => file.path === ENTRY)?.contents)).not.toContain('effects');
+    expect(files.some((file) => file.path === 'package.json')).toBe(false);
   });
 
   test('a name that is no wrapper entry is refused with the list that is', () => {

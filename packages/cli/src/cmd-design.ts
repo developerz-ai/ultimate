@@ -1,11 +1,13 @@
-// `x design research <url…>` — a reference site measured into framework vocabulary, so "make it look
-// like that" becomes tokens, motion calls and effects entries instead of guesswork. The mechanism; the
-// `design-research` skill is the procedure that drives it. Never a gate step: it needs a browser and
-// the public web. Everything captured lands in `.x/design/` (ignored): third-party pixels are never
-// committed.
+// `x design research <url…>` — the command: flags read, a reference site measured into tokens,
+// motion calls and effects entries, the result rendered.
+//
+// The mechanism; the `design-research` skill is the procedure that drives it. Never a gate step: it
+// needs a browser and the public web. Everything captured lands in `.x/design/` (ignored):
+// third-party pixels are never committed.
 
 // why: Bun exposes no path primitives; `--out` resolves against the caller's cwd.
 import { join, resolve } from 'node:path';
+import { finiteCount } from '@ultimat3/core';
 import type { DialResolve } from '@ultimat3/core/outbound';
 import type { ShotDriver } from './browser-launcher-port';
 import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
@@ -82,11 +84,17 @@ export async function runDesignResearch(input: DesignRunInput): Promise<Research
   };
   return researchDesign({
     urls: input.urls,
-    follow: input.follow ?? 0,
+    // Screened here as well as by the flag reader: `ui.research` reaches this with an agent's number.
+    follow: finiteCount('x design research', 'follow', input.follow ?? 0),
     outDir: input.outDir,
     viewports: input.viewports ?? DESIGN_VIEWPORTS,
     allowHosts: input.allowHosts ?? [],
-    timeoutMs: input.timeoutMs ?? DEFAULT_PAGE_TIMEOUT_MS,
+    timeoutMs: finiteCount(
+      'x design research',
+      'timeoutMs',
+      input.timeoutMs ?? DEFAULT_PAGE_TIMEOUT_MS,
+      1,
+    ),
     policy: designHostPolicy({ resolve: input.resolve, trustedHosts: input.trustedHosts }),
     driverFor,
     themeHost: await loadThemeHost(),

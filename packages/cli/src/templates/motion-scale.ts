@@ -2,6 +2,7 @@
 // durations in ms and easings as control points, and the two functions that answer "which token is
 // this closest to". One module, two readers: the `raw-motion-script` guard embeds
 // `MOTION_SCALE_SOURCE` into the file it emits (a guard imports nothing but types), and D1 imports
+//
 // the typed API directly. `raw-motion` keeps its own copy of the scale, byte-identical to 31.51.
 // `motion-scale.test.ts` runs the embedded text against the typed functions, so they cannot drift,
 // and `scaffold-guards-style.test.ts` holds both to the token package's own SCSS.

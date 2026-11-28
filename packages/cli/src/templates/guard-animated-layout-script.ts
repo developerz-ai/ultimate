@@ -2,6 +2,7 @@
 // property handed to `.animate(` costs a layout or paint pass per frame; a box that must move
 // through the layout is `layout()` from `@ultimat3/ui/motion`. A guard of its own, REPORT ONLY
 // (`severity: 'warning'`), because `animated-layout-property` gates and a stricter rule on `main`
+//
 // is a break; `x new` writes the `"error"` row.
 
 import { guardCode } from './guard';

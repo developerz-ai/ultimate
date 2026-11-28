@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { isUltimateError, UltimateError } from '@ultimat3/core';
 import { publishDirectory } from './cmd-design-publish';
 
 const dirs: string[] = [];
@@ -38,12 +39,17 @@ describe('publishDirectory', () => {
     await Bun.write(join(dir, 'reference.json'), 'old');
     const failed = await publishDirectory(dir, async (building) => {
       await Bun.write(join(building, 'reference.json'), 'half');
-      throw new TypeError('the capture died');
+      // Input to the subject, coded as every failure it is handed in production.
+      throw new UltimateError({
+        code: 'X_DESIGN_REFERENCE_UNREACHABLE',
+        cause: 'the capture died',
+        fix: 'x design research https://example.com/',
+      });
     }).then(
       () => 'resolved',
-      (error: unknown) => (error instanceof TypeError ? error.message : 'other'),
+      (error: unknown) => (isUltimateError(error) ? error.code : 'other'),
     );
-    expect(failed).toBe('the capture died');
+    expect(failed).toBe('X_DESIGN_REFERENCE_UNREACHABLE');
     expect(await Bun.file(join(dir, 'reference.json')).text()).toBe('old');
     expect(readdirSync(parent)).toEqual(['example-com']);
   });
@@ -55,8 +61,13 @@ describe('publishDirectory', () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let started: () => void = () => undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     const first = publishDirectory(dir, async (building) => {
       order.push('first:start');
+      started();
       await held;
       await Bun.write(join(building, 'a'), '1');
       order.push('first:end');
@@ -65,7 +76,10 @@ describe('publishDirectory', () => {
       order.push('second:start');
       await Bun.write(join(building, 'b'), '2');
     });
-    await Bun.sleep(5);
+    await firstStarted;
+    // Event-loop turns, not wall time: unserialised, the second build would start within them.
+    for (let turn = 0; turn < 20; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+    expect(order).toEqual(['first:start']);
     release();
     await Promise.all([first, second]);
     expect(order).toEqual(['first:start', 'first:end', 'second:start']);

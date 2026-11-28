@@ -1,6 +1,6 @@
 # Package map
 
-30 packages, 6 tiers. **One package = one reason to change.** If two things in a package change for different reasons, they are two packages.
+31 packages, 6 tiers. **One package = one reason to change.** If two things in a package change for different reasons, they are two packages.
 
 Rationale for the primitives themselves: [`../idea/02-primitives.md`](../idea/02-primitives.md). Enforcement: [`02-boundaries.md`](./02-boundaries.md).
 

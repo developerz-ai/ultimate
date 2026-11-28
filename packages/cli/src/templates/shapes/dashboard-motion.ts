@@ -2,6 +2,7 @@
 // already painted. A tips panel opens and closes through `Presence`, the stat tiles and the table
 // rows arrive in order through `stagger` once `inView` says they are on screen, and opening the
 // panel slides what sits below it through `layout` (FLIP, transform only). Every timing is a rung
+//
 // of the motion scale; under reduced motion each call finishes at once (`motionTiming`).
 
 import type { GeneratedFile } from '../naming';

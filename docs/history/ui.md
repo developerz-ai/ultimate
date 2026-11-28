@@ -175,11 +175,13 @@ runtime resolution is the `exports` map either way.
   (core's `MOTION_STORAGE_KEY`, `ultimate.motion`), and render's inlined theme boot
   (`themeScriptBody`) stamps `html[data-motion="paused"]` from it before first paint — on every
   page, with or without a toggle on it.
-- **The subpath is a measurement.** Minified island bytes, Bun 1.4.4: motionTiming 2,704 ·
-  animate 3,858 · inView+stagger 5,010 · layout 4,562 · frameLoop 2,662 · scrollLinked 2,004 ·
-  Presence 32,019 · PresenceList 31,577 · springLinear 11,554 (it reaches the error registry) ·
+- **The subpath is a measurement.** Minified island bytes, Bun 1.4.4: motionTiming 2,711 ·
+  animate 7,272 · inView+stagger 8,866 · layout 7,982 · frameLoop 6,539 · scrollLinked 2,019 ·
+  Presence 32,338 · PresenceList 32,172 (the script entries carry ~3.4 kB of core's
+  `UltimateError` for screening `delay`/`amount` through `finiteOption`, which an island holding
+  any ui component already ships) · springLinear 11,554 (it reaches the error registry) ·
   the whole adapter 39,363 (15,420 gzip) — against `Button` alone at 29,997. A barrel-only island
-  retains no motion module; `ui-barrel-bytes.test.ts` pins that and a ceiling per entry.
+  retains no motion module; `scripts/ui-motion-bytes.test.ts` pins that and a ceiling per entry.
 - **`Presence` owns its wrapper.** `solid-transition-group` and `solid-motionone` resolve children
   through `children()` and `@solid-primitives`, which ui's seven-function runtime has not got; a
   wrapper element is what animates and what stays in the document while it exits. `animate` holds

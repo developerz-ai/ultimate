@@ -12,7 +12,7 @@ scale. Every engine is ours. No runtime dependency, and no second way to animate
 | No layout property animates | `animate` frames accept none (a type error); `animated-layout-property` refuses one in `.animate(` keyframes and in SCSS |
 | No second engine | the `motion-adapter` guard refuses `motion`, `framer-motion`, `gsap`, `animejs`, `solid-motionone`, `solid-transition-group`, … in app code |
 | No bare frame loop | the `raw-frame-loop` guard refuses `requestAnimationFrame(` without a `// why:`; use `frameLoop` |
-| A barrel island pays nothing for motion | `scripts/ui-barrel-bytes.test.ts` pins zero motion modules, and a byte ceiling per entry |
+| A barrel island pays nothing for motion | `scripts/ui-motion-bytes.test.ts` pins zero motion modules, and a byte ceiling per entry |
 
 ## The API
 
@@ -81,5 +81,5 @@ example reaches for, and what to write here:
 
 Motion's hybrid `animate` is 26.95 kB gzip, past an island's 20,480 B raw default. `motion/mini`
 is plain WAAPI. Neither handles reduced motion on the vanilla path. Minified island bytes, `As of
-2026-11-28`: `animate` 3,858 B, `inView` + `stagger` 5,010 B, `layout` 4,562 B, `frameLoop` 2,662 B.
+2026-11-28`: `animate` 7,272 B, `inView` + `stagger` 8,866 B, `layout` 7,982 B, `frameLoop` 6,539 B alone, ~3.4 kB of each the coded error every ui component already ships.
 The record: [build vs wrap](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/18-build-vs-wrap.md).

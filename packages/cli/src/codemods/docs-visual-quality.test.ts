@@ -36,6 +36,8 @@ describe('unit · docs-visual-quality codemod', () => {
       expect(text).toContain(part);
     }
     expect(text).not.toContain('.claude/commands/');
+    expect(text).toContain('## Visual quality');
+    expect(text).toContain('## Agent tools');
     expect(text.indexOf('## Visual quality')).toBeLessThan(text.indexOf('## Agent tools'));
   });
 

@@ -66,7 +66,7 @@ export async function kitDocFindings(root: string): Promise<readonly Finding[]> 
       {
         code: 'X_KIT_DOC_UNSCANNED',
         cause: `${KIT_PAGE} is missing or carries no ${KIT_BEGIN} … ${KIT_END} markers, so the kit table has nowhere to land`,
-        fix: `add the two marker lines to ${KIT_PAGE}, then bun run scripts/kit-doc.ts --write`,
+        fix: `printf '%s\\n' '${KIT_BEGIN}' '${KIT_END}' >> ${KIT_PAGE} && bun run scripts/kit-doc.ts --write   # then move the two lines to where the table belongs`,
         at: KIT_PAGE,
       },
     ];

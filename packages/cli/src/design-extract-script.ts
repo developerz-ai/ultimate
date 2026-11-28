@@ -1,8 +1,8 @@
 // The two scripts `x design research` runs INSIDE a reference page, as text: one installed before
-// the document's own scripts (so an entrance animation is seen as it starts), one run after load
-// that scrolls, hovers and reads computed styles. Both answer numbers and CSS keywords only — no
-// page text leaves the page. `design-extract.ts` parses and re-sanitises what they answer anyway:
-// the page can overwrite anything these scripts install.
+// the document's own scripts, one run after load that scrolls, hovers and reads computed styles.
+//
+// Both answer numbers and CSS keywords only — no page text leaves the page. `design-extract.ts`
+// parses and re-sanitises what they answer anyway: the page can overwrite anything installed here.
 
 /**
  * Before the document: no WebSocket (see the comment inside), then every Animation the page starts — `Element.animate`, a CSS animation, a CSS
