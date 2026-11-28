@@ -47,7 +47,7 @@ const askable = (query: TenantJobQuery): boolean =>
 
 function fenceOf(driver: JobDriver): TenantJobs {
   if (driver.tenantJobs === undefined) {
-    throw new JobIntrospectionUnsupportedError({ driver: driver.name, member: 'tenantJobs' });
+    throw JobIntrospectionUnsupportedError.tenantJobs(driver.name);
   }
   return driver.tenantJobs;
 }

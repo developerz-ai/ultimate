@@ -6,6 +6,7 @@ import { DEFAULT_APP_VERSION } from './app-version';
 import { resetInstrumentation, subscribe } from './instrument';
 import {
   configureTelemetry,
+  installTelemetry,
   memoryExporter,
   resetTelemetry,
   serviceResource,
@@ -50,11 +51,18 @@ describe('unit · the service resource', () => {
 
   // The boot's release (`serve-boot-telemetry.ts`): a stopped boot hands the process back the
   // identity it found, never the one it set — and never resets a clock or sampler it did not set.
-  test('configureTelemetry returns the release that restores what it replaced', () => {
+  test('installTelemetry returns the release that restores what it replaced', () => {
     configureTelemetry({ serviceName: 'shop', serviceVersion: 'b-1' });
-    const release = configureTelemetry({ serviceName: 'worker' });
+    const release = installTelemetry({ serviceName: 'worker' });
     expect(serviceResource().serviceName).toBe('worker');
     release();
     expect(serviceResource()).toEqual({ serviceName: 'shop', serviceVersion: 'b-1' });
+  });
+
+  // 31.51.0's shape: `(): void => configureTelemetry(…)` compiled, so the barrel's answers nothing.
+  test('configureTelemetry sets and answers nothing; its release is installTelemetry alone', () => {
+    const answered: unknown = configureTelemetry({ serviceName: 'shop' });
+    expect(answered).toBeUndefined();
+    expect(serviceResource().serviceName).toBe('shop');
   });
 });

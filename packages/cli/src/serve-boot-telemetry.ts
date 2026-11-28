@@ -3,7 +3,8 @@
 // config loads so the spans its load opens carry it; then the app's `name` only where the env was
 // silent. Version: `service.version` in the attributes, else the build id, else `APP_VERSION`.
 
-import { appVersion, configureTelemetry, logger } from '@ultimat3/core';
+import { appVersion, logger } from '@ultimat3/core';
+import { installTelemetry } from '@ultimat3/core/adapter';
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -86,16 +87,16 @@ export interface ServiceIdentityBoot {
 export function configureServiceIdentity(env: Env): ServiceIdentityBoot {
   const attributes = resourceAttributes(env);
   const early = identityOf(env, attributes);
-  const releases = [configureTelemetry(early)];
+  const releases = [installTelemetry(early)];
   const versionSaid = said(attributes.get('service.version')) !== undefined;
   return {
     named(appName) {
       if (early.serviceName !== undefined || appName === undefined) return;
-      releases.push(configureTelemetry({ serviceName: appName }));
+      releases.push(installTelemetry({ serviceName: appName }));
     },
     built(buildId) {
       if (versionSaid || buildId === '') return;
-      releases.push(configureTelemetry({ serviceVersion: buildId }));
+      releases.push(installTelemetry({ serviceVersion: buildId }));
     },
     release() {
       // Newest first: each release restores what its own call found.

@@ -14,6 +14,7 @@ import { declaredStatusFor } from '@ultimat3/http';
 import { policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { ActionDecision } from './action-decide';
+import type { DecidingActionDef, DecidingStreamActionDef } from './action-decide-def';
 import { streamingDef } from './action-stream';
 import type { ClientMethod, ClientOptions, StreamClientMethod } from './client';
 import type { ContractTest, ContractTestOptions } from './contract-test';
@@ -55,18 +56,9 @@ export interface ActionRateLimitFact {
   readonly windowMs: number;
 }
 
-export interface ActionHandlerArgs<TInput extends StandardSchemaV1, TRow = unknown> {
+export interface ActionHandlerArgs<TInput extends StandardSchemaV1> {
   readonly input: InferOutput<TInput>;
   readonly ctx: Ctx;
-  /**
-   * This action's OWN policy, asked once per row on the surface the call came in on — one
-   * `policy.decision` event per row. Rows only: no parameter names another rule. Only in `handle`,
-   * after the input parse and the call's own guard; `row()` never gets it. What a handler does with
-   * the denied rows (skip them, abort the batch) is its own convention (`action-decide.ts`).
-   * Method syntax on purpose: its bivariant parameter is what keeps an `ActionDef<…, Post>`
-   * assignable to the erased `ActionDef<…, unknown>` every projection reads.
-   */
-  decide(rows: readonly TRow[]): ActionDecision<TRow>;
 }
 
 /** What a row loader gets: the parsed input and the context, never the request. */
@@ -153,9 +145,7 @@ export interface ActionDef<
    * and "row not found" are the same value and neither is evidence of permission.
    */
   row?(args: ActionRowArgs<TInput>): TRow | null | Promise<TRow | null>;
-  handle(
-    args: ActionHandlerArgs<TInput, TRow>,
-  ): Promise<InferOutput<TOutput>> | InferOutput<TOutput>;
+  handle(args: ActionHandlerArgs<TInput>): Promise<InferOutput<TOutput>> | InferOutput<TOutput>;
 }
 
 /**
@@ -172,7 +162,7 @@ export interface StreamActionDef<
 > extends Omit<ActionDef<TInput, TOutput, TRow>, 'handle'> {
   readonly stream: TChunk;
   handle(
-    args: ActionHandlerArgs<TInput, TRow>,
+    args: ActionHandlerArgs<TInput>,
   ): AsyncGenerator<InferInput<TChunk>, InferOutput<TOutput>, undefined>;
 }
 
@@ -357,6 +347,23 @@ export type ActionFacade<TInput extends StandardSchemaV1, TOutput extends Standa
   'input' | 'output' | 'policy' | 'mcp' | 'as' | 'openapi' | 'client' | 'job' | 'contract'
 >;
 
+// The `Deciding*` pair FIRST: tsc fixes a handler's parameter types on the first overload it
+// tries, so a `({ decide })` handler must meet them before the `ActionDef` pair. That pair resolves
+// nothing an earlier one does not — every `ActionDef` is a `DecidingActionDef` — and stays only
+// because the 31.x public-API lock records `action` by these two signatures (`scripts/public-api.ts`).
+export function action<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  TChunk extends StandardSchemaV1 = StandardSchemaV1,
+  TRow = unknown,
+>(
+  def: DecidingStreamActionDef<TInput, TOutput, TChunk, TRow>,
+): StreamAction<TInput, TOutput, TChunk>;
+export function action<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  TRow = unknown,
+>(def: DecidingActionDef<TInput, TOutput, TRow>): Action<TInput, TOutput>;
 export function action<
   TInput extends StandardSchemaV1,
   TOutput extends StandardSchemaV1,
@@ -372,7 +379,7 @@ export function action<
   TInput extends StandardSchemaV1,
   TOutput extends StandardSchemaV1,
   TRow = unknown,
->(def: ActionDef<TInput, TOutput, TRow>): Action<TInput, TOutput> {
+>(def: DecidingActionDef<TInput, TOutput, TRow>): Action<TInput, TOutput> {
   // Refused where it is written, and frozen before `build` stores it: the list a caller still
   // holds is not the one the descriptor, the document and the wrap read.
   const errors = checkDeclaredErrors(def.errors, declaredStatusFor, 'this action');

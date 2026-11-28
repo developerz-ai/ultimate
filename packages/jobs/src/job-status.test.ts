@@ -46,6 +46,9 @@ describe('jobStatusFor', () => {
     const query = { jobId: '019ff1c5-0000-7000-8000-00000000dead', tenantId: 'org-a' };
     await expect(jobStatusFor(driver, query)).rejects.toMatchObject({
       code: 'X_JOB_INTROSPECTION_UNSUPPORTED',
+      // Through `JobIntrospectionUnsupportedError.tenantJobs`: the member is named, not `introspect`.
+      cause: expect.stringContaining('has no tenantJobs'),
+      fix: expect.stringContaining('the pg, memory and redis drivers implement tenantJobs'),
     });
     await expect(cancelJobFor(driver, query)).rejects.toMatchObject({
       code: 'X_JOB_INTROSPECTION_UNSUPPORTED',

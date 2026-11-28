@@ -176,7 +176,8 @@ function callShapes(was: ApiShape, now: ApiShape | undefined): ApiChange | undef
 }
 
 /** `before` (the lock) against `after` (the tree). */
-export function classify(before: ApiSymbol, after: ApiSymbol): ApiChange {
+/** `consumedOnly`: an interface no app implements (`public-api-consumed.ts`). */
+export function classify(before: ApiSymbol, after: ApiSymbol, consumedOnly = false): ApiChange {
   if (timingSafeEqual(before.hash, after.hash)) return { kind: 'same' };
   const [was, now] = [before.shape, after.shape];
   if (was === undefined || was.kind === 'unrecorded') {
@@ -194,7 +195,7 @@ export function classify(before: ApiSymbol, after: ApiSymbol): ApiChange {
     return breaks('its heading changed — type parameters, `extends`, or a local type it names');
   }
   if (was.kind === 'members' && now.kind === 'members') {
-    return members(was.members, now.members, now.inherited);
+    return members(was.members, now.members, now.inherited, consumedOnly);
   }
   if (was.kind === 'function' && now.kind === 'function') {
     if (was.returns !== now.returns) return breaks('its return type changed');

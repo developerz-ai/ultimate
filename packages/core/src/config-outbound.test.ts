@@ -54,7 +54,7 @@ describe('outbound — default, merge and refusal', () => {
       expect(said).toContain('outbound.direct');
     }
     expect(
-      defineConfig({ name: 'app', outbound: { direct: ['10.0.0.7', 'svc'] } }).outbound.direct,
+      defineConfig({ name: 'app', outbound: { direct: ['10.0.0.7', 'svc'] } }).outbound?.direct,
     ).toEqual(['10.0.0.7', 'svc']);
   });
 

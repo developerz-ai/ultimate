@@ -62,12 +62,16 @@ function proxyIssue(proxy: unknown): string | undefined {
 }
 
 /** Appends every refusal the section earns to `issues`, `config.ts`' one list. */
-export function outboundIssues(config: OutboundSection, issues: string[]): void {
+export function outboundIssues(
+  config: { readonly outbound?: OutboundConfig | undefined },
+  issues: string[],
+): void {
+  const section = config.outbound ?? OUTBOUND_DEFAULTS;
   // `unknown`: an untyped config file reaches this validator with whatever it wrote.
-  const proxy: unknown = config.outbound.proxy;
+  const proxy: unknown = section.proxy;
   const issue = proxyIssue(proxy);
   if (issue !== undefined) issues.push(issue);
-  for (const entry of config.outbound.direct as readonly unknown[]) {
+  for (const entry of section.direct as readonly unknown[]) {
     if (typeof entry !== 'string' || !HOST.test(entry)) {
       issues.push(
         `outbound.direct holds ${typeof entry === 'string' ? renderCauseValue(entry) : describeValue(entry)}, not a bare host name (no scheme, path, port or *)`,

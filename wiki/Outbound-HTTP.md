@@ -68,7 +68,7 @@ re-screen each redirect. All of it is in this one option.
   transport's message (`//…@`), and the proxy is never recorded.
 - With no `proxy`, Bun's own `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` still apply, as for any `fetch`.
 - **Which proxy, and rotating them, is app code** (axiom 8): a resolver over your own inventory.
-- `proxy: null` dials direct, past the app-wide proxy below.
+- `proxy: () => undefined` dials direct, past the app-wide proxy below.
 
 ```ts
 import { outbound } from '@ultimat3/core/outbound';

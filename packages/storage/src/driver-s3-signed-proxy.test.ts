@@ -49,3 +49,30 @@ describe('unit · the s3 disk honours the app-wide egress proxy', () => {
     expect(await proxyOf('http://127.0.0.1:9000')).toBe('none');
   });
 });
+
+// 31.51.0's `S3FetchLike` had no `proxy`: a transport an app typed by that init still compiles as
+// one (a new optional property makes its parameter a supertype) and still sends — it is simply
+// handed one more key it may ignore.
+describe('unit · an S3FetchLike written against 31.51.0', () => {
+  test('typed by the recorded init, it is still an S3FetchLike', async () => {
+    const methods: string[] = [];
+    const recorded = (
+      _url: string,
+      init: {
+        readonly method: string;
+        readonly headers: Readonly<Record<string, string>>;
+        readonly body?: Uint8Array<ArrayBuffer> | undefined;
+      },
+    ): Promise<Response> => {
+      methods.push(init.method);
+      return Promise.resolve(new Response('ok'));
+    };
+    const fetch: S3FetchLike = recorded;
+    releases.push(configureOutboundProxy({ proxy: PROXY }));
+    await sendSigned(
+      { bucket: 'b', region: 'eu-west-1', env: FAKE_ENV, fetch },
+      { method: 'GET', key: 'k' },
+    );
+    expect(methods).toEqual(['GET']);
+  });
+});

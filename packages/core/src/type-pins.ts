@@ -20,7 +20,9 @@ import type { Page } from './cursor-page';
 import type { ErrorReporter, ErrorReportingOptions } from './error-reporter';
 import type { SentryReporterHooks, SentryReporterOptions } from './error-reporter-sentry-hooks';
 import { mapBounded } from './map-bounded';
+import type { OutboundRequest } from './outbound-types';
 import type { HydrateStrategy, OfflineStrategy, RenderMode, Surface } from './route-vocabulary';
+import type { configureTelemetry, installTelemetry } from './telemetry';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
 type Assert<T extends true> = T;
@@ -298,3 +300,18 @@ type _SettleAllAnswersOutcomes = Assert<
   Exact<Awaited<ReturnType<typeof settleAll>>, PromiseSettledResult<number>[]>
 >;
 type _DefaultAnswersValues = Assert<Exact<Awaited<ReturnType<typeof settleFirst>>, number[]>>;
+
+/**
+ * Three surfaces held at their 31.51.0 shape while the outbound proxy and the boot's telemetry
+ * release landed beside them: `(): void => configureTelemetry(…)` compiled (the release is
+ * `installTelemetry`, `./adapter`), an `AppConfig` literal had no `outbound`, and a reader of
+ * `OutboundRequest['proxy']` never met `null`.
+ */
+type _ConfigureTelemetryAnswersNothing = Assert<Exact<ReturnType<typeof configureTelemetry>, void>>;
+type _InstallTelemetryAnswersItsRelease = Assert<
+  Exact<ReturnType<typeof installTelemetry>, () => void>
+>;
+type _AppConfigWithoutOutboundIsAnAppConfig = Assert<
+  Omit<AppConfig, 'outbound'> extends AppConfig ? true : false
+>;
+type _OutboundProxyIsNeverNull = Assert<null extends OutboundRequest['proxy'] ? false : true>;

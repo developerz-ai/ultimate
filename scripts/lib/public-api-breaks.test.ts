@@ -101,3 +101,39 @@ describe('public-api-breaks · the diff', () => {
     });
   });
 });
+
+// `public-api-consumed.ts`: an interface only the framework builds may gain a REQUIRED member — no
+// app has an object that lacks it. Anything else on it is still judged, and an unlisted one is not.
+describe('public-api-breaks · a consumed-only interface', () => {
+  const one = (text: string): ApiSymbol =>
+    symbolsOf({ Table: text })['Table'] ?? expect.unreachable('symbolsOf keeps every name');
+  const before = one('interface Table { a : 1 ; }');
+  const grown = one('interface Table { a : 1 ; b : 2 ; }');
+  const retyped = one('interface Table { a : 3 ; b : 2 ; }');
+
+  test('listed, a required member added is compatible, and says why', () => {
+    const lock = { '@ultimat3/entity': { Table: before } };
+    expect(diffApi(lock, { '@ultimat3/entity': { Table: grown } })).toEqual({
+      breaks: [],
+      compatible: [
+        {
+          specifier: '@ultimat3/entity',
+          name: 'Table',
+          why: 'required `b` added to an interface only the framework builds',
+        },
+      ],
+      added: [],
+    });
+  });
+
+  test('listed, a member retyped is still a break', () => {
+    const lock = { '@ultimat3/entity': { Table: before } };
+    const { breaks } = diffApi(lock, { '@ultimat3/entity': { Table: retyped } });
+    expect(breaks.map((one) => one.why)).toEqual(['member `a` changed its type']);
+  });
+
+  test('the same interface under an unlisted specifier is judged as any other', () => {
+    const { breaks } = diffApi({ '@a/b': { Table: before } }, { '@a/b': { Table: grown } });
+    expect(breaks.map((one) => one.why)).toEqual(['required member `b` was added']);
+  });
+});

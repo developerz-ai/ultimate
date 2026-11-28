@@ -1,7 +1,8 @@
 // The app-wide egress proxy: `outbound.proxy` in `app.config.ts`, installed once by the boot, is
 // what every `outbound()` call with no `proxy` of its own goes through — a framework sender (APNs,
-// FCM, OAuth) included, with no call-site change. A call's own `proxy` wins, `null` dials direct,
-// loopback and the `direct` hosts never take the proxy, and its credential is printed nowhere.
+// FCM, OAuth) included, with no call-site change. A call's own `proxy` wins (a resolver answering
+// `undefined` dials direct), loopback and the `direct` hosts never take the proxy, and its
+// credential is printed nowhere.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { isUltimateError, type UltimateError } from './errors';
@@ -78,9 +79,9 @@ describe('unit · outbound · the app-wide proxy', () => {
     expect(await proxiedAs(call({ proxy: () => undefined }))).toBeUndefined();
   });
 
-  test('proxy: null dials direct past a configured proxy', async () => {
+  test('a resolver answering undefined dials direct past a configured proxy', async () => {
     ambient(PROXY);
-    expect(await proxiedAs(call({ proxy: null }))).toBeUndefined();
+    expect(await proxiedAs(call({ proxy: () => undefined }))).toBeUndefined();
   });
 
   test('loopback and the declared direct hosts never take the proxy', async () => {

@@ -132,9 +132,10 @@ export interface OutboundRequest {
    * against the name; the proxy itself is the app's own choice, like a `'named'` host.
    *
    * Unset: the app-wide proxy, `outbound.proxy` in `app.config.ts`, when one is declared (never
-   * for loopback or an `outbound.direct` host). `null`: this call dials direct regardless.
+   * for loopback or an `outbound.direct` host). A resolver answering `undefined` — `proxy: () =>
+   * undefined` — dials this call direct regardless: the one spelling, so the field's type is 31.x's.
    */
-  readonly proxy?: OutboundProxy | null | undefined;
+  readonly proxy?: OutboundProxy | undefined;
 }
 
 export interface OutboundDeps {

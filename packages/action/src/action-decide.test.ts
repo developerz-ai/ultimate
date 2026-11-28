@@ -9,6 +9,7 @@ import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { Policy } from '@ultimat3/policy';
 import { allow, can, denied, PolicyError } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
+import type { ActionDef } from './action';
 import { action } from './action';
 import type { ActionDecision } from './action-decide';
 import { toRoute } from './http';
@@ -134,6 +135,27 @@ describe('decide(rows)', () => {
         return { allowed: [], denied: [] };
       },
     });
+  });
+
+  // 31.51.0 had no `decide`: a declaration typed `ActionDef` — the handler a wrapper calls itself
+  // with `{ input, ctx }` — still compiles and still goes into `action()`, where it is handed one.
+  test('a declaration typed ActionDef keeps its 31.51.0 handle and still becomes an action', async () => {
+    let handed: readonly string[] = [];
+    const held: ActionDef<typeof Input, typeof Output, Post> = {
+      input: Input,
+      output: Output,
+      policy: ownPost,
+      handle: (args) => {
+        handed = Object.keys(args);
+        return { allowed: args.input.ids, denied: [] };
+      },
+    };
+    expect(await held.handle({ input: { ids: ['p1'] }, ctx: ada() })).toEqual({
+      allowed: ['p1'],
+      denied: [],
+    });
+    await invoke(action(held).named('heldBulkEdit'), { ids: ['p2'] }, { ctx: ada() });
+    expect(handed).toContain('decide');
   });
 
   test('absent before the input stage: the row loader is handed no decide', async () => {

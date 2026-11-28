@@ -121,15 +121,14 @@ describe('public-api-compat · functions', () => {
   });
 
   // A `type F = (…) => R` is as often a callback the app IMPLEMENTS as a function it calls, and
-  // for an implementation both a widened parameter and a new optional property are compile breaks
-  // under `--strict` (its parameter no longer accepts what is passed). So its parameters are held
-  // unchanged — `members()`' strictness — and only a function or const declaration accepts more.
+  // for an implementation a widened parameter is a compile break under `--strict` (its parameter
+  // no longer accepts what is passed), and so is a property made optional (it is handed
+  // `undefined`). A new OPTIONAL property is not: the implementation's recorded parameter type is
+  // a supertype of the new one — the rule an interface's new optional member is judged by.
   test('a function type alias holds its parameters unchanged: more accepted is a break', () => {
     const before =
-      'type Build = ( root : string , o ? : { readonly only ? : string ; } ) => Promise < B >';
-    expect(
-      verdict(before, before.replace('only ? : string ;', 'only ? : string ; c ? : boolean ;')),
-    ).toBe(
+      'type Build = ( root : string , o ? : { readonly only : string ; } ) => Promise < B >';
+    expect(verdict(before, before.replace('only : string', 'only ? : string'))).toBe(
       'break: a function type an app may implement: parameter 2 changed (it accepts more properties)',
     );
     expect(verdict(before, before.replace('root : string', 'root : string | URL'))).toBe(
@@ -138,6 +137,19 @@ describe('public-api-compat · functions', () => {
     expect(verdict(before, before.replace('Promise < B >', 'B'))).toBe(
       'break: its return type changed',
     );
+  });
+
+  test('a function type alias: a new optional property of an object parameter is compatible', () => {
+    const before =
+      'type Send = ( url : string , init : { readonly method : string ; } ) => Promise < R >';
+    const grown = before.replace(
+      'method : string ;',
+      'method : string ; readonly proxy ? : string ;',
+    );
+    expect(verdict(before, grown)).toBe('compatible: parameter 2 accepts more properties');
+    // Gained AND loosened in one change is still a break: the loosened one decides.
+    const loosened = grown.replace('readonly method : string', 'readonly method ? : string');
+    expect(verdict(before, loosened)).toStartWith('break: a function type an app may implement');
   });
 
   test('a function type alias: a renamed parameter or a new optional one is still compatible', () => {

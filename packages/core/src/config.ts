@@ -237,7 +237,11 @@ export interface AppConfig {
   readonly clientErrors: clientErrors.ClientErrorsConfig;
   readonly failureCapture: failureCapture.FailureCaptureConfig;
   readonly time: timeSection.AppTimeConfig;
-  readonly outbound: outboundSection.OutboundConfig;
+  /**
+   * Optional in the TYPE only: `defineConfig` always fills it (`mergeOutbound`), but an
+   * `AppConfig` literal written before 31.52 has no such key and must still compile.
+   */
+  readonly outbound?: outboundSection.OutboundConfig | undefined;
 }
 
 /**
@@ -259,9 +263,10 @@ export interface AppConfigInput
     assetsSection.AssetsSectionInput,
     clientErrors.ClientErrorsSectionInput,
     failureCapture.FailureCaptureSectionInput,
-    timeSection.TimeSectionInput,
-    outboundSection.OutboundSectionInput {
+    timeSection.TimeSectionInput {
   readonly name: string;
+  /** A member, not an `extends`: the interface's heading is part of its 31.x public API. */
+  readonly outbound?: outboundSection.OutboundSectionInput['outbound'];
   readonly theme?: Input<ThemeConfig> | undefined;
   readonly auth?: Input<AuthConfig> | undefined;
   readonly pwa?: PwaConfigInput | undefined;

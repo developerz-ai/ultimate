@@ -39,8 +39,10 @@ export function members(
   before: Readonly<Record<string, MemberCode>>,
   after: Readonly<Record<string, MemberCode>>,
   inherited: Readonly<Record<string, { readonly code: MemberCode; readonly from: string }>> = {},
+  consumedOnly = false,
 ): ApiChange {
   const added: string[] = [];
+  const built: string[] = [];
   const redeclared: string[] = [];
   for (const [name, was] of Object.entries(before)) {
     const now = own(after, name);
@@ -60,8 +62,22 @@ export function members(
       redeclared.push(`\`${name}\` re-declared as its parent \`${parent.from}\` requires it`);
       continue;
     }
-    if (!optional(now)) return breaks(`required member \`${name}\` was added`);
+    if (!optional(now)) {
+      // `consumed-only` (`public-api-consumed.ts`): no app builds one, so none lacks the member.
+      if (!consumedOnly) return breaks(`required member \`${name}\` was added`);
+      built.push(name);
+      continue;
+    }
     added.push(name);
+  }
+  if (built.length > 0) {
+    const names = built.map((name) => `\`${name}\``).join(', ');
+    const more =
+      added.length === 0 ? '' : `; optional ${added.map((name) => `\`${name}\``).join(', ')} added`;
+    return {
+      kind: 'compatible',
+      why: `required ${names} added to an interface only the framework builds${more}`,
+    };
   }
   if (redeclared.length > 0) {
     const more =
@@ -129,10 +145,16 @@ function objectParam(
   return { kind: 'compatible', why: `${at} accepts more properties` };
 }
 
+/** Every recorded property kept exactly, optionality included: the object only gained some. */
+function onlyAdded(was: Param, now: Param): boolean {
+  return Object.entries(was.object ?? {}).every(([name, code]) => own(now.object, name) === code);
+}
+
 /**
  * `implemented`: the parameters of a function type an app may implement rather than call. An
  * implementation must accept what is passed, so a parameter that accepts more — a wider union, a
- * new property, made optional — is a break there; a rename or a new optional trailing one is not.
+ * property made optional, the parameter made optional — is a break there; a rename, a new optional
+ * trailing parameter or a new optional property of an object parameter is not.
  */
 export function params(
   before: readonly ParamCode[],
@@ -166,7 +188,10 @@ export function params(
     if (object?.kind === 'break') return object;
     if (object !== undefined) {
       if (JSON.stringify(was.object) !== JSON.stringify(now.object)) {
-        const broke = more(at, 'it accepts more properties');
+        // Only new OPTIONAL properties: an implementation typed by the recorded object still
+        // takes the new one (its parameter is a supertype), as a new optional member is
+        // compatible on an interface. A property made optional hands it `undefined`: a break.
+        const broke = onlyAdded(was, now) ? undefined : more(at, 'it accepts more properties');
         if (broke !== undefined) return broke;
         whys.push(object.why);
       }

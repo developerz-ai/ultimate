@@ -157,11 +157,18 @@ const UNNAMED: SpanResource = Object.freeze({
 });
 let resource: SpanResource = UNNAMED;
 
+/** Sets each option given, for the process. The boot's form, with a release: `installTelemetry`. */
+export function configureTelemetry(options: TelemetryOptions): void {
+  installTelemetry(options);
+}
+
 /**
- * Returns the release: it puts back what THIS call replaced and nothing else, so a boot's stop
- * hands the process the identity it found (an installer's shape: `installBuildId`).
+ * `configureTelemetry` returning its release: it puts back what THIS call replaced and nothing
+ * else, so a boot's stop hands the process the identity it found. On `./adapter` beside
+ * `installBuildId` — the boot is its caller — because a barrel `configureTelemetry` that answered
+ * a function would refuse `(): void => configureTelemetry(…)`, which compiled against 31.51.0.
  */
-export function configureTelemetry(options: TelemetryOptions): () => void {
+export function installTelemetry(options: TelemetryOptions): () => void {
   const before = { clock, enabled, sampler, resource };
   if (options.clock !== undefined) clock = options.clock;
   if (options.enabled !== undefined) enabled = options.enabled;

@@ -7,7 +7,11 @@ import type { CursorTrustOptions } from './cursor-sign';
 import type { SubscriberGateOptions } from './subscriber-gate';
 import type { Scheduler } from './thundering-herd';
 
-export interface LiveQueryRegistryOptions extends SubscriberGateOptions, CursorTrustOptions {
+// The cursor-trust hooks are members read off `CursorTrustOptions`, not a second `extends`: the
+// heading is part of this interface's 31.x public API, and an added optional member is not.
+export interface LiveQueryRegistryOptions extends SubscriberGateOptions {
+  readonly onUnsignedCursor?: NonNullable<CursorTrustOptions['onUnsignedCursor']>;
+  readonly onCursorRefused?: NonNullable<CursorTrustOptions['onCursorRefused']>;
   readonly source: ResumeSource;
   readonly budget?: ReconnectBudget;
   readonly clock?: Clock;

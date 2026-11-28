@@ -26,3 +26,5 @@ export {
 } from './secret-source';
 export { SecretsKeyMissingError } from './secrets-errors';
 export { installClock, noWaitClock, systemClock } from './sleep-clock';
+/** The service identity, sampler and clock, with the release the boot's stop calls. */
+export { installTelemetry } from './telemetry';

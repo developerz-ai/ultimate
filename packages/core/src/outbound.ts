@@ -88,8 +88,9 @@ function prepare(request: OutboundRequest, deps: OutboundDeps): AttemptCall {
     local: isLocal({ env: deps.env, fallback: 'production' }),
     fetch: send,
     resolve: deps.resolve,
-    // Unsaid is the app-wide proxy (`outbound.proxy`, installed by the boot); `null` is direct.
-    proxy: request.proxy === undefined ? ambientOutboundProxy() : (request.proxy ?? undefined),
+    // Unsaid is the app-wide proxy (`outbound.proxy`, installed by the boot); a resolver
+    // answering `undefined` is direct.
+    proxy: request.proxy === undefined ? ambientOutboundProxy() : request.proxy,
     endsAt: now() + deadlineMs,
     deadlineMs,
     idleMs: finiteCount('outbound()', 'idleMs', request.idleMs ?? OUTBOUND_IDLE_MS, 1),
