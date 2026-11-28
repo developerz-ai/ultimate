@@ -111,7 +111,12 @@ jobs:
           echo "::error::${CHECK} concluded '${conclusion:-no verdict}' for ${SHA} (${REUSED_BY}: '${reused:-no verdict}') — not publishing."
           exit 1
 
-      - uses: ./.github/actions/setup
+      # Bun alone, never the setup composite: it restores ~/.bun/install/cache in the job
+      # that checks out main and runs repo code, before Pages credentials are granted.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.4'
+          no-cache: true
 
       # Did anything the site is built from change since the last green publish? Fail-open: every
       # `gh` failure is "no baseline" or "no comparison", and both publish.

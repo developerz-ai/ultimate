@@ -75,3 +75,22 @@ describe(`unit · ${FILE} · publishes only what the docs site's own gate passed
     expect(step?.env?.['SITE_ORIGIN']).toBe(expr('vars.DOCS_SITE_ORIGIN'));
   });
 });
+
+describe(`unit · ${FILE} · the privileged build job carries no cache to poison`, () => {
+  // code-scanning alerts #164 and #165: this job checks out main's tip and runs repo code, then
+  // the deploy job gets Pages credentials. The setup composite restores a cache in that job.
+  const steps = jobOf(deploy, 'build').steps ?? [];
+
+  test('no local setup composite and no cache step run in the build job', () => {
+    expect(steps.some((step) => text(step.uses).includes('./.github/actions/setup'))).toBe(false);
+    expect(steps.some((step) => text(step.uses).startsWith('actions/cache@'))).toBe(false);
+  });
+
+  test('Bun is set up by a SHA-pinned action with no cache', () => {
+    const setup = steps.find((step) => text(step.uses).startsWith('oven-sh/setup-bun@'));
+    expect(setup).toBeDefined();
+    expect(text(setup?.uses)).toMatch(/^oven-sh\/setup-bun@[0-9a-f]{40} # v\d/);
+    expect(setup?.with?.['bun-version']).toBe('1.4.4');
+    expect(setup?.with?.['no-cache']).toBe(true);
+  });
+});
