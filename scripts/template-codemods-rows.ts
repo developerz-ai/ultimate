@@ -329,4 +329,19 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.52.0',
     none: "the catalog merge rule widened to catalogs/**/*.json plus each split locale's barrel; an existing app's catalogs/*.json rule still covers its flat files, and x i18n split widens that line in the app that splits, so x upgrade leaves .gitattributes alone",
   },
+  {
+    template: 'packages/cli/src/templates/shapes/offline.ts',
+    since: '31.52.0',
+    none: "the offline shape's /posts budget moves 156kb → 157kb for a new app: the page boot keeps the live cursor's sig (+253 B, #1280). An existing app keeps its own budget; one that lands over it gets X_BUDGET_EXCEEDED naming the measured bytes, and raises its budget there with the reason",
+  },
+  {
+    template: 'apps/web/app/posts/page.tsx',
+    since: '31.52.0',
+    none: "the offline shape's /posts budget moves 156kb → 157kb for a new app: the page boot keeps the live cursor's sig (+253 B, #1280). An existing app keeps its own budget; one that lands over it gets X_BUDGET_EXCEEDED naming the measured bytes, and raises its budget there with the reason",
+  },
+  {
+    template: 'apps/web/app/posts/page.test.ts',
+    since: '31.52.0',
+    none: "the offline shape's /posts budget moves 156kb → 157kb for a new app: the page boot keeps the live cursor's sig (+253 B, #1280). An existing app keeps its own budget; one that lands over it gets X_BUDGET_EXCEEDED naming the measured bytes, and raises its budget there with the reason",
+  },
 ];

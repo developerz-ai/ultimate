@@ -34,7 +34,11 @@ function exported(): MemoryExporter {
 
 /** An app named `shop`; `onLoad` is source evaluated while `app.config.ts` is imported. */
 async function app(dir: string, onLoad = ''): Promise<string> {
-  const root = join(ROOT, dir);
+  // A fresh directory per call: a module is evaluated once per process, so a rerun in the same
+  // process (flake-hunt) would import the cached `app.config.ts` and its load-time span never fires.
+  // Never a module-level counter: `--rerun-each` evaluates this file again, the counter restarts
+  // at 0, and the "fresh" path is the first run's — still in the import cache.
+  const root = join(ROOT, `${dir}-${crypto.randomUUID()}`);
   await Bun.write(join(root, 'package.json'), JSON.stringify({ name: dir, version: '1.0.0' }));
   await Bun.write(
     join(root, 'app.config.ts'),
