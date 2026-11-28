@@ -63,8 +63,10 @@ const caught = async (fn: () => Promise<unknown>): Promise<AuthError> => {
 
 describe('the recipient is not the store key', () => {
   // Declared once, at module scope like an app would. Only a purpose that says so takes a `to`.
+  // A name of its own per load: a rerun in the same process (flake-hunt) evaluates this file
+  // again, and a second declaration of one name is refused.
   const keyed = defineVerificationPurpose({
-    name: 'test-keyed-invite',
+    name: `test-keyed-invite-${crypto.randomUUID()}`,
     template: 'auth.test-keyed-invite',
     ttlMs: 60_000,
     identifier: (raw) => raw.toLowerCase(),
