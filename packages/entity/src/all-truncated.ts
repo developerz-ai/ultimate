@@ -6,7 +6,12 @@
 import { DEFAULT_ENVIRONMENT, logger, tryResolveEnvironment } from '@ultimat3/core';
 import { DEFAULT_PAGE_SIZE } from './plan';
 
-/** The one log message this writes: a subscriber matches `log.record`'s `message` against it. */
+/**
+ * The one log message this writes: a subscriber matches `log.record`'s `message` against it.
+ *
+ * @deprecated Removed at the next major: a truncated `.all()` refuses `X_ENTITY_ALL_TRUNCATED`
+ * instead of logging, so there is no message to match.
+ */
 export const ALL_TRUNCATED = 'entity.all.truncated';
 
 /** The warning's code, on `fields.code`. A refusal under the same code is `next`'s, not 31.x's. */

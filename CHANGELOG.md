@@ -12,7 +12,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Deprecated
 
-- `ERROR_DOCS_URL` (`@ultimat3/core`): every framework error links its own docs-site page at the next major (`errorDocsUrl(code)`). `recountSql` and `recountDriftSql` (`@ultimat3/db`): no longer exported at the next major; `x db recount` reads and repairs drift.
+- `ERROR_DOCS_URL` (`@ultimat3/core`): every framework error links its own docs-site page at the next major (`errorDocsUrl(code)`). `recountSql` and `recountDriftSql` (`@ultimat3/db`): no longer exported at the next major; `x db recount` reads and repairs drift. `ALL_TRUNCATED` (`@ultimat3/entity`): a truncated `.all()` refuses at the next major, so there is no log message to match.
 
 ### Fixed
 

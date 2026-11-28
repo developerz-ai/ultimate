@@ -55,6 +55,7 @@ export const PARKED_BREAKS: readonly ParkedBreak[] = [
       { path: `${P11}/05-entity.md`, anchor: '| E12 | shipped (warning only)' },
       { path: `${P14}/03-db-entity-policy.md`, anchor: '2. E2: in 31.x' },
     ],
+    removes: [{ path: 'packages/entity/src/all-truncated.ts', symbol: 'ALL_TRUNCATED' }],
   },
   {
     ids: 'E9',
