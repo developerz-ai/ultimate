@@ -42,6 +42,13 @@ describe('unit · flake-hunt.yml is weekly and never a gate', () => {
     expect(Object.keys(workflow.on ?? {}).sort()).toEqual(['schedule', 'workflow_dispatch']);
   });
 
+  // A daily cron would run four rounds a night: the bar reads four weekly runs (finished-github.ts).
+  test('the schedule is one weekly cron', () => {
+    const schedule = workflow.on?.['schedule'] as readonly { readonly cron?: string }[] | undefined;
+    expect(schedule?.length).toBe(1);
+    expect(schedule?.[0]?.cron).toMatch(/^\d+ \d+ \* \* [0-6]$/);
+  });
+
   // Four, weekly, since 2026-11-28 (two a night before): each round shuffles under a fresh seed, so
   // the four weekly runs the `tests-deterministic` row (`scripts/finished-github.ts`) reads are
   // sixteen orders a suite.

@@ -8,7 +8,9 @@ name: scorecard
 # Publishing binds the job to Scorecard's own rules: no `run:` step, no env or defaults at workflow
 # or job level, no container, only checkout and the action itself, and `id-token: write` (the OIDC
 # token the API verifies the run with) on this job alone. No SARIF upload: that needs
-# `security-events: write`, and the badge does not. Weekly, and on a change to `main`'s rules.
+# `security-events: write`, and the badge does not. Weekly, and on a classic branch-protection
+# change; `main` is guarded by a RULESET, whose edits fire no event here, so after a ruleset edit run
+# `gh workflow run scorecard.yml` or wait for Tuesday.
 
 on:
   branch_protection_rule:

@@ -40,10 +40,11 @@ on:
     branches: [main, next, 'release/[0-9]+.x']
   pull_request:
   workflow_dispatch:
-  # The weekly full run on main (Monday): every job, every scaffold row. A pull request away from the
+  # The weekly full run on main (Monday): every job a `schedule` run is eligible for (not the
+  # pull-request-only `flaky` and `release-rehearsal`, nor `deploy-proof`), every scaffold row. A pull request away from the
   # scaffold code runs three of `scaffold-smoke`'s rows (`scripts/lib/ci/scaffold-matrix.ts`), so a
   # shape-only regression from elsewhere is caught on a push `tested` did not skip, here at the
-  # latest, and in any case on the release commit, whose run is always a run of everything. Weekly,
+  # latest, and in any case on the release commit, which `tested` never skips. Weekly,
   # not nightly, since 2026-11-28: ~100 runner-minutes a night for a matrix most nights repeated
   # unchanged. A red run opens or updates one `ci-nightly` issue (`ci-nightly.yml`, the name kept
   # so the open issue still matches) and a green one closes it. Clear of flake-hunt (02:23),
