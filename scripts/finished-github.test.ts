@@ -2,7 +2,7 @@
 // fixtures — green, red and unreadable for each, and a refusing `gh` is never green.
 
 import { describe, expect, test } from 'bun:test';
-import { compatRow, FLAKE_WEEKS, flakeRow, shapesRow } from './finished-github';
+import { compatRow, FLAKE_COMMAND, FLAKE_WEEKS, flakeRow, shapesRow } from './finished-github';
 import type { Runner } from './finished-rule';
 import type { RunResult } from './lib/run';
 
@@ -89,6 +89,43 @@ describe('finished · tests-deterministic', () => {
     expect((await flakeRow('/', fakeGh({ 'run list': weeks(FLAKE_WEEKS) }), NOW)).verdict).toBe(
       'green',
     );
+  });
+
+  test('the query asks for exactly the bar: the last FLAKE_WEEKS completed scheduled runs on main', () => {
+    expect(FLAKE_COMMAND).toContain(`--limit ${String(FLAKE_WEEKS)} `);
+    expect(FLAKE_COMMAND).toContain('--event schedule');
+    expect(FLAKE_COMMAND).toContain('--status completed');
+    expect(FLAKE_COMMAND).toContain('--branch main');
+  });
+
+  test('the newest run just inside eight days is green, just outside is red', async () => {
+    const aged = (ms: number) =>
+      weeks(FLAKE_WEEKS).map((one, at) => ({
+        ...one,
+        createdAt: new Date(NOW - ms - at * 7 * 86_400_000).toISOString(),
+      }));
+    const day = 86_400_000;
+    expect((await flakeRow('/', fakeGh({ 'run list': aged(8 * day - 60_000) }), NOW)).verdict).toBe(
+      'green',
+    );
+    expect((await flakeRow('/', fakeGh({ 'run list': aged(8 * day + 60_000) }), NOW)).verdict).toBe(
+      'red',
+    );
+  });
+
+  // The cutover: one weekly run beside three nightly ones from before 2026-11-28 is not four weeks.
+  test('nightly runs from the old schedule never count as weekly hunts', async () => {
+    const cutover = [
+      week('success', 0),
+      ...[1, 2, 3].map((days) => ({
+        conclusion: 'success',
+        createdAt: new Date(NOW - 3_600_000 - (2 + days) * 86_400_000).toISOString(),
+        url: `n${String(days)}`,
+      })),
+    ];
+    const row = await flakeRow('/', fakeGh({ 'run list': cutover }), NOW);
+    expect(row.verdict).toBe('red');
+    expect(row.findings[0]?.cause).toContain('not 4 weekly runs');
   });
 
   test('one red week, too few weeks, or a stopped schedule is red', async () => {

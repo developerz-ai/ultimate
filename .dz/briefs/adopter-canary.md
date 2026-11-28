@@ -1,17 +1,17 @@
 # Brief: does an app on the previous release upgrade to this one cleanly?
 
 Weekly checkup (Wednesday) fired by `schedules: adopter-canary` in `.dz/maintainer/maintainer.yml`.
-**Act only when the newest Release was published in the last 7 days** — the schema has no release
-event, so this run polls for one. A red canary blocks nothing: the release is out. It files an issue before
-an adopter meets the failure.
+**Act only on Releases published in the last 7 days** — the schema has no release event, so this
+run polls for them. A week can hold two (Monday's and an off-cycle security one): run the steps
+below once per such Release, oldest first, `$t` its tag. A red canary blocks nothing: the release is
+out. It files an issue before an adopter meets the failure.
 
 ```bash
 git fetch --tags origin
-t=$(git describe --tags --abbrev=0 --match 'v[0-9]*' origin/main)
-gh release view "$t" --json tagName,isDraft,publishedAt
+gh release list --limit 10 --exclude-drafts --json tagName,publishedAt
 ```
 
-Stop, file nothing, when `isDraft` is true or `publishedAt` is older than 7 days. A missing
+Stop, file nothing, when no Release in that list has `publishedAt` within the last 7 days. A missing
 Release, or a stamped version with no tag, is not this brief's: `scripts/health.ts` reports it (docs/ops/health.md),
 and `docs/ops/maintainer-runbooks/release-commit-red.md` is the repair.
 
@@ -65,7 +65,7 @@ All green: end the run summary with `canary <new>: <prev> upgraded clean, tracke
 
 ## Rows
 
-- `fresh-release` — Stop unless the newest Release is published and less than 7 days old.
+- `fresh-release` — Stop unless a Release was published in the last 7 days; canary each one, oldest first.
 - `registry-serves` — Install nothing until `registry-audit --tarballs` is `ok`; else the registry-lags runbook.
 - `scaffold-upgrade` — Scaffold `<prev>` from npm, set it up, upgrade it with `@ultimat3/cli@<new>`; red on a refusal, a red hop gate or a file left to a human.
 - `tracked-apps` — Gate the three tracked apps at the release commit; red only when `ci.yml` was green on it.

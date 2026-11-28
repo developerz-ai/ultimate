@@ -1,14 +1,14 @@
 # The maintainer itself is down for N days
 
 **The bot cannot report its own absence: a person, or a check that does not run on the platform,
-has to notice.** Every brief in `.dz/briefs/` runs on the platform; when the platform stops, the
-weekly `health` checkup stops with it, and nothing it would have filed gets filed.
+has to notice.** Every brief in `.dz/briefs/` runs on the platform; when the platform stops, its
+checkups and reviews stop with it, and nothing they would have filed gets filed.
 
 ## Who notices, `As of 2026-11-15`
 
 | Watcher | Notices | State |
 |---|---|---|
-| a scheduled workflow in this repository reading the bot's last activity, filing an issue past a threshold | the bot silent for more than 8 days — one missed weekly `health` run plus a day | **planned, not built.** No workflow in `.github/workflows/` reads it; the closest is `registry-audit.yml`, which files its own alarm daily whether or not anyone answers |
+| a scheduled workflow in this repository reading the bot's last activity, filing an issue past a threshold | the bot silent for more than 8 days — a missed week of reviews and checkups plus a day | **planned, not built.** No workflow in `.github/workflows/` reads it; the closest is `registry-audit.yml`, which files its own alarm daily whether or not anyone answers |
 | a person opening the repository | open `registry-drift` issues re-fired daily with no reply; Dependabot PRs older than 7 days; PRs with no review from the bot | today's only watcher |
 
 Until the workflow exists, this page is a person's.
@@ -30,7 +30,7 @@ Until the workflow exists, this page is a person's.
 | 2 | Run the health rows by hand: `bun run scripts/health.ts --json`, and file what `docs/ops/health.md` says to file |
 | 3 | `main` red: [`main-red.md`](./main-red.md). A release owed: `bun run scripts/release-due.ts --json`; a person may cut it (PUBLISHING.md § Ongoing releases) |
 | 4 | Open PRs: review and merge them as a member would. `require_review: true` still holds |
-| 5 | When the bot is back, its first `health` run re-reads every row; close what it finds healthy |
+| 5 | When the bot is back, re-run `bun run scripts/health.ts --json` and close what it finds healthy |
 
 ## The gap
 
