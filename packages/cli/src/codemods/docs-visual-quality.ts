@@ -17,11 +17,6 @@ const NEW_HARNESS = lines(
   '  Managed: `bunx x kit` rewrites them, an edit in place is `X_KIT_DRIFT`; yours go in `app-*`.',
 );
 
-const OLD_COMMANDS = lines(
-  '| `.claude/commands/feature.md` | build or fix one thing end to end, done when `bun run verify` is green | plain markdown any agent can follow |',
-  '| `.claude/commands/planx.md` | write a plan to `docs/plans/` | the same |',
-  '| `.claude/commands/verify.md` | run the gate and fix what it reports | the same |',
-);
 const NEW_SKILLS =
   '| `.claude/skills/` | `feature` (hive, one PR, done when merged), `planx`, `verify`, `upgrade`, `design-research` | plain markdown any agent can follow; `bunx x kit` keeps them current |';
 
@@ -71,13 +66,19 @@ const SHIPPED_COMMAND_ROWS: ReadonlySet<string> = new Set([
 
 const SECTION = '## Agent tools';
 
-/** `text` from the Agent tools heading to the end of its table, or `undefined` when it has none. */
+/**
+ * `text` from the Agent tools heading to the last row of the FIRST table under it, or `undefined`
+ * when it has none: a later table under the same heading is the author's, never this table.
+ */
 function agentToolsSection(text: string): string | undefined {
   const start = text.indexOf(`\n${SECTION}\n`);
   if (start === -1) return undefined;
-  const from = start + 1;
-  const next = text.indexOf('\n## ', from + SECTION.length);
-  return text.slice(from, next === -1 ? text.length : next);
+  const lines = text.slice(start + 1).split('\n');
+  const head = lines.findIndex((line) => line.startsWith('|'));
+  if (head === -1 || lines.slice(1, head).some((line) => line.startsWith('## '))) return undefined;
+  let end = head;
+  while ((lines[end + 1] ?? '').startsWith('|')) end += 1;
+  return lines.slice(0, end + 1).join('\n');
 }
 
 type CommandRows =
@@ -128,13 +129,21 @@ async function swapCommandRows(app: CodemodApp): Promise<CodemodResult> {
     };
   }
   if (found.kind === 'none') {
-    return editAgentsDocRow(app, {
-      from: OLD_COMMANDS,
-      to: NEW_SKILLS,
-      row: NEW_SKILLS,
-      said: (text) => text.includes('`.claude/skills/`'),
-      missing: 'no .claude/commands rows in the Agent tools table',
-    });
+    // No legacy row inside the Agent tools table: nothing elsewhere in the brief is this table's.
+    for (const path of ['CLAUDE.md', 'AGENTS.md']) {
+      if ((await app.read(path))?.includes('`.claude/skills/`') === true) {
+        return { changed: [], skipped: [] };
+      }
+    }
+    return {
+      changed: [],
+      skipped: [
+        {
+          path: 'CLAUDE.md',
+          reason: `no .claude/commands rows in the Agent tools table; add this row to the conventions table by hand: ${NEW_SKILLS}`,
+        },
+      ],
+    };
   }
   return editAgentsDocRow(app, {
     from: found.from,

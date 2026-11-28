@@ -85,6 +85,16 @@ describe('unit · docs-visual-quality codemod', () => {
     expect(tools).not.toContain('.claude/commands/');
   });
 
+  test("a later table under the Agent tools heading is the author's, never migrated", async () => {
+    const tools = OLD.slice(OLD.indexOf('## Agent tools'));
+    const later = `${OLD.slice(0, OLD.indexOf('## Agent tools'))}## Agent tools\n\n| Tool | Use |\n|---|---|\n| \`bunx x kit\` | refresh the kit |\n\nAnd my own:\n\n${tools.split('\n').slice(2).join('\n')}`;
+    const app = memoryCodemodApp({ 'CLAUDE.md': later });
+    await codemod.run(app);
+    const after = app.files['CLAUDE.md'] ?? '';
+    expect(after).toContain('`.claude/commands/feature.md`');
+    expect(after.split('`.claude/commands/').length - 1).toBe(3);
+  });
+
   test('a second run changes nothing', async () => {
     const app = memoryCodemodApp({ 'CLAUDE.md': OLD });
     await codemod.run(app);
