@@ -53,7 +53,6 @@ How the measuring works: a recorder is installed before the page's own scripts (
 |---|---|
 | the typed URL, each `--follow` link | `http(s)`, no credentials, core's address floor, then every address the name resolves to — before any browser |
 | every navigation, redirect, subresource, popup the page makes | CDP `Fetch` interception on the page **and** browser sessions: core's floor refuses inward literals and `localhost`; a name is resolved (once per session) and refused if any address is not public |
-
 | a WebSocket (`WebSocket`, `WebSocketStream`, `WebTransport`) | refused in the page before its scripts run, in every frame — `Fetch` never pauses a socket handshake, so none is screened, none is opened |
 
 A refused top-level navigation or redirect is `X_DESIGN_URL_REFUSED`; refused subresources are listed by host in `reference.json` (`refused.hosts` inward, `refused.unresolved` a name that did not resolve — unreachable, not private, and asked again rather than cached). A dedicated worker's own socket and a `preconnect` TCP handshake are not covered. The resolve cannot pin Chrome's own socket: a name that rebinds between the screen and Chrome's lookup stays open, as for `@ultimat3/scraping`'s browser leg ([Known gaps](Known-Gaps)). There is no flag that admits loopback — the test suite reaches its fixture server through a harness-only option.

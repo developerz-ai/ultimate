@@ -91,7 +91,12 @@ export const config = defineRoute({
   // that gives it the locale, and core's error titles every island carries. The figures are the
   // server's text without it, so a reader who stills motion pays the bytes for nothing; the
   // island is the only way a count animates. Raised 36kb → 85.5kb.
-  budget: { js: '85.5kb' },
+  // measured: 88209 B (2026-11-28; x build --target static, against 86,960) — why: +1,249 B,
+  // `inView` and `animate` now refuse a NaN or out-of-range option with a coded error
+  // (`X_UI_INVALID_VALUE`) instead of observing at a bound nobody asked for; `CountUp` reaches
+  // `inView` through its effect host, so the screen and its fix text ride in the island.
+  // Raised 85.5kb → 86.5kb.
+  budget: { js: '86.5kb' },
   load: async ({ url }): Promise<RunHealthData> => {
     // The kill switch first: switched off, the page does not exist and neither read is sent.
     assertCoded(

@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import type { DevHost } from '@ultimat3/mcp';
 import { devTools } from '@ultimat3/mcp';
 import { registeredErrorCodes } from '../error-catalog';
+import { citedCommandProblem, loadCommandCatalog } from '../fix-command';
 import { GLOBAL_FLAGS } from '../parse';
 import { SPECS } from '../registry';
 import { names } from '../templates/naming';
@@ -135,5 +136,21 @@ describe('unit · every reference in a kit file resolves', () => {
     ];
     expect(named.length).toBeGreaterThan(3);
     expect(named.filter((code) => !registered.has(code))).toEqual([]);
+  });
+
+  // The resolver the gate's doc rule uses (`X_DOC_COMMAND_UNKNOWN`), over every line — prose too:
+  // "every bunx x g you ran" read as `x g you`, a generator kind that does not exist.
+  test('every line reads as runnable to the gate’s own citation resolver', async () => {
+    const catalog = await loadCommandCatalog();
+    expect(citedCommandProblem('Generated:  <every bunx x g you ran>', catalog)).toContain(
+      'x g you',
+    );
+    const problems = kitFiles(app).flatMap((file) =>
+      file.contents.split('\n').flatMap((line, index) => {
+        const problem = citedCommandProblem(line, catalog);
+        return problem === undefined ? [] : [`${file.path}:${index + 1} ${problem}`];
+      }),
+    );
+    expect(problems).toEqual([]);
   });
 });

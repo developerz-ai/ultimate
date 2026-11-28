@@ -52,7 +52,7 @@ How that total is counted, and why `[Unreleased]` is cut: the header of [`script
 
 Each entry changes a surface the table below covers.
 
-> **Move to whatever `latest` is** — only the [footer](_Footer) stamps the number, because a version written into a page goes stale on the next tag. All 31 workspaces resolve at one version — 29 `@ultimat3/*` plus the unscoped `create-ultimate`, `@ultimat3/scraping` and `@ultimat3/flags` included — and every tarball since 3.0.0 was published by the release workflow with a provenance attestation. Resolve before you pin, never take it from this page:
+> **Move to whatever `latest` is** — only the [footer](_Footer) stamps the number, because a version written into a page goes stale on the next tag. All 32 workspaces resolve at one version — 29 `@ultimat3/*` plus the unscoped `create-ultimate`, `@ultimat3/scraping` and `@ultimat3/flags` included — and every tarball since 3.0.0 was published by the release workflow with a provenance attestation. Resolve before you pin, never take it from this page:
 
 | Check | Command | Answer that means "go" |
 |---|---|---|
@@ -3881,7 +3881,7 @@ The covered and uncovered surface, and what each bump means, are on [Stability](
 | Rule | Detail |
 |---|---|
 | Pins | between `@ultimat3/*` packages, exact (`"@ultimat3/core": "<version>"` in each `package.json`). An app declares `^<version>`, as `x new` writes (`packages/cli/src/templates/scaffold-repo.ts`), and `bun.lock` pins the exact build: `bun install --frozen-lockfile` never upgrades silently |
-| Lockstep releases | one release bumps all 30 packages — 29 `@ultimat3/*` plus the unscoped `create-ultimate` — to the same version. One version, one commit, one tag. A mixed set is unsupported |
+| Lockstep releases | one release bumps all 32 packages — 31 `@ultimat3/*` plus the unscoped `create-ultimate` — to the same version. One version, one commit, one tag. A mixed set is unsupported |
 | Published with provenance | npm via OIDC trusted publishing. Every tarball from 3.0.0 onward carries an attestation — verified through 5.0.1; **2.0.0's do not**, that release went out by hand. Per version: `npm view @ultimat3/core@<version> dist.attestations` |
 | Breaking changes land with the edit named | **no release has shipped a codemod**, so every `BREAKING —` entry names the manual edit itself; `x upgrade` walks the pins, the Bun floor and the gate, and points at the section |
 | Dependency upgrades are framework work | Solid is pinned to **`1.9.14`, the stable line** — Solid 2 is still prerelease (`2.0.0-beta.N`, DOM renderer split into `@solidjs/web`) and every app inherits whatever core this repo pins. Bumping it is a framework release, never an app-level `bun update`. There is no ArkType or Drizzle pin to carry: `@ultimat3/schema` ships dependency-free builtin validators (ArkType is an optional provider you adapt yourself) and `@ultimat3/entity` ships its own `postgresDriver()` |

@@ -4,7 +4,7 @@
 import type { ColorRole } from '@ultimat3/ui';
 import { cx } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
-import { useEffectMount } from '../use-effect-mount';
+import { useCssPause } from '../use-css-pause';
 import styles from './GradientOrbs.module.scss';
 import { GRADIENT_ORBS_BACKEND, gradientOrbsView, orbVars } from './gradient-orbs-view';
 
@@ -22,10 +22,7 @@ export interface GradientOrbsProps {
 
 export function GradientOrbs(props: GradientOrbsProps): JSX.Element {
   const view = gradientOrbsView(props);
-  const fx = useEffectMount(
-    { css: true, wants: 'css', speed: 1, roles: [], pauseCss: true },
-    GRADIENT_ORBS_BACKEND,
-  );
+  const fx = useCssPause(GRADIENT_ORBS_BACKEND);
   return (
     <div
       ref={fx.root}

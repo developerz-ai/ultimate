@@ -5,9 +5,10 @@
 import type { ColorRole } from '@ultimat3/ui';
 import { type EffectBackend, type EffectWants, pickBackend } from './backend';
 import { type CanvasDraw, mountCanvas } from './canvas-mount';
+import { pauseOffscreen } from './css-pause';
 import type { EffectHost } from './effect-host';
 import { type Rgb, resolvePalette } from './palette';
-import type { ShaderProgram } from './shader-mount';
+import type { ShaderLoad } from './shader-load';
 
 export interface EffectSpec {
   /** Whether the entry's server frame animates in CSS. */
@@ -15,8 +16,8 @@ export interface EffectSpec {
   readonly wants: EffectWants;
   readonly speed: number;
   readonly roles: readonly ColorRole[];
-  /** Lazy, so the GLSL is fetched only by an island that will draw it. */
-  readonly shader?: ((colours: () => readonly Rgb[]) => Promise<ShaderProgram>) | undefined;
+  /** Lazy (`loadShader`), so the GLSL and the WebGL2 mount reach only an island that draws them. */
+  readonly shader?: ((colours: () => readonly Rgb[]) => Promise<ShaderLoad>) | undefined;
   readonly draw2d?: ((colours: () => readonly Rgb[]) => CanvasDraw) | undefined;
   /** Pause the CSS animation offscreen and in a hidden tab (`data-effect-paused`). */
   readonly pauseCss?: boolean | undefined;
@@ -57,11 +58,10 @@ export function mountEffect(
   };
   const tryShader = (target: HTMLCanvasElement, load: NonNullable<EffectSpec['shader']>): void => {
     state.loading = true;
-    // The mount is lazy too: an entry that only ever draws on Canvas2D never carries it.
-    Promise.all([load(current), import('./shader-mount')])
-      .then(([program, { mountShader }]) => {
+    load(current)
+      .then(({ program, mount }) => {
         if (state.done) return;
-        const result = mountShader(target, program, host, {
+        const result = mount(target, program, host, {
           speed: spec.speed,
           onLost: () => {
             state.lost = true;
@@ -100,13 +100,7 @@ export function mountEffect(
     colours = resolvePalette(host, root, spec.roles) ?? colours;
     ensure();
   });
-  const unVisible =
-    spec.pauseCss === true
-      ? host.observeVisible(root, (visible) => {
-          if (visible) root.removeAttribute('data-effect-paused');
-          else root.setAttribute('data-effect-paused', '');
-        })
-      : undefined;
+  const unVisible = spec.pauseCss === true ? pauseOffscreen(root, host.observeVisible) : undefined;
   ensure();
   relabel();
 

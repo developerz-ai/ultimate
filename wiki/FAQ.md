@@ -33,7 +33,7 @@ What it does **not** claim:
 
 ### What is actually finished?
 
-All 30 packages, implemented and tested — not skeletons. The eight primitives, HTTP, rendering, caching, realtime tiers 1–3 (tier 3 opt-in, since 21.0.0), auth, mail, storage, jobs, the AI-first surface (MCP, `llm()`, evals), and admin + generators + `x new`. Milestones 0–11 are ✅ and enforced by `x verify`'s `roadmap` step; milestone 11's deploy proof closed `As of 2026-09-24`, when `ci.yml`'s `deploy-proof` job upgraded an app in kind with 0 of 9,028 requests failed (Compose is the single-node rung and makes no invisible-restart claim). Each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) is the source of truth for those markers.
+All 31 packages, implemented and tested — not skeletons. The eight primitives, HTTP, rendering, caching, realtime tiers 1–3 (tier 3 opt-in, since 21.0.0), auth, mail, storage, jobs, the AI-first surface (MCP, `llm()`, evals), and admin + generators + `x new`. Milestones 0–11 are ✅ and enforced by `x verify`'s `roadmap` step; milestone 11's deploy proof closed `As of 2026-09-24`, when `ci.yml`'s `deploy-proof` job upgraded an app in kind with 0 of 9,028 requests failed (Compose is the single-node rung and makes no invisible-restart claim). Each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) is the source of truth for those markers.
 
 ### What is left?
 

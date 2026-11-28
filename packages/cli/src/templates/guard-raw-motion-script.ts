@@ -64,7 +64,7 @@ export function rawMotionScripts(files: readonly ScriptFile[]): readonly Finding
 }
 
 export const guard: Guard = {
-  summary: "a script's duration and easing curve come off the motion scale, never a literal",
+  summary: 'script durations and easing curves come off the motion scale, never a literal',
   severity: 'warning',
   async check(_root, sources) {
     const scripts = await sources.files('{apps,packages}/**/*.{ts,tsx}');

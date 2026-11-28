@@ -90,8 +90,10 @@ export interface BuildStats {
  * origin), so two spellings of one fetch are charged once; and an app/ page is weighed as SERVED
  * — its page boot charged, the runtime chunk that boot makes unfetched not (plan 101 sweep 9).
  * `6`: a `<link rel="modulepreload">` is a fetch and is charged, deduped with every other (B4).
+ * `7`: the exempt theme script's bytes moved again — it also stamps `html[data-motion="paused"]`
+ * from the reader's stored motion pause before first paint (plan 101, 06 motion).
  */
-export const BUILD_STATS_RULES = 6;
+export const BUILD_STATS_RULES = 7;
 
 const chainOf = (stats: RouteStats): string =>
   stats.heaviestChain === undefined ? 'unknown import chain' : stats.heaviestChain.join(' -> ');

@@ -6,6 +6,7 @@ import type { ColorRole } from '@ultimat3/ui';
 import { cx } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { Noise } from '../noise/Noise';
+import { loadShader } from '../shader-load';
 import { useEffectMount } from '../use-effect-mount';
 import { loadPreset } from './load-preset';
 import styles from './ShaderBackground.module.scss';
@@ -36,7 +37,7 @@ export function ShaderBackground(props: ShaderBackgroundProps): JSX.Element {
       wants: 'webgl2',
       speed: view.speed,
       roles: view.roles,
-      shader: (colours) => loadPreset(view.preset).then((program) => program(colours)),
+      shader: (colours) => loadShader(loadPreset(view.preset).then((program) => program(colours))),
       draw2d: (colours) => presetCanvas(view.preset, colours),
     },
     SHADER_BACKGROUND_BACKEND,

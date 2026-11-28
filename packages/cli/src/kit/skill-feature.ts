@@ -151,7 +151,7 @@ Money is integer minor units plus an ISO code. Bun only.
 \`\`\`
 Primitives: <which of the eight, and where>
 Slices:     <slice> → <agent> · <files>              (one line each)
-Generated:  <every bunx x g you ran>
+Generated:  <the generator commands you ran, one per line>
 Gate:       bun run verify ✓ | ✗ <failing steps>
 PR:         <url> · CI ✓ | ✗ · merged | stopped at <step>, because <why>
 Deferred:   <what you did not do, and why>           [never omit this line]

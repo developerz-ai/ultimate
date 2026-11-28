@@ -47,19 +47,42 @@ const CSS_TIER: readonly Entry[] = [
   { name: 'TextReveal', dir: 'text-reveal' },
 ];
 
-/** Enhances in an island: minified bytes of the one-entry chunk, solid external. */
+/**
+ * Enhances in an island: minified JavaScript bytes of the one-entry build, solid external. Assets
+ * are not JavaScript and are not counted: `@ultimat3/ui` declares every `.scss` file side-effectful,
+ * so a build that reaches its barrel copies ~110 kB of raw component stylesheets beside the chunk,
+ * which the island build's style plugin handles and this sum used to add as if it were script.
+ *
+ * Measured 2026-11-28 with this file's own build, each ceiling the measurement plus ~5%:
+ *
+ * | Entry | Measured | Where the bytes go |
+ * |---|---|---|
+ * | GradientOrbs | 18,507 B | ~7 kB is core's `UltimateError` + registry (the prop screen throws `X_EFFECTS_INVALID_VALUE`), plus ui's `inView` and motion gate. Was 25,103 B before `useCssPause` stopped it carrying the canvas mount and frame loop |
+ * | MosaicGrid | 23,327 B | the same error floor, `frameLoop`, the Canvas2D mount and its tile function. The WebGL2 mount is no longer inlined (`shader-load.ts`) |
+ * | SpotlightCard | under 2,048 B | unchanged |
+ * | Tilt | 16,641 B | the error floor, `frameLoop`, `inView` and the pointer wiring |
+ * | CountUp | 34,019 B | the error floor plus `@ultimat3/money` and the schema `Money` parse behind `Money`-aware counting |
+ *
+ * The first ceilings (2–4 kB) were set before any entry existed and could not hold the ~7 kB a
+ * coded error costs any island that can throw one. Raise WITH the measured number and the reason.
+ */
 const ISLAND_CEILING_BYTES: ReadonlyArray<Entry & { readonly ceiling: number }> = [
-  { name: 'GradientOrbs', dir: 'gradient-orbs', ceiling: 2_048 },
-  { name: 'MosaicGrid', dir: 'mosaic-grid', ceiling: 4_096 },
+  { name: 'GradientOrbs', dir: 'gradient-orbs', ceiling: 19_456 },
+  { name: 'MosaicGrid', dir: 'mosaic-grid', ceiling: 24_576 },
   { name: 'SpotlightCard', dir: 'spotlight-card', ceiling: 2_048 },
-  { name: 'Tilt', dir: 'tilt', ceiling: 2_048 },
-  { name: 'CountUp', dir: 'count-up', ceiling: 2_560 },
+  { name: 'Tilt', dir: 'tilt', ceiling: 17_408 },
+  { name: 'CountUp', dir: 'count-up', ceiling: 35_840 },
 ];
 
 const SHADER = { name: 'ShaderBackground', dir: 'shader-background' } as const;
 const SHADER_PRESETS = ['mesh', 'grain', 'dots'] as const;
-/** `ShaderBackground`'s own chunk: the component and the preset switch, never a shader or the mount. */
-const SHADER_ENTRY_CEILING_BYTES = 3_072;
+/**
+ * `ShaderBackground`'s own chunk: the component, the preset switch, the effect mount and frame
+ * loop, the Canvas2D fallback for all three presets and the grain preset's `Noise` frame — never a
+ * shader and never the WebGL2 mount. Measured 2026-11-28: 15,794 B; ceiling +5%. The 3,072 B first
+ * guess predates the Canvas2D fallback and the server frame, both of which the tier contract requires.
+ */
+const SHADER_ENTRY_CEILING_BYTES = 16_640;
 /** One preset's lazy chunk: its GLSL, plus the mount when no other chunk shares it. */
 const SHADER_PRESET_CEILING_BYTES = 8_192;
 
@@ -141,7 +164,9 @@ describe('@ultimat3/effects — island entries stay under their per-entry ceilin
     '%s',
     async (name, entry) => {
       const outputs = await build(`island-${name}`, entry, false);
-      const own = outputs.reduce((sum, output) => sum + output.bytes, 0);
+      const own = outputs
+        .filter((output) => output.kind !== 'asset')
+        .reduce((sum, output) => sum + output.bytes, 0);
       // Not vacuous: an empty chunk is under every ceiling.
       expect(own).toBeGreaterThan(0);
       expect(`${entry.name}: ${own} B`).toBe(

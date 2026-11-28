@@ -131,7 +131,7 @@ GitHub Release body is those, the Upgrading anchor and a link to the full sectio
 
 ## Lockstep
 
-One version, one commit, one tag, 31 tarballs. [`../../PUBLISHING.md`](../../PUBLISHING.md) owns
+One version, one commit, one tag, 32 tarballs. [`../../PUBLISHING.md`](../../PUBLISHING.md) owns
 every step of it and this page restates none of them. The one thing to check before starting a
 release run: the section for this major exists and its heading still says `unreleased`, because
 releasing it is then a two-word deletion rather than a page to write under time pressure.
@@ -143,7 +143,7 @@ releasing it is then a two-word deletion rather than a page to write under time 
 | every `` `x …` `` on a `wiki/` or `docs/` page resolves against the real command registry | `scripts/doc-commands.ts` | `manifest` |
 | every `wiki/` table renders as a table | `scripts/wiki-tables.ts` | `manifest` |
 | exactly one page stamps a version, and it is the shipped one | `scripts/version-stamps.ts` | `manifest` |
-| all 31 workspaces at the tag's version before the first publish | `scripts/release.ts --check <version>` | the release workflow, not the gate |
+| all 32 workspaces at the tag's version before the first publish | `scripts/release.ts --check <version>` | the release workflow, not the gate |
 | one major per 90 days from v31 | `scripts/release.ts`, and `scripts/lib/stability-findings.ts` on the dated headings | `boundaries` |
 | no `BREAKING —` on `main` while the window is closed | `scripts/lib/changelog-highlights.ts` | `boundaries` |
 | a removed export was `@deprecated` at the previous tag | `scripts/deprecation-window.ts` | `boundaries` |

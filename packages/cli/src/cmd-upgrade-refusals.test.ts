@@ -244,9 +244,10 @@ describe('unit · --to at a version that is not the newest', () => {
 
   // The scaffold allowlists `bunx x upgrade --dry-run:*`; a trailing `--no-dry-run` (last wins) would
   // turn that read-only permission into a real upgrade.
-  test.each([['--dry-run', '--no-dry-run'], ['--no-dry-run']])(
+  test.each(['--dry-run --no-dry-run', '--no-dry-run'])(
     'a negated dry-run (%s) is refused before anything runs',
-    async (...flags) => {
+    async (spelled) => {
+      const flags = spelled.split(' ');
       const dir = await fixture();
       const { runner, spawned } = recording();
       const { code, output } = await run(dir, runner, flags);

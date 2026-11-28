@@ -7,6 +7,7 @@ import type { CanvasDraw } from '../canvas-mount';
 import type { EffectSpec } from '../effect-mount';
 import type { Rgb } from '../palette';
 import { rangeProp, rolesProp } from '../props';
+import { loadShader } from '../shader-load';
 import type { ShaderProgram } from '../shader-mount';
 
 /** The server renders the app's `fallback`: a still frame until an island draws. */
@@ -20,12 +21,13 @@ export interface EffectCanvasInput {
 }
 
 export function effectCanvasSpec(input: EffectCanvasInput): EffectSpec {
+  const shader = input.shader;
   return {
     css: false,
-    wants: input.shader === undefined ? 'canvas' : 'webgl2',
+    wants: shader === undefined ? 'canvas' : 'webgl2',
     speed: rangeProp('EffectCanvas', 'speed', input.speed, { min: 0.25, max: 4, fallback: 1 }),
     roles: rolesProp('EffectCanvas', input.roles, ['accent'], { min: 1, max: 8 }),
-    shader: input.shader,
+    shader: shader === undefined ? undefined : (colours) => loadShader(shader(colours)),
     draw2d: input.draw,
   };
 }

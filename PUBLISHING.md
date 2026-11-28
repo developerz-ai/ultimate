@@ -164,7 +164,7 @@ approval-gated environment, which is the half GitHub cannot enforce, and it must
 
 ## Human steps outside this file
 
-**`As of 2026-08-20` all four are done, for all 30 packages, and 3.0.0 and then 4.0.0 both went out
+**`As of 2026-08-20` all four are done, for all 31 packages, and 3.0.0 and then 4.0.0 both went out
 through the workflow because of it** — every tarball in both carries an attestation and
 `_npmUser: GitHub Actions` (`npm view @ultimat3/core@4.0.0 dist.attestations _npmUser`).
 
@@ -671,7 +671,7 @@ rather than reading the past: `bun run scripts/registry-audit.ts --json`.
 
 - `@ultimat3/scraping` and `@ultimat3/flags` were the two never-published packages; both were
   closed by the one-time manual bootstrap, `@ultimat3/scraping` at 2.0.0.
-- No publication holes since 2026-08-20: all 31 workspaces resolve at one version, and
+- No publication holes since 2026-08-20: all 32 workspaces resolve at one version, and
   [`registry-audit.yml`](.github/workflows/registry-audit.yml) files an issue on the day that stops
   being true.
 - A wiki row that says "fixed in <version>" means fixed in a release you can install; an "on 1.2.0,

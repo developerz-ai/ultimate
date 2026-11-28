@@ -71,11 +71,22 @@ describe('unit · parseArgs', () => {
   // `x token` joined them in 31.x: `create` mints a credential, `revoke` ends one, and a bare
   // `x token` reaching either by default is a mistyped word with a side effect nobody asked for.
   // `x merge-driver` too: `install` writes git config, and `run` is git's to call with its files.
+  // `x design` too: its one subcommand, `research`, drives a browser at a URL the caller types — a
+  // mistyped word must not open a page on the web, and a bare `research` has no URL to default to.
   test('exactly the commands whose bare form is dangerous refuse it', () => {
     const refusing = SPECS_SHIPPED.filter(
       (spec) => (spec.subcommands ?? []).length > 0 && spec.defaultSubcommand === undefined,
     ).map((spec) => spec.name);
-    expect(refusing.sort()).toEqual(['auth', 'client', 'db', 'mcp', 'merge-driver', 'pr', 'token']);
+    expect(refusing.sort()).toEqual([
+      'auth',
+      'client',
+      'db',
+      'design',
+      'mcp',
+      'merge-driver',
+      'pr',
+      'token',
+    ]);
   });
 
   // `--json` is axiom 4: every command and every error answers in machine-readable form, so

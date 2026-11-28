@@ -11,7 +11,7 @@ import {
   renderKitTable,
   spliceKitTable,
 } from './kit-doc';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 describe('unit · kit-doc', () => {
   test('one row per registry entry, in the registry’s order, each naming its path', () => {
@@ -46,8 +46,12 @@ describe('unit · kit-doc', () => {
     expect(spliceKitTable('no markers here')).toBeUndefined();
   });
 
-  test('the committed page matches the registry', async () => {
-    expect(await kitDocFindings(repoRoot())).toEqual([]);
-    expect(await Bun.file(`${repoRoot()}/${KIT_PAGE}`).text()).toContain(KIT_BEGIN);
-  });
+  test(
+    'the committed page matches the registry',
+    async () => {
+      expect(await kitDocFindings(repoRoot())).toEqual([]);
+      expect(await Bun.file(`${repoRoot()}/${KIT_PAGE}`).text()).toContain(KIT_BEGIN);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 });

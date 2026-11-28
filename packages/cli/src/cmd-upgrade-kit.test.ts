@@ -23,7 +23,7 @@ describe('unit · x upgrade, the agent kit a hop brings', () => {
       'x exercise',
       'x verify',
     ]);
-    expect(output).toEqual({});
+    expect(Object.keys(output)).toEqual([]);
     const text = lines.join('\n');
     expect(text).toContain('agent kit: 1 written, 1 refreshed, 0 already current');
     expect(text).toContain('created .claude/skills/feature/SKILL.md');
@@ -42,7 +42,7 @@ describe('unit · x upgrade, the agent kit a hop brings', () => {
     const { runner } = recording({ kit: 'error: unknown command kit\n' });
     const { code, output, lines } = await run(dir, runner, [], { json: false });
     expect(code).toBe(0);
-    expect(output).toEqual({});
+    expect(Object.keys(output)).toEqual([]);
     expect(lines.join('\n')).toContain('the installed CLI has no x kit');
     const json = await run(
       await fixture(),

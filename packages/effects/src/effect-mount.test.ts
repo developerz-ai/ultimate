@@ -3,7 +3,7 @@ import type { EffectBackend } from './backend';
 import { type EffectSpec, mountEffect } from './effect-mount';
 import { asCanvas, asElement, FakeCanvas, FakeHost, FakeRoot } from './fake-host-fixture';
 import type { Rgb } from './palette';
-import type { ShaderProgram } from './shader-mount';
+import { mountShader, type ShaderProgram } from './shader-mount';
 
 const program = (colours: () => readonly Rgb[]): ShaderProgram => ({
   vertex: 'v',
@@ -16,7 +16,7 @@ const SHADER: EffectSpec = {
   wants: 'webgl2',
   speed: 1,
   roles: ['accent'],
-  shader: async (colours) => program(colours),
+  shader: async (colours) => ({ program: program(colours), mount: mountShader }),
   draw2d: () => (ctx) => ctx.fillRect(0, 0, 1, 1),
 };
 

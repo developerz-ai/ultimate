@@ -74,7 +74,8 @@ const ctxFor = (argv: readonly string[], cwd: string): CommandContext => ({
   args: parseArgs(argv, [designSpec]),
   cwd,
   env: {},
-  runner: async () => ({ code: 0, stdout: '', stderr: '' }),
+  // `x design` runs no subprocess: a runner that is ever called fails the test.
+  runner: () => expect.unreachable('x design research ran a subprocess'),
   bunVersion: Bun.version,
 });
 

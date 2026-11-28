@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Framework packages move in lockstep, so "supported version" is one number covering all 31 — the 30 `@ultimat3/*` packages and the unscoped `create-ultimate`. Re-derive the list with `bun run scripts/release-workflow.ts --json`.
+Framework packages move in lockstep, so "supported version" is one number covering all 31 — the 31 `@ultimat3/*` packages and the unscoped `create-ultimate`. Re-derive the list with `bun run scripts/release-workflow.ts --json`.
 
 | Version | Supported | npm dist-tag |
 |---|---|---|

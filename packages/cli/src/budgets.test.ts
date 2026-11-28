@@ -33,7 +33,7 @@ import { staticReportData } from './static-report';
 import { SW_REGISTER_PATH } from './sw-artifacts';
 
 /** What the rules were when `BUILD_STATS_RULES` was last set. Re-pin only together with a bump. */
-const RULES_PIN = { rules: 6, fingerprint: '42b84720788cb25d' } as const;
+const RULES_PIN = { rules: 7, fingerprint: 'e3af3979cb666cb3' } as const;
 
 const manifestOf = (...routes: readonly RouteFact[]) =>
   buildManifest({ app: { name: 'fixture', version: '1.0.0' }, routes });

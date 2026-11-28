@@ -39,7 +39,7 @@ A bad prop value is `X_EFFECTS_INVALID_VALUE` ([Error codes](Error-Codes-effects
 | `MosaicGrid` | background | Canvas2D with a server-rendered first frame — never a blank canvas |
 | `GridGlow` | background | extends `grid-texture`; withdrawn under `prefers-contrast` |
 | `Noise` | background | static SVG turbulence, no animation frame |
-| `ShaderBackground` | background | `preset: 'mesh' \| 'grain' \| 'dots'`; each preset is its own lazy chunk; reduced motion is speed 0 on a fixed frame |
+| `ShaderBackground` | background | `preset: 'mesh' \| 'grain' \| 'dots'`; each preset is its own lazy chunk where the island build splits (a lone island inlines all three, [Known gaps](Known-Gaps)); reduced motion is speed 0 on a fixed frame |
 | `SpotlightCard` | interaction | keyboard focus gets the same highlight as the pointer |
 | `Tilt` | interaction | off for coarse pointers and inside focus traps; capped angle |
 | `GlassSurface` | surface | opaque under `prefers-reduced-transparency`; contrast checked against the role pairs |

@@ -129,7 +129,7 @@ approximately nothing. Verified `As of 2026-08`:
 | `@ultimat3/schema` | 0 | **none** |
 | `@ultimat3/money` | 1 | `@ultimat3/core`, `@ultimat3/schema` — both `@ultimat3/*` |
 
-Across all 31 published packages the only third-party runtime dependencies are **`nats`**
+Across all 32 published packages the only third-party runtime dependencies are **`nats`**
 (`@ultimat3/realtime`) and **`sass`** (`@ultimat3/render`), both at a driver/transport seam, and
 **`@babel/core`** + **`babel-preset-solid`** (`@ultimat3/cli`, the tier-5 build tool: Solid's
 reactivity is a compile-time contract the island bundler runs) — all under

@@ -3,8 +3,8 @@
 // `browserHost()`; a test hands its own and drives 1,000 frames with no DOM at all.
 
 import { THEME_ATTRIBUTE } from '@ultimat3/ui';
-import { inView } from '@ultimat3/ui/motion';
 import { browserMotion, type MotionPort } from './motion-port';
+import { observeVisibility } from './visibility';
 
 export interface EffectHost {
   readonly motion: MotionPort;
@@ -38,28 +38,7 @@ export function browserHost(): EffectHost {
       onSize(box.width, box.height);
       return () => observer.disconnect();
     },
-    observeVisible: (el, onVisible) => {
-      let onScreen = false;
-      const report = (): void => onVisible(onScreen && !document.hidden);
-      // `inView` is ui's one IntersectionObserver module; this adds the hidden tab beside it.
-      const stopInView = inView(
-        el,
-        () => {
-          onScreen = true;
-          report();
-          return () => {
-            onScreen = false;
-            report();
-          };
-        },
-        { once: false },
-      );
-      document.addEventListener('visibilitychange', report);
-      return () => {
-        stopInView();
-        document.removeEventListener('visibilitychange', report);
-      };
-    },
+    observeVisible: observeVisibility,
     observeTheme: (onChange) => {
       const observer = new MutationObserver(() => onChange());
       observer.observe(document.documentElement, { attributeFilter: [THEME_ATTRIBUTE] });
