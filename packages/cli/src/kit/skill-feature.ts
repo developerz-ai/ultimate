@@ -136,10 +136,12 @@ Commit, push, open one PR whose body lists each slice, its files and the gate ve
 | what CI tested | \`bunx x ci tested --json\` |
 | review threads | \`bunx x pr review --json\` — answer each with \`bunx x pr reply\`, close with \`bunx x pr resolve\` |
 
-A red CI run is the same gate as yours: read its findings, fix on the branch, push again. Merge only
-when every check on the head commit has passed — a required review included, never merely "no
-thread open" — every thread is resolved, and \`gh pr view --json mergeStateStatus\` answers
-\`CLEAN\`, so branch protection agrees.
+A red CI run is the same gate as yours: read its findings, fix on the branch, push again.
+
+**The merge gate:** every required check on the head commit has passed — the required review
+included; "no thread open" is not a review — and every thread is resolved. Then
+\`gh pr merge --squash\`: the forge refuses while a required check, review or protection rule is
+unmet, and that refusal is the answer, never \`--admin\`. An optional check may be red.
 
 ## Hard rules
 

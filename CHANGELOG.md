@@ -16,7 +16,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
-- The agent kit's `audit` agent no longer runs `bun test` on the branch it reviews — a test there is that branch's code, run with the checkout writable — and the `feature` and `planx` skills merge only once every required check on the head, the review included, has passed and branch protection answers `CLEAN`. `scripts/lib/kit-refresh-forms.ts` reads a release whose templates import the kit (31.53.0 onward).
+- The agent kit's `audit` agent no longer runs `bun test` on the branch it reviews — a test there is that branch's code, run with the checkout writable — the `feature` skill's merge gate is every required check on the head passed (the review included) and every thread resolved, then `gh pr merge --squash`, whose refusal is final (never `--admin`); `planx` records that gate in a plan's acceptance criteria. `scripts/lib/kit-refresh-forms.ts` reads a release whose templates import the kit (31.53.0 onward).
 
 ## Releases
 
