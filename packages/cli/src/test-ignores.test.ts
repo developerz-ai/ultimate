@@ -73,3 +73,31 @@ test('a test under a dot-directory is discovered; .git and .x never are', async 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('an app-root .claude/worktrees/ test is excluded by discovery and --path-ignore-patterns', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'x-test-worktrees-'));
+  try {
+    const paths = [
+      '.claude/worktrees/agent-a/apps/web/app/feed.test.ts',
+      '.claude/worktrees/agent-b/apps/web/app/feed.live.test.ts',
+      '.claude/worktrees/agent-b/packages/cli/src/x.test.ts',
+      'apps/web/app/feed.test.ts',
+      '.claude/hooks/guard.test.ts',
+    ];
+    for (const path of paths) await Bun.write(join(root, path), 'export {};\n');
+    const discovered = new Set((await discoverTests(root, undefined, 'unit')).map((f) => f.path));
+    expect(discovered.has('.claude/worktrees/agent-a/apps/web/app/feed.test.ts')).toBe(false);
+    expect(discovered.has('.claude/worktrees/agent-b/apps/web/app/feed.live.test.ts')).toBe(false);
+    expect(discovered.has('.claude/worktrees/agent-b/packages/cli/src/x.test.ts')).toBe(false);
+    // A retained application test still runs.
+    expect(discovered.has('apps/web/app/feed.test.ts')).toBe(true);
+    // The serial steps' --path-ignore-patterns expresses the same exclusion.
+    for (const path of paths.slice(0, 3)) expect(serialIgnores(path)).toBe(true);
+    expect(serialIgnores('apps/web/app/feed.test.ts')).toBe(false);
+    // A hook's own test under .claude/hooks/ is still intentionally discovered.
+    expect(discovered.has('.claude/hooks/guard.test.ts')).toBe(true);
+    expect(serialIgnores('.claude/hooks/guard.test.ts')).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

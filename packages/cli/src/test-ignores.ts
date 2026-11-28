@@ -12,8 +12,10 @@ const IGNORED_ANYWHERE = ['dist', 'node_modules', '.git', '.x'] as const;
  * Nested projects with their own gate (`examples/`, `dummy/`, run by
  * `scripts/reference-app-gate.ts`) and the root `build/` — skipped AT THE ROOT only. Matched at any
  * depth they swallowed an app's own slice: `x g resource build` lost 14 of its 16 test files and
- * `x g resource example` its `examples/` page tests, from `x test` and the gate alike. Likewise
- * `.claude/worktrees/`: each agent worktree is a whole checkout, so scanning it doubled the run (#1287).
+ * `x g resource example` its `examples/` page tests, from `x test` and the gate alike.
+ * An app-root `.claude/worktrees/` holds sibling agents' checkouts; their tests are duplicates of
+ * this checkout's and must not be discovered or run here (#1287). `.claude/hooks/` is not on this
+ * list: a hook's own test lives there and is intentionally discovered.
  */
 const IGNORED_AT_ROOT = ['build', 'examples', 'dummy', '.claude/worktrees'] as const;
 
