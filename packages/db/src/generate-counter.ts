@@ -89,6 +89,9 @@ const truth = (counter: CounterDescriptionLike): string =>
  * that already holds rows starts true. Migration-only: it locks nothing first, so it is not safe
  * beside live writers — `x db recount --write` repairs by key range instead (`recountLockSql`,
  * then `recountBatchSql`), one transaction per window.
+ *
+ * @deprecated As an `@ultimat3/db` export: no longer exported at the next major (the package keeps
+ * it); repair through `x db recount <entity>.<column> --write`.
  */
 export function recountSql(parent: string, counter: CounterDescriptionLike): string {
   return (
@@ -97,7 +100,12 @@ export function recountSql(parent: string, counter: CounterDescriptionLike): str
   );
 }
 
-/** The drifted rows, for `x db recount`'s report: key, stored and true count. */
+/**
+ * The drifted rows, for `x db recount`'s report: key, stored and true count.
+ *
+ * @deprecated As an `@ultimat3/db` export: no longer exported at the next major (the package keeps
+ * it); read drift through `x db recount <entity>.<column>`.
+ */
 export function recountDriftSql(parent: string, counter: CounterDescriptionLike): string {
   return (
     `select p.${identifier(counter.key).text}::text as "key", ` +

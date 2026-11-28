@@ -25,6 +25,9 @@ export interface ErrorCodeEntry extends ErrorCodeDescriptor {
  * and a table row has no anchor — so a `#X_DB_DRIFT` fragment would land on the page top while
  * declaring a target that does not exist. The `https://ultimate.dev/errors/<code>` links this
  * shipped until 9.x answered 404, host included, on every error the framework has ever thrown.
+ *
+ * @deprecated Removed at the next major: every framework error then links its own docs-site page,
+ * `errorDocsUrl(code)` (`https://ultimate.developerz.ai/errors/<CODE>/`).
  */
 export const ERROR_DOCS_URL = 'https://github.com/developerz-ai/ultimate/wiki/Error-Codes';
 

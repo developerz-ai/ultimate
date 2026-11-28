@@ -105,6 +105,7 @@ export const PARKED_BREAKS: readonly ParkedBreak[] = [
         anchor: 'flips `ERROR_DOCS_URL` to',
       },
     ],
+    removes: [{ path: 'packages/core/src/error-codes.ts', symbol: 'ERROR_DOCS_URL' }],
   },
   {
     ids: 'Q2',

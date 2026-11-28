@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Deprecated
+
+- `ERROR_DOCS_URL` (`@ultimat3/core`): every framework error links its own docs-site page at the next major (`errorDocsUrl(code)`). `recountSql` and `recountDriftSql` (`@ultimat3/db`): no longer exported at the next major; `x db recount` reads and repairs drift.
+
 ### Fixed
 
 - The agent kit's `audit` agent no longer runs `bun test` on the branch it reviews — a test there is that branch's code, run with the checkout writable — and the `feature` and `planx` skills merge only once every required check on the head, the review included, has passed and branch protection answers `CLEAN`. `scripts/lib/kit-refresh-forms.ts` reads a release whose templates import the kit (31.53.0 onward).
