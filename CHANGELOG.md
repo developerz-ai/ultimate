@@ -36,6 +36,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - `x db migrate` and `x db rollback` beside a live `x dev` work with `database.rowSecurity` on the embedded database: they run as `x_migrator` under an exclusive hold of the session, and a failed restore of `x_app` stops serving with `X_DB_ROW_SECURITY_BYPASSED`. The `X_NOT_IMPLEMENTED` refusal is gone.
 - Security advisories: `scripts/lib/advisory-acknowledged.ts` acknowledges an advisory no floor can fix, with an expiry; `sass` â†’ `immutable`/`source-map-js` is acknowledged until 2027-02-25 (apps: `bun update immutable source-map-js`). An expired or stale acknowledgement is `X_ADVISORY_ACK_EXPIRED` / `X_ADVISORY_ACK_STALE`.
 - `wiki/CLI-Reference.md` is an index over six pages: Project, Data, Gate, Ship and Tools.
+- `x new --shape offline`: the `/posts` JS budget is 157kb, up from 156kb. It measured 159,827 B; the page boot now keeps the live cursor's `sig` (+253 B).
 
 ### Fixed
 

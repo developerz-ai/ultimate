@@ -2,7 +2,7 @@
 // ships, or it publishes — and every doubt publishes.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
+import { mkdtemp, realpath, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp or realpath.
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 import { join } from 'node:path'; // why: Bun ships no path API.
@@ -89,17 +89,23 @@ describe('unit · ci · a shipped path, or any doubt, publishes', () => {
 // `bun install` beside the secret: the script must import nothing at all.
 describe('unit · ci · deploy-due runs with no install', () => {
   test('copied alone into an empty directory, it answers', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'deploy-due-'));
+    // The long path: Windows' temp dir is an 8.3 name (`RUNNER~1`), and `import.meta.main`
+    // compares the entry Bun was handed with the resolved module path.
+    const dir = await realpath(await mkdtemp(join(tmpdir(), 'deploy-due-')));
     try {
       await Bun.write(join(dir, 'deploy-due.ts'), Bun.file(join(import.meta.dir, 'deploy-due.ts')));
       await Bun.write(join(dir, 'compare.json'), JSON.stringify(ahead(['packages/core/a.ts'])));
-      const child = Bun.spawn(['bun', 'run', 'deploy-due.ts', '--app', 'docs', 'compare.json'], {
+      const script = join(dir, 'deploy-due.ts');
+      const child = Bun.spawn([process.execPath, script, '--app', 'docs', 'compare.json'], {
         cwd: dir,
         stdout: 'pipe',
         stderr: 'pipe',
       });
-      const out = await new Response(child.stdout).text();
-      expect(await child.exited).toBe(0);
+      const [out, err] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      expect([await child.exited, out === '' ? err : '']).toEqual([0, '']);
       const doc = JSON.parse(out) as { ok: boolean; data: { due: boolean } };
       expect(doc.ok).toBe(true);
       expect(doc.data.due).toBe(true);

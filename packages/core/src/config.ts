@@ -186,12 +186,9 @@ export interface JobsConfig {
 }
 
 /**
- * No `heartbeatMs` (deleted 2026-08-19) and no `tier` (deleted 2026-08-23): read by nothing. The
- * socket beat is `new LiveClient({ heartbeatMs })`, the presence beat is derived, and an app's
- * realtime tier is what it DECLARES (a `channel()`, a `live: true` query) — never a config key.
- * No `transport` and no `urlEnv` either (deleted in 31.0.0): the bus is the `transport` adapter
- * port — `NATS_URL` set builds NATS, unset builds the in-process bus, and any other `Transport` is
- * `runtime.ts`'s `transport` — so a closed two-member union here could only refuse a third bus.
+ * No `heartbeatMs`, `tier`, `transport` or `urlEnv` (deleted 2026-08 and in 31.0.0): read by
+ * nothing. The beats are the client's and derived, the tier is what an app DECLARES, and the bus
+ * is the `transport` adapter port (`NATS_URL` set builds NATS, else the in-process bus).
  */
 export interface RealtimeConfig {
   readonly enabled: boolean;
@@ -237,10 +234,7 @@ export interface AppConfig {
   readonly clientErrors: clientErrors.ClientErrorsConfig;
   readonly failureCapture: failureCapture.FailureCaptureConfig;
   readonly time: timeSection.AppTimeConfig;
-  /**
-   * Optional in the TYPE only: `defineConfig` always fills it (`mergeOutbound`), but an
-   * `AppConfig` literal written before 31.52 has no such key and must still compile.
-   */
+  /** Optional in the TYPE only (a pre-31.52 literal compiles): `defineConfig` always fills it. */
   readonly outbound?: outboundSection.OutboundConfig | undefined;
 }
 

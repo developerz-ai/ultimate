@@ -7,7 +7,12 @@ import { markListening } from '@ultimat3/core';
 import { CLOSE } from './close-codes';
 import { type DeviceAgent, deviceAgent } from './device-agent';
 import { deviceActor, ORG_A } from './device-fixture';
-import { type DeviceAttachment, type DeviceSocket, deviceSocket } from './device-socket';
+import {
+  type DeviceAttachment,
+  type DeviceSocket,
+  deviceSocket,
+  forgetDeviceSockets,
+} from './device-socket';
 import type { DeviceWsData } from './device-upgrade';
 import { DEVICE_WIRE_VERSION } from './device-wire';
 import { InProcessTransport } from './fanout';
@@ -17,6 +22,9 @@ let paths = 0;
 const cleanups: (() => void)[] = [];
 afterEach(() => {
   for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+  // A path is declared once per process: a rerun in the same process (flake-hunt) declares the
+  // same `/agent-test-<n>` again, which is the duplicate the registry refuses.
+  forgetDeviceSockets();
 });
 
 async function serve(onFrame: (frame: JsonValue) => JsonValue | undefined = () => undefined) {
