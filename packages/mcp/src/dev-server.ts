@@ -147,6 +147,7 @@ export interface DevCapabilities extends DevGraphHost {
   readonly explainQuery?: DevAgentHost['explainQuery'];
   readonly requestStatements?: DevAgentHost['requestStatements'];
   readonly narrowVerify?: DevAgentHost['narrowVerify'];
+  readonly researchDesign?: DevAgentHost['researchDesign'];
   /**
    * Run one already-parsed read-only statement under layers 1–2 (a SELECT-only role, a
    * `BEGIN READ ONLY` transaction, `limits.timeoutMs`) and return at most `limits.maxRows + 1`
@@ -253,11 +254,13 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
     // What an edit reaches, before it is made: `x impact` / `x graph --from --to` as a tool.
     graphTool(host, DEV_SCOPES.read),
 
-    // `docs.search`, `db.explain`, `requests.statements`, `verify.narrow` (`dev-agent-tools.ts`).
+    // `docs.search`, `db.explain`, `requests.statements`, `verify.narrow`, and `ui.research` under
+    // `dev:test` (it drives a browser) — `dev-agent-tools.ts`.
     ...agentTools(agentHostOf(host), {
       read: DEV_SCOPES.read,
       logs: DEV_SCOPES.logs,
       dbRead: DEV_SCOPES.dbRead,
+      test: DEV_SCOPES.test,
     }),
 
     read(

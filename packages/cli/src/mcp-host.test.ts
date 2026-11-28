@@ -42,6 +42,7 @@ const TOOL_NAMES = [
   'ui.inspect',
   'ui.interact',
   'ui.island',
+  'ui.research',
   'ui.shot',
   'verify.narrow',
   'verify.run',
@@ -180,7 +181,7 @@ describe('unit · the dev tool catalog', () => {
   test('every dev tool is reachable by the local caller, by name', () => {
     const server = serverFor(BRANCH, noCalls());
     expect(server.tools.names(localCaller())).toEqual([...TOOL_NAMES]);
-    expect(TOOL_NAMES).toHaveLength(23);
+    expect(TOOL_NAMES).toHaveLength(24);
   });
 
   test('exactly the mutating tools bill the write bucket', () => {

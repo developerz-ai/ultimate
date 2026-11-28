@@ -120,7 +120,12 @@ export const config = defineRoute({
   // (31,904 → 32,738): a streamed soft visit scrolls to a fragment its hole brings, holds its
   // recovery while the next visit is on its way, reloads a fragment URL it must load for real,
   // and drops keep-alive frames as they arrive. Raised 120.6kb → 121.5kb.
-  budget: { js: '121.5kb' },
+  // measured: 132116 B (2026-11-28; x build --target static, against 124,378) — why: the board
+  // island +7,738 B (87,543 → 95,281) for `@ultimat3/ui/motion`: every card is drawn in a
+  // `Presence` (a card moved into another column fades in, the first paint does not), and a move
+  // runs through `layout()` so the cards that shift slide into the gap instead of jumping. Raised
+  // 121.5kb → 129.5kb.
+  budget: { js: '129.5kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

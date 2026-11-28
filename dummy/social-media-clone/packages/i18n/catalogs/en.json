@@ -159,6 +159,10 @@
         "friends": { "label": "Friends", "hint": "accepted, either direction" },
         "waiting": { "label": "Waiting on you", "hint": "friend requests to answer" }
       },
+      "waiting": {
+        "notice_one": "{count} friend request is waiting on you",
+        "notice_other": "{count} friend requests are waiting on you"
+      },
       "activity": {
         "title": "Activity you can see",
         "range": "The 14 days up to the newest post you can see, UTC",

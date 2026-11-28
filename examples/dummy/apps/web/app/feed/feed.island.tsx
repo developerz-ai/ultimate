@@ -54,6 +54,7 @@ import { postHref } from '../../shared/entities';
 import { type PluralForms, pluralText } from '../../shared/plural-text';
 import { LIKE_POST } from '../posts/like-mutation';
 import { type CommandLabels, type Destination, FeedCommands } from './feed-commands';
+import { revealRow } from './feed-reveal';
 import { type FeedRow, LIVE_FEED } from './live';
 import styles from './page.module.scss';
 
@@ -171,7 +172,7 @@ function Feed(props: FeedIslandProps): JSX.Element {
                 label={props.labels.list}
                 estimate={ROW_ESTIMATE_PX}
                 renderItem={(post: FeedRow) => (
-                  <article>
+                  <article ref={(row: HTMLElement) => onCleanup(revealRow(row))}>
                     <a href={postHref(post)}>{post.title}</a>
                     <DateTime value={post.publishedAt ?? post.createdAt} format={dayOnly} />
                     <p>{post.excerpt}</p>

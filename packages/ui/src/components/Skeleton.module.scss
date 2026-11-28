@@ -1,11 +1,5 @@
 @use '../tokens' as t;
 
-@keyframes ultimate-shimmer {
-  to {
-    background-position: -200% 0;
-  }
-}
-
 .group {
   display: flex;
   flex-direction: column;
@@ -17,14 +11,7 @@
   inline-size: var(--skeleton-w, 100%);
   block-size: var(--skeleton-h, 1em);
   // The sweep is built from surface roles, so it is visible on both themes.
-  background: linear-gradient(
-      90deg,
-      t.role('bg-soft') 25%,
-      t.role('line') 37%,
-      t.role('bg-soft') 63%
-    )
-    0 0 / 200% 100%;
-  animation: ultimate-shimmer calc(#{t.duration(slower)} * 2) linear infinite;
+  @include t.shimmer;
 }
 
 .shape-text {

@@ -224,6 +224,8 @@ const pageStyles =
 @use '@ultimat3/ui/tokens' as tokens;
 
 .page {
+  @include tokens.view-transition-name(post-main);
+
   display: grid;
   gap: tokens.space(4);
   padding: tokens.space(6);

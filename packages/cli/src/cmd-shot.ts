@@ -13,6 +13,7 @@ import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
 import { requireAppRoot } from './app-root';
 import { appBrowser } from './browser-launcher';
 import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
+import { againstResult, planAgainst, refuseAgainstWith, runAgainst } from './cmd-shot-against';
 import {
   islandShot,
   islandShotResult,
@@ -118,6 +119,7 @@ export const shotCommand: CliCommand = {
     const sweep = flagBool(ctx.args, 'all-islands');
     const matrix = flagBool(ctx.args, 'matrix');
     const cookies = readCookieFlag(flagString(ctx.args, 'cookie'));
+    const against = flagString(ctx.args, 'against');
     const viewports = parseViewports(flagString(ctx.args, 'viewport'));
     const app = await appLocaleSet(root);
     const locale = readLocaleFlag(flagString(ctx.args, 'locale'), app);
@@ -131,6 +133,11 @@ export const shotCommand: CliCommand = {
       refuseRouteWithIsland(positional, island);
     }
     const component = sweep || (island !== undefined && island !== '');
+    if (against !== undefined) {
+      if (matrix) refuseAgainstWith('matrix');
+      if (sweep) refuseAgainstWith('all-islands');
+      if (component) refuseAgainstWith('island');
+    }
     // The matrix photographs ROUTES; a component beside it is two subjects.
     if (matrix && component) refuseMatrixWithComponent();
     // An island state declares its own size, so a size asked for beside one is a second answer.
@@ -235,6 +242,18 @@ export const shotCommand: CliCommand = {
       ...(theme === undefined ? {} : { colorScheme: theme }),
     };
     const outDir = shotOutDir(ctx.cwd, out, join(root, SHOT_DIR, shotSlug(path)));
+    if (against !== undefined) {
+      // Relative to where the caller stands, `--out`'s rule: the path they typed.
+      const pairs = planAgainst({
+        reference: resolve(ctx.cwd, against),
+        within: [root, ctx.cwd],
+        viewports,
+        theme,
+      });
+      return againstResult(
+        await runAgainst({ pairs, outDir, boot, shoot: runShot, base: { ...single } }),
+      );
+    }
     if (viewports !== undefined) {
       return runShotViewports({ viewports, outDir, boot, shoot: runShot, base: single });
     }

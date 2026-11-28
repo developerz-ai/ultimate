@@ -50,3 +50,12 @@ test('unit · a first visit shows the form and no refusal', async () => {
   expect(html).not.toContain('role="alert"');
   expect(html).toContain('value="/dashboard"');
 });
+
+// The title arrives word by word through `TextReveal`'s stylesheet animation — still 0kb — and the
+// sentence is read once: the readable node carries it, its animated twin is `aria-hidden`.
+test('unit · the title is a TextReveal at the CSS tier', async () => {
+  const html = await render(null);
+  expect(html.match(/<h1\b[^>]*>.*?<\/h1>/s)?.[0]).toMatch(
+    /data-effect-backend="css"[^>]*>.*aria-hidden="true"/s,
+  );
+});

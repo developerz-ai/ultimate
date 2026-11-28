@@ -17,6 +17,7 @@ import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
 import { embeddedDatabaseFinding } from './doctor-database';
 import { guardedCheck, guardedListing } from './doctor-guarded';
 import { shippedGuardsProbe, vendoredGuardWarnings, withGuardListing } from './doctor-guards';
+import { kitWarnings } from './doctor-kit';
 import { offlineFallbackFinding } from './doctor-offline';
 import { NO_POOLER_FACT, poolerFindings, withPoolerReport } from './doctor-pooler';
 import { doctorPort, ownerAskedOnce, portFindings } from './doctor-port';
@@ -250,6 +251,7 @@ export async function reportDoctor(probe: DoctorReportProbe): Promise<CommandRes
   const warnings = await guardedListing('warnings', failed, () => doctorWarnings(asked), []);
   const superseded = await inApp('superseded workarounds', supersededFindings, []);
   const floors = await inApp('advisory floors', advisoryFloorFindings, []);
+  const kit = await inApp('agent kit', kitWarnings, []);
   // An `x upgrade` driven by a CLI older than the codemod engine left files it owed.
   const codemods = await inApp(
     'pending codemods',
@@ -264,6 +266,7 @@ export async function reportDoctor(probe: DoctorReportProbe): Promise<CommandRes
     ...browserWarnings(browser),
     ...superseded,
     ...floors,
+    ...kit,
     ...codemods,
     ...failed,
   ]);

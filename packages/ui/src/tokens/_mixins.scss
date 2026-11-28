@@ -4,6 +4,7 @@
 
 @use 'sass:list';
 @use 'sass:map';
+@use 'sass:meta';
 @use 'sass:string';
 @use 'breakpoints';
 @use 'colors';
@@ -187,6 +188,17 @@ $-under: 0.02px;
     $list: list.append($list, #{$prop} motion.duration(base) motion.easing(out), comma);
   }
   transition: $list;
+}
+
+/// Name an element for a view transition: render's route swap (`startViewTransition`, skipped under
+/// reduced motion) morphs it into the element of the same name on the next page — Motion's
+/// `layoutId` across pages, in CSS. The timing is `theme.scss`'s (`motion.guards`); a name must be
+/// unique on a page, so a list item takes its row's id: `view-transition-name(post-#{$id})`.
+@mixin view-transition-name($name) {
+  @if meta.type-of($name) != 'string' or string.length($name) == 0 {
+    @error string.unquote('X_UI_INVALID_VALUE: view-transition-name(#{meta.inspect($name)}) takes an identifier. fix: pass a bare name, e.g. @include t.view-transition-name(post-card)');
+  }
+  view-transition-name: string.unquote($name);
 }
 
 /// Card/sheet/popover background pair. `raised` adds the deeper elevation.

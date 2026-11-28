@@ -4,6 +4,10 @@ The differentiator. Not a chat widget, not an "AI SDK integration" — the frame
 
 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). The MCP registry, wire protocol, dev-tool catalog, read-only SQL guard, and action projection are built, and so are the four that used to be contracted: `llm()` is an action factory ([`packages/ai/src/llm.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/ai/src/llm.ts)), prompts are versioned, `postgresVectorStore()` fuses pgvector cosine with Postgres FTS via RRF, and evals gate on a committed baseline inside `x verify`'s `eval` step.
 
+## The agent kit
+
+An app carries the skills and subagents that make an agent useful in it: `.claude/skills/{feature,planx,verify,upgrade,design-research}` and `.claude/agents/{shape,data,server,web,audit}`. They are generated from framework source and name this server's tools (`graph.query`, `tests.run`, `verify.narrow`, `db.explain`, `requests.statements`, `ui.research`), so an agent calls the MCP tool instead of grepping. `bunx x kit` rewrites them, `x upgrade` refreshes them, and `x verify` fails an edited one with `X_KIT_DRIFT`. The table of every entry: [Agents](Agents#the-agent-kit-skills-and-agents-every-app-gets).
+
 ## Built-in MCP dev server
 
 `x mcp serve` is the dev-tool server, over stdio or HTTP; `x dev` does not start it. Point any MCP client at it and the agent stops guessing. A new app's `.mcp.json` already names it — [Client config](#client-config).

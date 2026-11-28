@@ -9,6 +9,8 @@ import type { CliBoundaryErrorCode } from './error-codes-boundary';
 import { CLI_BOUNDARY_ERROR_CODES, CLI_BOUNDARY_ERROR_TITLES } from './error-codes-boundary';
 import type { CliDoctorErrorCode } from './error-codes-doctor';
 import { CLI_DOCTOR_ERROR_CODES, CLI_DOCTOR_ERROR_TITLES } from './error-codes-doctor';
+import type { CliKitErrorCode } from './error-codes-kit';
+import { CLI_KIT_ERROR_CODES, CLI_KIT_ERROR_TITLES } from './error-codes-kit';
 import type { CliPackageErrorCode } from './error-codes-package';
 import { CLI_PACKAGE_ERROR_CODES, CLI_PACKAGE_ERROR_TITLES } from './error-codes-package';
 import type { CliProcessesErrorCode } from './error-codes-processes';
@@ -241,10 +243,9 @@ export const CLI_OWNED_ERROR_CODES = [
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s — every planned command throws it through core's
- * own `NotImplementedError`, and none of them may declare a title for it. The CLI is the process that imports every
- * package (`error-catalog.ts`), so a title declared twice here is the one that would win by load
- * order rather than by ownership.
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s — every planned command throws it through core's own
+ * `NotImplementedError`, and none may declare a title for it. The CLI imports every package
+ * (`error-catalog.ts`), so a title declared twice here would win by load order, not ownership.
  *
  * The three env codes are core's for the same reason: `defineEnv`, `checkEnv` and the
  * `.env.example` projection all live in `@ultimat3/core`, and `x env` is the surface that reports
@@ -276,6 +277,7 @@ export const CLI_ERROR_CODES = [
   ...CLI_AGENTS_ERROR_CODES,
   ...CLI_BOUNDARY_ERROR_CODES,
   ...CLI_DOCTOR_ERROR_CODES,
+  ...CLI_KIT_ERROR_CODES,
   ...CLI_PACKAGE_ERROR_CODES,
   ...CLI_PROCESSES_ERROR_CODES,
   ...CLI_SHOT_ERROR_CODES,
@@ -291,6 +293,7 @@ export type CliOwnedErrorCode =
   | CliAgentsErrorCode
   | CliBoundaryErrorCode
   | CliDoctorErrorCode
+  | CliKitErrorCode
   | CliPackageErrorCode
   | CliProcessesErrorCode
   | CliShotErrorCode
@@ -482,6 +485,7 @@ registerErrorCodes(
       ...CLI_PACKAGE_ERROR_TITLES,
       ...CLI_PROCESSES_ERROR_TITLES,
       ...CLI_SHOT_ERROR_TITLES,
+      ...CLI_KIT_ERROR_TITLES,
       ...CLI_TOOLING_ERROR_TITLES,
       ...CLI_VERIFY_ERROR_TITLES,
     }).map(([code, title]) => [code, { title }]),
@@ -490,9 +494,7 @@ registerErrorCodes(
 
 // This file exports NO `docsFor(code)`, and adding one back is the defect. A CLI error passes no
 // `docs:` at all — `UltimateError` fills it from `describeErrorCode(code).docs`, which is
-// `@ultimat3/core`'s `ERROR_DOCS_URL`: one page for every code, never one per code, because `wiki/`
-// is the framework's only public documentation surface and a code lives there in a TABLE ROW, which
-// has no anchor. A `Finding` is a plain object with no constructor to fill it, so it carries
-// `ERROR_DOCS_URL` imported from core — the same constant, not a second copy of it. The
-// `https://ultimate.dev/errors/<code>` links `docsFor` built until 9.x answered 404, host included,
-// on every error the CLI has ever thrown.
+// `@ultimat3/core`'s `ERROR_DOCS_URL`: one page for every code, because `wiki/` is the only public
+// documentation surface and a code lives there in a TABLE ROW, which has no anchor. A `Finding` has
+// no constructor to fill it, so it carries `ERROR_DOCS_URL` imported from core — the same constant.
+// The `https://ultimate.dev/errors/<code>` links `docsFor` built until 9.x answered 404 on every error.

@@ -11,13 +11,12 @@ import '@social-media-clone/i18n';
 import { seedDemo } from '@social-media-clone/db';
 import { ctxOf, runWithContext } from '@ultimat3/core';
 import { seedId } from '@ultimat3/entity';
-import { renderComponent } from '@ultimat3/render/server';
+import { renderRoute } from '@ultimat3/testing';
 import type { Actor } from '../../shared/actor';
 import { userById } from '../auth/repo';
 import { actorFor } from '../auth/viewer';
 import { dashboardScreen } from './screen';
 
-const FILE = 'apps/web/app/dashboard/page.tsx';
 const URL = 'http://localhost/dashboard';
 
 let page: typeof import('./page');
@@ -31,10 +30,16 @@ beforeAll(async () => {
   viewer = await actorFor(user);
 });
 
-const render = (data: Parameters<typeof page.Page>[0]['data']): Promise<string> =>
-  runWithContext(ctxOf({ actor: viewer, tz: 'UTC', locale: 'en' }), () =>
-    renderComponent(() => page.Page({ data, url: URL }), {}, FILE),
-  );
+/** Through `renderRoute`: the page declares an island, and only a route render collects one. */
+const render = async (data: Parameters<typeof page.Page>[0]['data']): Promise<string> =>
+  (
+    await runWithContext(ctxOf({ actor: viewer, tz: 'UTC', locale: 'en' }), () =>
+      renderRoute(
+        { ...page, config: { ...page.config, load: () => Promise.resolve(data) } },
+        { url: URL, actor: viewer },
+      ),
+    )
+  ).html;
 
 const stat = (html: string, name: string): string | undefined =>
   html.match(new RegExp(`data-stat="${name}">([^<]*)<`))?.[1];
@@ -73,4 +78,28 @@ test('unit · it still points at every gated screen, inside the signed-in shell'
   // No viewer, no figures: the page never invents a zero for somebody it could not name.
   expect(html).not.toContain('data-stat=');
   expect(html).not.toContain('⟦');
+});
+
+// The motion is the island's, and the page is complete without it: the same figures the tiles drew
+// are the counts the island is told to end on, the cards it staggers carry their hook, and a notice
+// slot exists only when someone is waiting.
+test('unit · the island counts up exactly the figures the server drew', async () => {
+  const screen = await dashboardScreen(viewer, new Date('2026-10-05T12:00:00.000Z'));
+  const html = await render({ screen });
+  const props = html.match(/data-x-props="dashboard-motion-1">([^<]*)</)?.[1] ?? '';
+  const sent = JSON.parse(props) as {
+    counts: Record<string, number>;
+    waiting: { text: string; href: string } | null;
+  };
+  expect(sent.counts).toEqual({
+    'dashboard-posts': screen.stats.posts,
+    'dashboard-likes': screen.stats.likes,
+    'dashboard-friends': screen.stats.friends,
+    'dashboard-waiting': screen.stats.waiting,
+  });
+  expect(html.match(/data-reveal=/g)).toHaveLength(4);
+  expect(html.includes('data-slot="waiting"')).toBe(screen.stats.waiting > 0);
+  expect(sent.waiting === null).toBe(screen.stats.waiting === 0);
+  // Signed out of any figures: no figures to count, so no island either.
+  expect(await render({ screen: null })).not.toContain('data-x-props');
 });

@@ -1,0 +1,18 @@
+@use '@ultimat3/ui/tokens' as t;
+
+.tilt {
+  display: block;
+  transform-style: preserve-3d;
+  transform: perspective(var(--tilt-perspective, 60rem)) rotateX(var(--tilt-x, 0deg))
+    rotateY(var(--tilt-y, 0deg));
+  transition: transform t.duration(fast) t.easing(out);
+  will-change: transform;
+}
+
+// Without a fine pointer there is nothing to follow; the script also refuses, this is the floor.
+@media (hover: none), (pointer: coarse) {
+  .tilt {
+    transform: none;
+    will-change: auto;
+  }
+}

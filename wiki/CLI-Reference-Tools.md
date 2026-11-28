@@ -60,7 +60,7 @@ x mcp serve [--transport stdio|http] [--port 9229] [--json]
 | `--transport` | string | `stdio` | `stdio` for an editor client, `http` for a socket |
 | `--port` | string | `9229` | HTTP port when `--transport http`. `9229` is also the inspector's default; a taken port is `X_PORT_IN_USE`, naming the next one |
 
-Serves `@ultimat3/mcp`'s dev server — 23 tools (`As of 31.22`), one catalog, the same on both transports. Every
+Serves `@ultimat3/mcp`'s dev server — 24 tools (`As of 31.53`), one catalog, the same on both transports. Every
 tool declares a scope; the local developer's caller carries all five, and an HTTP caller carries
 whatever its bearer token was issued.
 
@@ -89,6 +89,7 @@ whatever its bearer token was issued.
 | `ui.inspect` | DOM, computed-style and accessibility facts for a bounded set of selectors, in one navigation | `dev:test` |
 | `ui.interact` | drive one route through a bounded step list, then photograph it; refuses a password field and any step that leaves the origin | `dev:test` |
 | `ui.diff` | pixel-compare two PNGs the other `ui.*` tools wrote under `.x/shot/`; launches no browser | `dev:read` |
+| `ui.research` | `x design research` as a tool: `{ urls: 1..5, follow?: 0..20 }` → `reference.json`, `tokens.proposal.json`, `motion-map.json`, `sources.json` under `.x/design/<slug>/`; every request to a private, loopback or link-local address refused | `dev:test` |
 
 `db.query` and `db.migrate` refuse structurally — multiple statements, a mutating keyword
 (a data-modifying CTE included), a locking clause, `EXPLAIN ANALYZE` (or `ANALYSE`), a banned
@@ -249,7 +250,7 @@ One major per run, so each hop's gate attributes its red to that hop. `As of 30.
 | 3 | `bun pm view @ultimat3/cli versions`: the next major's newest; the last major's newest when no later major exists | `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_BUN_VERSION` |
 | 4 | write exact pins, raise the Bun floor | — |
 | 5 | `bun install`, then `bun update <names>` for each transitive package `bun.lock` holds under an advisory floor (`X_ADVISORY_FLOOR_UNMET`) | `X_UPGRADE_INSTALL_FAILED`, `fix:` carries the undo |
-| 6 | the installed CLI: `x upgrade codemods --from <from> --to <to>` (below), then `x manifest`, `x doctor --json`, each guard that doctor reports missing (only a hop landing before 31.28: `x g guard <name>`, kept when `x verify --only boundaries` finds nothing more), a Bun-floor hop's `x verify --only unit` coverage rebaseline, `x exercise --json` and its `exercise` floor figures, `x verify --json` | `X_UPGRADE_GATE_UNREADABLE`, as a finding on a red hop |
+| 6 | the installed CLI: `x upgrade codemods --from <from> --to <to>` (below), then `x manifest`, `x doctor --json`, each guard that doctor reports missing (only a hop landing before 31.28: `x g guard <name>`, kept when `x verify --only boundaries` finds nothing more), a Bun-floor hop's `x verify --only unit` coverage rebaseline, `x kit --json` (the managed agent kit refreshed, `As of 31.53`), `x exercise --json` and its `exercise` floor figures, `x verify --json` | `X_UPGRADE_GATE_UNREADABLE`, as a finding on a red hop |
 
 A dry run refuses exactly what the real run would, then stops before step 4 — after previewing this CLI's codemods for the span, written nowhere. It never commits; `git diff` is the hop. Under `--json` fd 1 is one document, fd 2 a `{"upgrade":"<stage>"}` line per stage and a heartbeat a minute.
 
@@ -279,6 +280,7 @@ A dry run refuses exactly what the real run would, then stops before step 4 — 
 | `verify` | `{ ok, summary, failed[], findings[], only?, notRun? }`, each finding `{ step?, code, cause, fix, at? }`. `only[]` and `notRun[]` only under `--only`: the steps run, and the gate's steps this hop did not run |
 | `codemods` | `As of 2026-11-15`: `{ from, to, dryRun, source, applied[] }`, each `applied[]` a codemod that ran: `{ id, since, summary, changed[], skipped[] }`; a `skipped[]` entry is `{ path, reason, diff? }`, a file the codemod would not overwrite (the app edited it), with the template's change as a unified diff to make by hand. `source: installed` — the hop's own CLI applied its list; `driver` — that CLI predates codemods, so this one applied its own. `reinstalled: true` — a `package.json` differs after the codemods (read byte for byte, never off a codemod's report), so the hop ran `bun install` again before any gate stage; `x upgrade codemods` does the same by hand. `failure: { code, cause, fix }` — the installed CLI's codemods run failed for a reason other than lacking the subcommand: nothing applied, this CLI does not stand in, and the hop is not done. `null`: no app, or already at the target, where no codemod runs (`As of 2026-11-18`; `x upgrade codemods --from 0.0.0 --json` carries an app still holding an old template's copy) |
 | `superseded[]` | `As of 2026-11-15`: a workaround the hop's framework made unnecessary, read after the codemods — `{ code: X_SUPERSEDED_WORKAROUND, cause, fix, at }`. A warning, never the verdict |
+| `kit` | `As of 31.53`: `{ reported, written[{ path, action }], unchanged, findings[] }` from the installed CLI's `x kit --json`; `reported: false` when that CLI predates `x kit` |
 | `then` | the next thing to do, in a sentence naming the commands |
 
 **Codemods.** A file `x new` wrote is the app's; when a release changes the template, a codemod (`packages/cli/src/codemods/<id>.ts`, `since` = the release whose template change it carries) moves the app's copy. The hop runs every codemod whose `since` lies after `from` and at or before `to`, in version then id order, before any gate stage, and leaves the edits uncommitted beside the pins. Mechanical or nothing: a file the app edited is listed in `skipped[]` with its diff and never overwritten. `x upgrade codemods --from <version>` runs the same list by hand — for a hop an older CLI drove, which applied none:
@@ -364,10 +366,28 @@ One compiler (`$ref`, objects, arrays, enums, `const`, `oneOf`/`anyOf`, `allOf`,
 
 **The stamp is the build error.** Every generated `.ts` opens with `// @x-client {command, source, sourceHash, bodyHash}`. The gate's `drift` step reads it back under `apps/*/clients/` and the source globs: the source document's parsed content moved is `X_CLIENT_STALE` (fix: the stamp's own command), the body's bytes moved is `X_CLIENT_EDITED`. Reformatting `source.json` changes nothing; the `.ts` files carry `biome-ignore-all format`. Names come from `operationId`, so a `contract-diff` red is a customer's client breaking. `rpc` stays the client inside the app's own repo.
 
+## x design research
+
+```bash
+x design research <url…> [--follow <n>] [--out .x/design] [--viewport 390x844,1440x900]
+                         [--allow-hosts <h,…>] [--timeout 30000] [--json]
+x design research --list [--json]
+```
+
+Measures a public reference page in Chrome over raw CDP into five artefacts per URL — shots at each viewport in light and dark, `reference.json`, a `tokens.proposal.json` that `defineTheme` accepts, `motion-map.json` (observed animation → `@ultimat3/ui/motion` call or `@ultimat3/effects` entry) and `sources.json` (licence posture). Every navigation, redirect and subresource to a private, loopback or link-local address is refused browser-wide (`X_DESIGN_URL_REFUSED`); a navigation that fails or times out is `X_DESIGN_REFERENCE_UNREACHABLE`. A cancelled `ui.research` call ends with `X_ABORTED` and publishes nothing half-written; a followed link that fails is listed in `data.skipped`, by code. Needs no app. Flags, artefacts and the ideas-only rule: [Design research](Design-Research).
+
+## x kit
+
+```bash
+x kit [--json]
+```
+
+Writes the managed agent kit — `.claude/skills/{feature,planx,verify,upgrade,design-research}/SKILL.md`, `.claude/agents/{shape,data,server,web,audit}.md` and the `.claude/kit.json` marker — from the installed framework. Never touches an `app-*` file, `apps/web/DESIGN.md`, or an entry named in `kit.json`'s `"off"`. Needs an app root. `--json` answers `data: { written[{ path, action }], unchanged, off }`. `x verify`'s `manifest` step judges the kit: with the marker, a missing or edited managed file is `X_KIT_DRIFT` and an app file under a managed name is `X_KIT_SHADOWED`; without it, one warning naming `bunx x kit`. `x upgrade` runs it after the guards. → [Agents](Agents)
+
 ## x shot
 
 ```bash
-x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000]
+x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000] [--against <png|.x/design/<slug>>]
                [--timeout 30000] [--browser <path>] [--cdp-url <ws://…>]
                [--allow-hosts a.com,b.com] [--theme light|dark] [--locale <l>]
                [--cookie name=value[,name=value]] [--expect-status 404]
@@ -394,6 +414,7 @@ x shot --all-islands [--json]
 | `--expect-status` | absent — any 2xx | the document status this shot is ok with, `As of 2026-09-26`: `x shot /nope --expect-status 404` photographs the not-found page on purpose. Absent, a non-2xx document fails the verdict and the summary names the status. With `--matrix` it applies to every cell |
 | `--locale` | the app's `defaultLocale`, **always pinned** | one of the app's `locales`, `As of 2026-09-25`. Sent as `Accept-Language` on every request the page makes, and for a non-default locale the path is prefixed (`x shot /precios --locale en` opens `/en/precios`). Absent, `Accept-Language` is still pinned to the default locale, so a picture never depends on the language of the machine's Chrome. An undeclared locale is `X_CLI_BAD_FLAG` before anything boots; refused beside `--island` |
 | `--matrix` | off | every static `site/` route × every locale × `light`/`dark` × `390x844` and `1440x900` — or the `--viewport` list instead (laid out at exactly that width: scrollbars are hidden, `As of 2026-09-29` — a classic scrollbar made every capture 15 px narrow), into `.x/shot/matrix/<route>/<locale>/<theme>-<width>x<height>/` (`<theme>-<width>/` before 2026-10: two sizes sharing a width wrote one directory), plus `.x/shot/matrix/index.html`, a contact sheet of every picture with failures marked. One dev server for the whole run. A `<route>` narrows it to that route, `--locale` and `--theme` to one value of their axis; `ok` only when every cell's verdict is. Refused beside `--island`/`--all-islands` |
+| `--against` | none | a PNG or a `x design research` directory: each picture compared with the reference shot of its width and scheme — `diff-<w>-<scheme>.png` and `against.{similarity,changedPercent,changedBox}` in `verdict.json`; recorded, never gating. A missing pair is `X_SHOT_AGAINST_MISSING`. Refused beside `--matrix`/`--island`/`--all-islands` → [Design research](Design-Research) |
 | `--viewport` | absent — the driver's default size | `<w>x<h>[,<w>x<h>…]` in CSS pixels, `As of 2026-10` (#444): the route photographed **once per size** over one dev server, each into `<out>/<w>x<h>/` with its own `shot.png` and `verdict.json`; `ok` only when every size's verdict is, and the summary is the first failing size's. `x shot /pricing --viewport 390x844,820x1180,1440x900` replaces a hand-written browser script. With `--matrix` the list replaces the default pair. One flag holding a list, never repeated — the parser keeps a repeated flag's last value. A side outside `1..16384`, anything but digits around an `x` (`0x10`, `1e3`, `390.5`), an empty entry or the same size twice is `X_CLI_BAD_FLAG` before anything boots; refused beside `--island`/`--all-islands`, whose states declare their own `viewport` |
 | `--theme` | absent — the box's own preference and the app's own `theme.defaultMode` | `light` or `dark`, `As of 2026-09-19`. Both `prefers-color-scheme` is emulated **and** the scheme is stored as the visitor's choice under `THEME_STORAGE_KEY` before navigation — the boot script since 20.2.0 answers `defaultMode` before the OS, so emulation alone photographs a dark-default app dark whatever was asked (#489). The `ui.shot`/`ui.inspect`/`ui.interact` tools' `theme` is this flag. Refused beside `--island`, which photographs both themes |
 

@@ -1,0 +1,50 @@
+@use '@ultimat3/ui/tokens' as t;
+@use '../effect' as fx;
+
+@keyframes grid-glow-sweep {
+  50% {
+    transform: translate3d(40%, 25%, 0);
+  }
+
+  to {
+    transform: translate3d(-30%, 45%, 0);
+  }
+}
+
+.root {
+  @include fx.root;
+}
+
+.layer {
+  @include fx.layer;
+}
+
+.content {
+  @include fx.content;
+}
+
+.grid {
+  @include t.grid-texture($scanlines: false);
+}
+
+.grid-scanlines {
+  @include t.grid-texture($scanlines: true);
+}
+
+.glow {
+  @include fx.pausable('.root');
+  position: absolute;
+  inset-block-start: -25%;
+  inset-inline-start: -10%;
+  inline-size: 70%;
+  aspect-ratio: 1;
+  border-radius: t.radius(full);
+  background: radial-gradient(circle, rgb(var(--fx-c0) / 0.28), rgb(var(--fx-c0) / 0) 65%);
+  animation: grid-glow-sweep calc(#{t.duration(slower)} * 28 / var(--fx-speed, 1)) t.easing(in-out)
+    infinite alternate;
+  will-change: transform;
+
+  @media (prefers-contrast: more), (forced-colors: active) {
+    display: none;
+  }
+}

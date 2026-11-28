@@ -14,7 +14,7 @@ x version              # CLI version
 | `--json` | every command accepts it and prints a single machine-readable object on stdout. Human output goes to stdout too, but never mixed with JSON |
 | Exit codes | `0` success · `1` the command failed (a typed `X_*` error is printed) · `2` usage error (`X_CLI_BAD_FLAG`, `X_CLI_UNKNOWN_COMMAND`) |
 | Errors | always `code` + `cause` + `fix`. See [Error codes](Error-Codes) |
-| App detection | most commands walk up for `app.config.ts` and fail with `X_NOT_IN_APP` if there is none. The exceptions: `new`, `test`, `doctor`, `errors`, `docs`, `affected`, `ci`, `pr`, `help`, `version` |
+| App detection | most commands walk up for `app.config.ts` and fail with `X_NOT_IN_APP` if there is none. The exceptions: `new`, `test`, `doctor`, `errors`, `docs`, `affected`, `ci`, `pr`, `design`, `help`, `version` |
 | Flags | long form only, `--flag value` or `--flag=value`. Booleans negate as `--no-<flag>` |
 | Global flags | `--json` / `-j`, `--help` / `-h`, `--cwd <dir>`, `--verbose` — accepted by every command. `--verbose` carries each step's captured output on a green run too, in the terminal and under `--json` alike (`steps[].output`); without it a step's output appears only when it fails. `As of 2026-10` |
 | Subcommands | when a command has them, its default is **declared**, never positional: `x actions` is `x actions list` because that command sets `defaultSubcommand: 'list'`. A command with no defensible default declares none and refuses the bare form with `X_CLI_BAD_FLAG` — exactly `db` and `mcp`, pinned by `parse.test.ts`. `--help` is read before the subcommand, so `x db --help` and `x mcp --help` print usage like `x help db`. The parser answered `subcommands[0]` until 1.2.0, which is why `x db` used to run the migration **generator** |
@@ -72,7 +72,9 @@ The reference is split by family; every command heading keeps its anchor on the 
 | `x affected` | the workspaces a diff can have broken, transitively | shipped |
 | `x graph [--from <a> --to <b>]` · `x impact <file\|primitive\|entity>` | the app as one typed graph, each edge `declared`, `import` or `observed` · what an edit reaches | shipped |
 | `x client vendor <name>` · `x client customer --out <dir>` | one OpenAPI compiler, two clients: a third party's document into `apps/web/clients/<name>/` (`outbound()` + `t` schemas), or the app's own published document into a client with no framework import | shipped |
-| `x shot <route>` | photograph one route from a real browser, plus a `verdict.json` a picture cannot carry | shipped |
+| `x shot <route>` | photograph one route from a real browser, plus a `verdict.json` a picture cannot carry · `--against` compares it with a reference | shipped |
+| `x design research <url…>` | measure a public reference page into a token proposal, a motion map and shots; private addresses refused browser-wide | shipped |
+| `x kit` | write the managed agent kit (`.claude/skills`, `.claude/agents`, `kit.json`) from the installed framework | shipped |
 | `x pr review\|resolve\|reply` | inline review threads — the ones `gh pr view --comments` does not show — plus every review verdict, every PR comment, and which review bots did not review | shipped |
 | `x ci` | the workflow runs for this branch, and the findings inside the failed step's log; `x ci tested`: whether a push reuses a green PR run | shipped |
 | `x errors explain <CODE>` | code → cause, fix, docs; inside an app, its own `defineError()` code → title, HTTP status and the declaring `file:line` | shipped |

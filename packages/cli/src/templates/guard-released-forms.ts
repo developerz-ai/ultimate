@@ -10,6 +10,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['2hqr04589t23q', 'error'],
     ['2z9j3sd8e7lgl', 'error'],
   ],
+  'animated-layout-script': [['imwzfn6wtwa6', 'warning']],
   'bare-error': [
     ['1m3eimglwzrdq', 'error'],
     ['1njzso3r6drnd', 'error'],
@@ -18,6 +19,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['2s43pcjqyhmfi', 'error'],
     ['n9w3ww2famyi', 'error'],
   ],
+  'effect-without-fallback': [['1klsn88horset', 'warning']],
   'error-declared': [
     ['1rlzex7nalpiw', 'error'],
     ['2tfw2hq80msju', 'error'],
@@ -43,6 +45,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['2os1f5fb6aass', 'error'],
     ['31gjhz3nyf0gz', 'error'],
   ],
+  'motion-adapter': [['1xwu8j0vup1kd', 'warning']],
   'native-confirm': [
     ['1f7eh34hj085a', 'error'],
     ['2b134wpkoaqso', 'error'],
@@ -66,6 +69,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['21v2jbczhqz8k', 'error'],
     ['mazudnz7t6iy', 'error'],
   ],
+  'raw-frame-loop': [['k41idqxhbwp6', 'warning']],
   'raw-interval': [
     ['1o6p0fmjhzdhw', 'error'],
     ['2xrqszz066coc', 'error'],
@@ -85,6 +89,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['u6julhh0et2k', 'error'],
     ['w8aw0q20tfsz', 'error'],
   ],
+  'raw-motion-script': [['1af8jx69uczx0', 'warning']],
   'raw-shadow': [
     ['13t0n8kesciv6', 'error'],
     ['1vhy6xulc5cs5', 'error'],
@@ -168,19 +173,24 @@ export const RELEASED_GUARD_FORMS: Readonly<
 /** Every hash each shipped guard's TEST file was released as: an unedited test goes without a note. */
 export const RELEASED_GUARD_TEST_FORMS: Readonly<Record<string, readonly string[]>> = {
   'animated-layout-property': ['191zjn08f13h4'],
+  'animated-layout-script': ['dw348y39b0ve'],
   'bare-error': ['17uv4zrzcuwbk', '1epwa72g9sk4u', '1w7vwbtypxdwe'],
+  'effect-without-fallback': ['1yjzzgpg03gey'],
   'error-declared': ['2hj2bs2czhxnw', 'qe8afpq7pzf1'],
   'focus-visible': ['12c0rk3ljkx6q'],
   'image-dimensions': ['3p4hkambgpb4j'],
   'island-mount-clears': ['2jkeu60fnvtdg'],
   'island-without-states': ['vls0ujdd16gw'],
+  'motion-adapter': ['2y1k1zjt99ndz'],
   'native-confirm': ['1c7vps5wn37uv', 'qwyn1mzn9ace'],
   'raw-breakpoint': ['w356i8dreh7j'],
   'raw-colour': ['1nhoblzxa9kp1', '1tc7cambk8byr', '319l3wictp9lf'],
   'raw-fetch': ['2lips924uo00f'],
+  'raw-frame-loop': ['1feko87is1n1i'],
   'raw-interval': ['1z55givy4sst0'],
   'raw-length': ['1hpgz9jowk5qu'],
   'raw-motion': ['2kg7ezhf8u7a9', '6420344uhv97', 'g6cs0de9jmr7', 'xes72msaf3a3'],
+  'raw-motion-script': ['2bmyfrg3hwi7r'],
   'raw-shadow': ['3kg8ft6y3ia0y'],
   'raw-z-index': ['3fb40f6bwp8kq'],
   'repo-await-in-loop': ['2axgbb82wldt4'],

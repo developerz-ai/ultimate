@@ -7,12 +7,37 @@
 // and mounts it.
 
 import { trimTrailingSlashes } from '@ultimat3/core';
+import { BadFlagError } from '../errors';
+import { loadVersion } from '../version-loader';
 import type { GeneratedFile } from './naming';
 import { camel, kebab, pascal } from './naming';
+
+/**
+ * The `@ultimat3/effects` entries `--effect` wraps the island's panel in: each takes children and
+ * nothing else it must be given, so the scaffold is the smallest honest use. The rest (`EffectCanvas`
+ * wants a `draw` and a `fallback`; `Marquee`, `TextReveal` and `CountUp` take no children) are
+ * written by hand against `wiki/Effects.md`.
+ */
+export const EFFECT_ENTRIES = {
+  aurora: 'Aurora',
+  'gradient-orbs': 'GradientOrbs',
+  'mosaic-grid': 'MosaicGrid',
+  'grid-glow': 'GridGlow',
+  noise: 'Noise',
+  'shader-background': 'ShaderBackground',
+  'spotlight-card': 'SpotlightCard',
+  tilt: 'Tilt',
+  'glass-surface': 'GlassSurface',
+  shimmer: 'Shimmer',
+} as const;
+
+export type EffectEntry = keyof typeof EFFECT_ENTRIES;
 
 export interface IslandOptions {
   /** Directory the entry lands in, app-root-relative and POSIX — normally a route's own folder. */
   readonly dir: string;
+  /** Wrap the panel in this `@ultimat3/effects` entry (`x g island <name> --effect aurora`). */
+  readonly effect?: EffectEntry | undefined;
 }
 
 /**
@@ -27,8 +52,9 @@ export const upToAppRoot = (dir: string): string =>
     .map(() => "'..'")
     .join(', ');
 
-const islandSource = (name: string): string => {
+const islandSource = (name: string, effect?: EffectEntry): string => {
   const Name = pascal(name);
+  const Effect = effect === undefined ? undefined : EFFECT_ENTRIES[effect];
   return `// ${Name}: the interactive half of an otherwise static page, and the only module on this
 // route the browser downloads.
 //
@@ -37,9 +63,9 @@ const islandSource = (name: string): string => {
 // A string has no import edge, so nothing follows one into this file and the page's bundle graph
 // stays the page's (axiom 6). WHEN it wakes is the route's \`hydrate\`, never a declaration here.
 
-import { mountOver } from '@ultimat3/render/client';
-import type { JSX } from 'solid-js';
-import { createSignal } from 'solid-js';
+${Effect === undefined ? '' : 'import { ' + Effect + " } from '@ultimat3/effects';\n"}import { mountOver } from '@ultimat3/render/client';
+${Effect === undefined ? '' : "import { setSolidRuntime } from '@ultimat3/ui';\n"}import type { JSX } from 'solid-js';
+${Effect === undefined ? "import { createSignal } from 'solid-js';" : "import {\n  createContext,\n  createEffect,\n  createMemo,\n  createRoot,\n  createSignal,\n  onCleanup,\n  useContext,\n} from 'solid-js';"}
 import { render } from 'solid-js/web';
 import styles from './${name}.module.scss';
 
@@ -57,14 +83,14 @@ export interface ${Name}Props {
  */
 function ${Name}(props: ${Name}Props): JSX.Element {
   const [count, setCount] = createSignal(0);
-  return (
+  ${Effect === undefined ? 'return (' : 'const panel = ('}
     <p class={styles.panel}>
       <button type="button" class={styles.trigger} onClick={() => setCount(count() + 1)}>
         {props.label}
       </button>
       <output data-role="count">{count()}</output>
     </p>
-  );
+  );${Effect === undefined ? '' : '\n  return <' + Effect + '>{panel}</' + Effect + '>;'}
 }
 
 /**
@@ -77,7 +103,7 @@ function ${Name}(props: ${Name}Props): JSX.Element {
  * which marks the root \`data-x-failed\` for the error reporter.
  */
 export function mount(el: HTMLElement, props: ${Name}Props): () => void {
-  // Solid's \`render\` answers its disposer; returning it is what lets the client router and
+${Effect === undefined ? '' : '  // The effect reaches the reactive graph through the runtime an entry registers.\n  setSolidRuntime({\n    createContext,\n    useContext,\n    createSignal,\n    createMemo,\n    createEffect,\n    onCleanup,\n    createRoot,\n  });\n'}  // Solid's \`render\` answers its disposer; returning it is what lets the client router and
   // \`@ultimat3/testing\` stop this island — its timers included — when they are done with it.
   return mountOver(el, (root) => render(() => <${Name} {...props} />, root));
 }
@@ -199,13 +225,34 @@ export const ${camel(name)}States = defineIslandStates({
 `;
 };
 
+/**
+ * The island imports `@ultimat3/effects`, so the app declares it: a `merge: 'json'` entry on the
+ * root manifest, which adds the one key where the file keeps it sorted and leaves a held one alone.
+ * Exact-pinned like every `@ultimat3/*` (`shapes/landing-motion.ts`'s `effectsDependency`).
+ */
+const effectsDependency = (): GeneratedFile => ({
+  path: 'package.json',
+  contents: `${JSON.stringify({ dependencies: { '@ultimat3/effects': loadVersion() } })}\n`,
+  merge: 'json',
+});
+
 export function islandFiles(rawName: string, options: IslandOptions): readonly GeneratedFile[] {
   const name = kebab(rawName);
+  if (options.effect !== undefined && !Object.hasOwn(EFFECT_ENTRIES, options.effect)) {
+    const entries = Object.keys(EFFECT_ENTRIES);
+    throw new BadFlagError({
+      flag: 'effect',
+      command: 'g island',
+      reason: `"${options.effect}" is no entry that wraps a panel — one of: ${entries.join(', ')}`,
+      fix: `x g island ${name} --effect ${entries[0]}`,
+    });
+  }
   const dir = trimTrailingSlashes(options.dir);
   return [
-    { path: `${dir}/${name}.island.tsx`, contents: islandSource(name) },
+    { path: `${dir}/${name}.island.tsx`, contents: islandSource(name, options.effect) },
     { path: `${dir}/${name}.module.scss`, contents: islandStyle() },
     { path: `${dir}/${name}.island.states.ts`, contents: islandStates(name, dir) },
     { path: `${dir}/${name}.island.test.ts`, contents: islandTest(name, dir) },
+    ...(options.effect === undefined ? [] : [effectsDependency()]),
   ];
 }

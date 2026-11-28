@@ -21,9 +21,9 @@ So the whole bundle is three description lines of standing cost. The rest is pai
 
 | File | For |
 |---|---|
-| `commands/feature.md` | `/feature` — build or fix one thing end to end, gated on `bun run verify` |
-| `commands/planx.md` | `/planx` — write a plan to `docs/plans/` for another agent to execute |
-| `commands/verify.md` | `/verify` — run the gate and fix what it reports |
+| `commands/app-feature.md` | `/app-feature` — build or fix one thing end to end, gated on `bun run verify` |
+| `commands/app-planx.md` | `/app-planx` — write a plan to `docs/plans/` for another agent to execute |
+| `commands/app-verify.md` | `/app-verify` — run the gate and fix what it reports |
 | `agents/shape.md` | the idea-stage pass: which primitive, which slice, or "do not build this" |
 | `agents/data.md` | `packages/db/`, `entity.ts`, `repo.ts` |
 | `agents/server.md` | actions, mutators, queries, jobs, tasks, policies, `apps/web/api/` |

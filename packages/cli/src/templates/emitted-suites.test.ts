@@ -148,6 +148,7 @@ describe('unit · a generated island test holds no mount by hand', () => {
     const paths = new Set(islandTests().map((file) => file.path.split('/').at(-1)));
     expect([...paths].sort()).toEqual([
       'currency-picker.island.test.ts',
+      'dashboard-motion.island.test.ts',
       'invoice-form.island.test.ts',
       'post-form.island.test.ts',
       'theme-toggle.island.test.ts',

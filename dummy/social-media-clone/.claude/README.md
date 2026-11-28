@@ -7,7 +7,7 @@ file, a command, a script are all things to add when the need appears, not a fix
 | Path | What it is | Who extends it |
 |---|---|---|
 | `agents/` | one role per path, so two agents never write the same file. The file set **is** the lock | add a role when a new area appears |
-| `commands/` | canned workflows: `/idea` → `/reset` → `/feature` | add one the second time you type the same sequence |
+| `commands/` | canned workflows: `/idea` → `/reset` → `/app-feature`; the managed skills (`feature`, `planx`, `verify`, `upgrade`, `design-research`) are in `skills/` (`bunx x kit`) | add one the second time you type the same sequence |
 | `../.mcp.json` | reach: code structure, production data, production errors, this app's own tools | add a server when an agent reaches for it weekly |
 | `../scripts/` | `scripts/<resource>/<verb>.ts`, catalogued by `scripts/help.ts` | **the agent decides what it needs.** The catalog is the directory, so it cannot drift |
 

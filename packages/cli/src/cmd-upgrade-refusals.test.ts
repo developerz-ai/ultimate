@@ -241,4 +241,20 @@ describe('unit · --to at a version that is not the newest', () => {
     expect(output.data?.then).toContain('20.1.0');
     expect(output.data?.next).toBe('20.1.0');
   });
+
+  // The scaffold allowlists `bunx x upgrade --dry-run:*`; a trailing `--no-dry-run` (last wins) would
+  // turn that read-only permission into a real upgrade.
+  test.each(['--dry-run --no-dry-run', '--no-dry-run'])(
+    'a negated dry-run (%s) is refused before anything runs',
+    async (spelled) => {
+      const flags = spelled.split(' ');
+      const dir = await fixture();
+      const { runner, spawned } = recording();
+      const { code, output } = await run(dir, runner, flags);
+      expect(spawned).toEqual([]);
+      expect(code).toBe(1);
+      expect(output.findings?.[0]?.code).toBe('X_CLI_BAD_FLAG');
+      expect(output.findings?.[0]?.fix).toContain('x upgrade --dry-run');
+    },
+  );
 });

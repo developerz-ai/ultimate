@@ -7,7 +7,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mountIsland } from '@ultimat3/testing';
 import { buildIslands } from '../island-bundle';
-import { islandFiles } from './island';
+import { type EffectEntry, islandFiles } from './island';
 import { fixtureAppRoot } from './island-fixture';
 
 const filesFor = (name: string, dir = 'apps/web/site/pricing'): readonly string[] =>
@@ -178,4 +178,50 @@ export function mount(el: HTMLElement, props: CounterProps): () => void {
     expect(mounted.text('span')).toBe('server');
     expect(mounted.find('button')).toBeNull();
   }, 60_000);
+});
+
+describe('unit · x g island --effect', () => {
+  const effectEntry = (effect: EffectEntry): string =>
+    String(
+      islandFiles('counter', { dir: DIR, effect }).find((file) => file.path === ENTRY)?.contents,
+    );
+
+  test('the panel is wrapped in the named effects entry, and the runtime is registered first', () => {
+    const source = effectEntry('aurora');
+    expect(source).toContain("import { Aurora } from '@ultimat3/effects';");
+    expect(source).toContain('return <Aurora>{panel}</Aurora>;');
+    expect(source).toContain('setSolidRuntime({');
+    expect(source).toContain('return mountOver(');
+    expect(source.indexOf('setSolidRuntime({')).toBeLessThan(source.indexOf('return mountOver('));
+  });
+
+  test('without --effect the island is byte-for-byte what it was', () => {
+    const files = islandFiles('counter', { dir: DIR });
+    expect(String(files.find((file) => file.path === ENTRY)?.contents)).not.toContain('effects');
+    expect(files.some((file) => file.path === 'package.json')).toBe(false);
+  });
+
+  test('a name that is no wrapper entry is refused with the list that is', () => {
+    expect(() => islandFiles('counter', { dir: DIR, effect: 'marquee' as EffectEntry })).toThrow(
+      /one of: aurora/,
+    );
+  });
+
+  for (const effect of ['aurora', 'spotlight-card', 'shimmer'] as const) {
+    test(`${effect}: the island builds, mounts and still counts`, async () => {
+      using root = await fixtureAppRoot(
+        `island-${effect}`,
+        islandFiles('counter', { dir: DIR, effect }),
+      );
+      using mounted = await mountIsland({
+        build: buildIslands,
+        root: root.path,
+        file: ENTRY,
+        props: { label: 'Open' },
+      });
+      expect(mounted.code).not.toMatch(/\bReact\b/);
+      expect(mounted.fire('button', 'click')).toBe(true);
+      expect(mounted.text('[data-role="count"]')).toBe('1');
+    }, 60_000);
+  }
 });

@@ -7,7 +7,7 @@ export const shotSpec: CommandSpec = {
   name: 'shot',
   summary: 'photograph one route, one island in a state it declares, or every island in the app',
   usage:
-    'x shot <route> [--locale <l>] [--theme light|dark] [--viewport 390x844,1440x900] | --matrix [<route>] | --island <name> [--state <id>] | --all-islands [--cookie <name=value>] [--expect-status 404] [--port 0] [--out <dir>] [--settle 2000] [--json]',
+    'x shot <route> [--locale <l>] [--theme light|dark] [--viewport 390x844,1440x900] [--against <png|.x/design/<slug>>] | --matrix [<route>] | --island <name> [--state <id>] | --all-islands [--cookie <name=value>] [--expect-status 404] [--port 0] [--out <dir>] [--settle 2000] [--json]',
   requiresApp: true,
   flags: [
     { name: 'port', type: 'string', summary: 'dev port (0 lets the kernel pick a free one)' },
@@ -82,6 +82,14 @@ export const shotSpec: CommandSpec = {
       name: 'all-islands',
       type: 'boolean',
       summary: 'every island in the app, in every state it declares, plus an index.md',
+    },
+    // A flag on `x shot`, not a second command: comparing a route with a reference is photographing
+    // that route, plus one diff per picture.
+    {
+      name: 'against',
+      type: 'string',
+      summary:
+        'a PNG, or a `x design research` directory: each picture compared with the reference shot of its width and scheme — diff-<w>-<scheme>.png and a similarity in verdict.json, never gating',
     },
   ],
 };

@@ -12,6 +12,7 @@ import { checkAgentsMd } from './app-agents-md';
 import { readAppSources } from './app-boundaries';
 import { devImportWarnings } from './app-dev-imports';
 import { envExampleFindings } from './app-env';
+import { kitVerdict } from './app-kit-disk';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import { policyFindings } from './app-permissions';
@@ -412,6 +413,9 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       // Started first and awaited last: it is a child process, and it runs beside the rest.
       const roleLoad = app ? roleLoadFindings(ctx.root, ctx.runner) : Promise.resolve([]);
       const drift = await driftFindings(ctx.root);
+      // The agent kit, beside `AGENTS.md`: errors once `.claude/kit.json` opts the app in, else one
+      // warning (`app-kit.ts`). An app only — the framework monorepo ships the kit, it holds none.
+      const kit = app ? await kitVerdict(ctx.root) : undefined;
       // Every `mcpTools()` against `tools.lock.json`: the `x mcp lock --check` of each, at once.
       const remote = app ? await mcpLockFindings(ctx.root) : { findings: [], warnings: [] };
       const findings = [
@@ -434,6 +438,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         ...(await envExampleFindings(ctx.root)),
         ...floorProblemFindings(floor),
         ...agents.findings,
+        ...(kit?.findings ?? []),
         ...(await hostFindings(ctx, 'manifest')),
       ];
       // Warnings are not findings: `AGENTS.md` tabulating a route table is a smell a human
@@ -444,7 +449,10 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       ];
       // A page's `<form method="post">` to an action with no `native`: a JSON dead end. Advice on
       // `main` — refusing it would redden an app that passed yesterday (X_BREAKING_ON_MAIN).
-      const warnings = app ? await nativeFormWarnings(ctx.root) : [];
+      const warnings = [
+        ...(app ? await nativeFormWarnings(ctx.root) : []),
+        ...(kit?.warnings ?? []),
+      ];
       return {
         ok: findings.length === 0,
         findings,

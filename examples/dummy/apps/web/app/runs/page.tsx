@@ -227,7 +227,10 @@ export const config = defineRoute({
   // +253 B (252,960 → 253,213), the same in every realtime island: the browser keeps the `sig` each
   // patch carries and hands it back on resume, and a malformed one is kept as a refusal marker
   // (#1280). Raised 247.1kb → 247.3kb.
-  budget: { js: '247.3kb' },
+  // measured: 253272 B (2026-11-28; x build --target static) — why: the client router +59 B
+  // (32,738 → 32,797): a navigation takes no view transition when the reader has paused motion
+  // (`html[data-motion="paused"]`), the same as under reduced motion. Raised 247.3kb → 247.4kb.
+  budget: { js: '247.4kb' },
   // The URL rides along: the "created between" filter is read off it, in the member's zone.
   load: async ({ url }) => ({
     connections: await memberQueries.runConnections({ orgId: useActor().orgId }),

@@ -5,8 +5,9 @@
 // wrong, and the agent's first command fails.
 
 import { describe, expect, test } from 'bun:test';
+import { kitFiles } from '../kit/registry';
 import { names } from './naming';
-import { claudeCommandFiles } from './scaffold-claude-commands';
+import { DESIGN_PATH } from './scaffold-design';
 import { docsFiles } from './scaffold-docs';
 
 const app = names('ledger-demo');
@@ -39,8 +40,7 @@ describe('unit · the generated brain names bun run verify as the gate', () => {
   test('no convention file names the deleted check script', () => {
     for (const path of ['AGENTS.md', 'CLAUDE.md', 'README.md'])
       expect(doc(path)).not.toContain('bun run check');
-    for (const file of claudeCommandFiles(app))
-      expect(String(file.contents)).not.toContain('bun run check');
+    for (const file of kitFiles(app)) expect(String(file.contents)).not.toContain('bun run check');
   });
 
   test('one file under two names: AGENTS.md is a link to CLAUDE.md, carrying the same text', () => {
@@ -63,15 +63,15 @@ describe('unit · the generated brain names bun run verify as the gate', () => {
     expect(doc('CLAUDE.md')).toContain('.github/workflows/ci.yml');
   });
 
-  test('/verify runs bun run verify — the command whose whole job is the gate', () => {
-    const verify = emitted(claudeCommandFiles(app), '.claude/commands/verify.md');
-    const instruction = verify.split('\n').find((line) => line.startsWith('Run '));
-    expect(instruction).toBe('Run `bun run verify`.');
+  test('the verify skill runs bun run verify — the command whose whole job is the gate', () => {
+    const verify = emitted(kitFiles(app), '.claude/skills/verify/SKILL.md');
+    const fence = verify.indexOf('```sh\n');
+    expect(verify.slice(fence + 6).split('\n')[0]).toBe('bun run verify --json');
   });
 
-  test('/feature reports the same gate it tells the agent to run', () => {
-    const feature = emitted(claudeCommandFiles(app), '.claude/commands/feature.md');
-    expect(feature).toContain('**Done means `bun run verify` green.**');
+  test('the feature skill gates on bun run verify and finishes at merged', () => {
+    const feature = emitted(kitFiles(app), '.claude/skills/feature/SKILL.md');
+    expect(feature).toContain('**Done means merged.**');
     expect(feature).toContain('Gate:       bun run verify');
   });
 
@@ -111,9 +111,8 @@ describe('unit · the generated brain speaks to any agent, in commands that run'
       '`.mcp.json`',
       '`x.manifest.json`',
       '`POST /mcp`',
-      '`.claude/commands/feature.md`',
-      '`.claude/commands/planx.md`',
-      '`.claude/commands/verify.md`',
+      '`.claude/skills/`',
+      '`bunx x kit`',
     ]) {
       expect(block).toContain(named);
     }
@@ -121,5 +120,47 @@ describe('unit · the generated brain speaks to any agent, in commands that run'
 
   test('the files the block names are files x new writes', () => {
     expect(docsFiles(app).some((file) => file.path === '.mcp.json')).toBe(true);
+    expect(docsFiles(app).some((file) => file.path.startsWith('.claude/skills/'))).toBe(true);
+    expect(docsFiles(app).some((file) => file.path.startsWith('.claude/commands/'))).toBe(false);
+  });
+});
+
+describe('unit · motion, effects and visual quality each name what refuses them', () => {
+  const row = (label: string): string =>
+    doc('AGENTS.md')
+      .split('\n')
+      .find((line) => line.startsWith(`| ${label} |`)) ?? '';
+
+  test.each([
+    ['Timing', '`raw-motion`, `raw-motion-script`'],
+    ['Motion adapter', '`motion-adapter`'],
+    ['Frame loops', '`raw-frame-loop`'],
+    ['Effects', '`effect-without-fallback`'],
+    ['Motion', '`animated-layout-property`, `animated-layout-script`'],
+  ])('the %s row names the adapter and ends in %s', (label, refuser) => {
+    expect(row(label)).toContain('@ultimat3/');
+    expect(row(label).trimEnd().endsWith(`${refuser} |`)).toBe(true);
+  });
+
+  test('the Visual quality section is a table whose every rule names its refuser', () => {
+    const text = doc('AGENTS.md');
+    const start = text.indexOf('## Visual quality');
+    expect(start).toBeGreaterThan(-1);
+    const rows = text
+      .slice(start, text.indexOf('\n## ', start + 1))
+      .split('\n')
+      .filter((line) => line.startsWith('| ') && !line.startsWith('| Rule |'));
+    expect(rows.length).toBeGreaterThan(2);
+    for (const line of rows) {
+      const refuser = line.split(' | ').at(-1)?.replace(/ \|$/, '').trim() ?? '';
+      expect({ line, refuser: refuser.length > 0 }).toEqual({ line, refuser: true });
+    }
+    expect(text.slice(start)).toContain(DESIGN_PATH);
+  });
+
+  test('x new writes the DESIGN.md the web agent is told to read first', () => {
+    const design = doc(DESIGN_PATH);
+    expect(design.startsWith('---\ntokens:') || design.startsWith('---\n#')).toBe(true);
+    expect(emitted(kitFiles(app), '.claude/agents/web.md')).toContain(DESIGN_PATH);
   });
 });

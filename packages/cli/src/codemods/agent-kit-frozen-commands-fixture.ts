@@ -1,9 +1,7 @@
-// The slash commands `x new` writes into `.claude/commands/`: the three workflows every audited
-// repo re-invented by hand — build a feature, plan one, run the gate. Deliberately NOT one command
-// per generator: `x g <kind>` already is that command, and a slash wrapper over a shipped CLI
-// command is the second path axiom 1 forbids.
+// FROZEN at v31.51.0: the commands `x new` wrote before skills replaced them. Test support, as
+// `agent-kit-frozen-agents.ts` is.
 
-import type { GeneratedFile, NameSet } from './naming';
+import type { GeneratedFile, NameSet } from '../templates/naming';
 
 const feature = (app: NameSet): string => `---
 description: Build or fix one thing in ${app.kebab} end to end — name the primitive, generate it, wire it inside the boundaries, gate it with \`bun run verify\`.
@@ -230,7 +228,7 @@ Report one line per fix: the code, the file, what changed.
 `;
 
 /** The three workflows, in the order a new app meets them. */
-export function claudeCommandFiles(app: NameSet): readonly GeneratedFile[] {
+export function frozenCommandFiles(app: NameSet): readonly GeneratedFile[] {
   return [
     { path: '.claude/commands/feature.md', contents: feature(app) },
     { path: '.claude/commands/planx.md', contents: planx(app) },

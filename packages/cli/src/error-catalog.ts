@@ -21,6 +21,7 @@ export const CATALOG_PACKAGES = [
   '@ultimat3/cache',
   '@ultimat3/core',
   '@ultimat3/db',
+  '@ultimat3/effects',
   '@ultimat3/entity',
   '@ultimat3/flags',
   '@ultimat3/http',
@@ -50,14 +51,15 @@ export const CATALOG_PACKAGES = [
  * declare (`error-catalog.test.ts`), which is why `admin` is not here: `x dev` imports it and
  * `package.json` depends on it. `ui` reaches the CLI only as `admin`'s own dependency, so an
  * installer that keeps transitive packages private reports its codes `unavailable` rather than
- * the CLI declaring a package no command imports. `scraping` left this list in 31.0.0: the boot
+ * the CLI declaring a package no command imports. `effects` is an app's optional package that no
+ * command imports, for the same reason. `scraping` left this list in 31.0.0: the boot
  * imports its `./adapter` when `runtime.ts` supplies a `scrapeDriver`, so it is declared. Every other
  * entry above is a real runtime import and must be a declared dependency — `error-catalog.test.ts`
  * holds the list to exactly that, because an undeclared one resolves through workspace symlinks
  * here and through nothing in an installed app, where `x errors explain X_FLAG_EXPIRED` then
  * refuses a code the wiki promises.
  */
-export const CATALOG_OPTIONAL_HOSTS: readonly string[] = ['@ultimat3/ui'];
+export const CATALOG_OPTIONAL_HOSTS: readonly string[] = ['@ultimat3/effects', '@ultimat3/ui'];
 
 export interface ErrorCatalog {
   /** Packages whose codes are now registered. */

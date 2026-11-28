@@ -337,5 +337,8 @@
  * on `SERVING_ROLE_CEILING`, `i18n/src/catalogs/{ro,es,pt-BR}.json`.
  * raised 1783 → 1797, measured 1797 (2026-11-27, plan 101 bugs and gaps): the fourteen on
  * `SERVING_ROLE_CEILING`; the web role adds none of its own.
+ * raised 1797 → 1799, measured 1799 (2026-11-28, x design research): the one on `SERVING_ROLE_CEILING`,
+ * `cli/src/messages-design.ts`, and `mcp/src/dev-agent-tools-research.ts`, the `ui.research` tool's
+ * declaration the app's MCP endpoint loads beside the other agent tools.
  */
-export const WEB_ROLE_CEILING = 1797;
+export const WEB_ROLE_CEILING = 1799;

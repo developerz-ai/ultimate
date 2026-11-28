@@ -48,3 +48,18 @@ test('unit · it says what this deployment is, and links somewhere anonymous', a
   // assertion here — so the absence of one is its own check.
   expect(html).not.toContain('⟦');
 });
+
+// The hero's motion is stylesheet animation, so the page keeps its 0kb budget: `Aurora` in its CSS
+// tier and the title through `TextReveal`, whose readable node carries the sentence once and whose
+// animated twin is hidden from assistive technology.
+test('unit · the hero is an Aurora with a revealed title, both at the CSS tier', async () => {
+  const html = await renderComponent(
+    page.HomePage,
+    { data: {}, params: {}, url: '/', query: {} },
+    FILE,
+  );
+  expect(html).toContain('data-effect-backend="css"');
+  expect(html.match(/<h1\b[^>]*>.*?<\/h1>/s)?.[0]).toMatch(
+    /data-effect-backend="css"[^>]*>.*aria-hidden="true"/s,
+  );
+});

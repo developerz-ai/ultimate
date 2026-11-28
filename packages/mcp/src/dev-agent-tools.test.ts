@@ -2,7 +2,7 @@
 // — for `db.explain` — that no write, however hidden, is ever handed to a host that would run it.
 
 import { describe, expect, test } from 'bun:test';
-import { agentHostOf, EXPLAIN_LIMITS } from './dev-agent-tools';
+import { agentHostOf, agentTools, EXPLAIN_LIMITS } from './dev-agent-tools';
 import { DEV_SCOPES } from './dev-server';
 import { BRANCH, caller, textOf, toolset } from './dev-server-fixture';
 
@@ -93,5 +93,69 @@ describe('a host without an agent capability', () => {
     await expect(host.explainQuery('EXPLAIN SELECT 1', EXPLAIN_LIMITS)).rejects.toThrow(
       'db.explain',
     );
+  });
+});
+
+describe('ui.research', () => {
+  const SCOPES = { read: DEV_SCOPES.read, logs: DEV_SCOPES.logs, dbRead: DEV_SCOPES.dbRead };
+  const research = (asked: unknown[]) =>
+    agentTools(
+      agentHostOf({
+        researchDesign: async (input) => {
+          asked.push(input);
+          return { references: [] };
+        },
+      }),
+      { ...SCOPES, test: DEV_SCOPES.test },
+    ).find((tool) => tool.name === 'ui.research');
+
+  test('hands the host the URLs and the follow cap, under dev:test — it launches a browser', async () => {
+    const asked: unknown[] = [];
+    const tool = research(asked);
+    if (tool === undefined) return expect.unreachable('ui.research is not in the catalog');
+    const answer = json(
+      textOf(await tool.handle({ urls: ['https://example.com/'], follow: 2 }, caller)),
+    );
+    expect(asked).toEqual([{ urls: ['https://example.com/'], follow: 2 }]);
+    expect(answer).toEqual({ references: [] });
+    expect(tool.scope).toBe(DEV_SCOPES.test);
+    expect(tool.destructive).toBe(false);
+  });
+
+  test('no URL is refused before the host sees it', async () => {
+    const asked: unknown[] = [];
+    const tool = research(asked);
+    await expect(tool?.handle({ urls: [] }, caller)).rejects.toMatchObject({
+      code: 'X_MCP_ARGS_INVALID',
+    });
+    expect(asked).toEqual([]);
+  });
+
+  test("the server's AbortSignal reaches the host, so a cancelled call stops launching browsers", async () => {
+    const signals: unknown[] = [];
+    const tool = agentTools(
+      agentHostOf({
+        researchDesign: async (_input, signal) => {
+          signals.push(signal);
+          return {};
+        },
+      }),
+      { ...SCOPES, test: DEV_SCOPES.test },
+    ).find((entry) => entry.name === 'ui.research');
+    const controller = new AbortController();
+    await tool?.handle({ urls: ['https://example.com/'] }, caller, controller.signal);
+    expect(signals).toEqual([controller.signal]);
+  });
+
+  test('a catalog built without the dev:test scope carries no ui.research', () => {
+    expect(agentTools(agentHostOf({}), SCOPES).map((tool) => tool.name)).not.toContain(
+      'ui.research',
+    );
+  });
+
+  test('a host without researchDesign answers X_NOT_IMPLEMENTED', async () => {
+    await expect(
+      agentHostOf({}).researchDesign({ urls: ['https://a.example/'], follow: 0 }),
+    ).rejects.toThrow('ui.research');
   });
 });

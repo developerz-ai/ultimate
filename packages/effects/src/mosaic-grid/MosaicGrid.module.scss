@@ -1,0 +1,39 @@
+@use '@ultimat3/ui/tokens' as t;
+@use '../effect' as fx;
+
+.root {
+  @include fx.root;
+}
+
+.layer {
+  @include fx.layer;
+}
+
+.content {
+  @include fx.content;
+}
+
+// Frame 0 as real tiles: the same alpha and mix the canvas starts from, one custom property each.
+.tiles {
+  @include fx.frame('.root');
+  display: grid;
+  grid-template-columns: repeat(var(--fx-cols, 16), 1fr);
+  grid-auto-rows: 1fr;
+  gap: t.stroke(hairline);
+  block-size: 100%;
+}
+
+.tile {
+  background: color-mix(in srgb, rgb(var(--fx-c1)) calc(var(--fx-m) * 100%), rgb(var(--fx-c0)));
+  opacity: var(--fx-a);
+}
+
+.canvas {
+  @include fx.canvas('.root');
+}
+
+@media (forced-colors: active) {
+  .layer {
+    display: none;
+  }
+}

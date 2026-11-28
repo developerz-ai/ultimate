@@ -1,6 +1,6 @@
 # Package map
 
-30 packages, 6 tiers. **One package = one reason to change.** If two things in a package change for different reasons, they are two packages.
+31 packages, 6 tiers. **One package = one reason to change.** If two things in a package change for different reasons, they are two packages.
 
 Rationale for the primitives themselves: [`../idea/02-primitives.md`](../idea/02-primitives.md). Enforcement: [`02-boundaries.md`](./02-boundaries.md).
 
@@ -14,7 +14,7 @@ tier 1  i18n, money, time, cache, seo, db, storage, flags   (may import tier 0)
 tier 2  entity, policy, http, auth                   (may import tier 0-1)
 tier 3  action, query, jobs, realtime                (may import tier 0-2)
 tier 4  render, pwa, mcp, ai, manifest, mail, ui, notify, scraping  (may import tier 0-3)
-tier 5  admin, testing, cli                         (may import tier 0-4)
+tier 5  admin, testing, cli, effects                (may import tier 0-4)
 ```
 
 [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy of this block; `bun run boundaries` reads that one. Prose and code must agree.
@@ -98,6 +98,7 @@ Decided **2026-08**, when the Postgres entity driver needed a home. `db` imports
 | `ui` | 4 | Solid components + design tokens + SCSS modules | primitives, `<Image>`, token source of truth, `data-theme` application | fetch, hold business logic, or run its own authz |
 | `admin` | 5 | generated admin dashboard, itself an Ultimate app with MCP on | admin screens derived from entities, its MCP surface | bypass `policy`; ship in the app bundle graph |
 | `testing` | 5 | the six test runners, template DB, frozen clock, sealed network | fixture shapes, DB cloning, seeded RNG, egress trap | appear in a production bundle |
+| `effects` | 5 | server-rendered-first visual effects | the tier contract, our WebGL2 mount, the pixel budget, role-token colour | open a network request; import a GL library |
 | `cli` | 5 | the `x` binary: generators, dev server, `verify` orchestration | command surface, `--json` output, generator templates, composition wiring | contain framework logic — it delegates |
 | `scraping` | 4 | browser automation as a **job**: one declaration drives a real browser, extracts against a schema and persists the session | `scrape()` (a **job** factory), the CDP port declared structurally (`cdp-port.ts`), session stores | take a runtime dependency on a CDP library — the caller passes its own; import `@ultimat3/ai` (same tier) — a recover hook that asks a model is the app's own function |
 | `create-ultimate` | unlisted (6) | the published `bunx create-ultimate` shim | the `create-ultimate` bin, argument forwarding into `x new` | reimplement a template `cli` already owns |
@@ -110,7 +111,7 @@ Arrow = a dependency the importing package's own `package.json` declares, `As of
 graph TD
   create-ultimate["create-ultimate (unlisted)"]
   subgraph T5["tier 5"]
-    cli; testing; admin
+    cli; testing; admin; effects
   end
   subgraph T4["tier 4"]
     render; pwa; mcp; ai; manifest; mail; ui; notify; scraping
@@ -139,6 +140,8 @@ graph TD
   testing --> realtime
   admin --> ui
   admin --> mcp
+  effects --> ui
+  effects --> money
   scraping --> jobs
   scraping --> storage
 

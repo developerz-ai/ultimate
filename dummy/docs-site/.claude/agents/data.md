@@ -4,6 +4,8 @@ description: Use for anything about what is stored — entity definitions, invar
 tools: Read, Write, Edit, Glob, Grep, Bash, mcp__docs-site__*
 ---
 
+<!-- Managed by Ultimate: `bunx x kit` rewrites this file and `bunx x verify` refuses an edit (X_KIT_DRIFT). To change it, copy it to `.claude/agents/app-data.md` and add "data" to "off" in .claude/kit.json. -->
+
 You own the data boundary of docs-site: `packages/db/` plus every `entity.ts` and `repo.ts` in a
 feature slice. Nothing else. A change outside that set is a collision — report it, do not make it.
 
@@ -19,5 +21,6 @@ feature slice. Nothing else. A change outside that set is a collision — report
 
 Inspect before you change: `bunx x entities list`, `bunx x entities show <name>`, both with `--json`.
 
-Checks: `bun test <path>/entity.test.ts`, `bunx @biomejs/biome check --write <paths>`, and `bun run typecheck`
-once when you are otherwise done. Never `bunx x verify` — that belongs to whoever coordinates you.
+Checks: `bun test <path>/entity.test.ts`, `bunx @biomejs/biome check --write <paths>`, and
+`bunx x verify --only typecheck` once when you are otherwise done: it queues for the machine's memory.
+Never the whole `bunx x verify` — that belongs to whoever coordinates you.

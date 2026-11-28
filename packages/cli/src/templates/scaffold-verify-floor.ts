@@ -5,6 +5,7 @@ import { STATEMENTS_MAX } from '@ultimat3/testing';
 import type { CoverageExclude } from '../coverage-floor';
 import { COVERAGE_BAR } from '../coverage-floor';
 import type { VerifyStepName } from '../verify-step';
+import { SCAFFOLD_AGENTS_MD_MAX_BYTES } from './scaffold-docs';
 
 /**
  * The suite ratchet, committed on day one, naming ALL of the gate: every step is either required in
@@ -107,6 +108,8 @@ export const verifyFloor = (suites: FloorSuites): string =>
     {
       ...floorSteps(suites),
       strict: true,
+      // The brief this scaffold writes is over the manifest default: its own measured budget.
+      agentsMdMaxBytes: SCAFFOLD_AGENTS_MD_MAX_BYTES,
       coverage: {
         lines: COVERAGE_BAR,
         funcs: COVERAGE_BAR,

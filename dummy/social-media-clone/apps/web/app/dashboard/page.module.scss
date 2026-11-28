@@ -103,3 +103,18 @@
 .card:hover .more {
   color: t.role('accent-strong');
 }
+
+// The notice the island brings in when friend requests are waiting: a banner link, the same surface
+// as a destination card but quieter, so it reads as news rather than as navigation.
+.notice {
+  @include t.focus-ring;
+
+  display: block;
+  padding: t.space(3) t.space(5);
+  border: 1px solid t.role('accent', 0.45);
+  border-radius: t.radius('lg');
+  background: t.role('accent', 0.12);
+  color: t.role('accent-strong');
+  font-weight: t.weight('semibold');
+  text-decoration: none;
+}

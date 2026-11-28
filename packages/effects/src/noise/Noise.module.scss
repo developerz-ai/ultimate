@@ -1,0 +1,22 @@
+@use '@ultimat3/ui/tokens' as t;
+@use '../effect' as fx;
+
+.root {
+  @include fx.root;
+}
+
+.layer {
+  @include fx.layer;
+  inline-size: 100%;
+  block-size: 100%;
+  color: rgb(var(--fx-c0));
+  opacity: var(--fx-opacity, 0.12);
+
+  @media (prefers-contrast: more), (forced-colors: active) {
+    display: none;
+  }
+}
+
+.content {
+  @include fx.content;
+}

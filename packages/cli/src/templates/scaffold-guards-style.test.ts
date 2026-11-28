@@ -148,6 +148,57 @@ describe('unit · shipped guards · the framework passes the rules it ships', ()
   });
 });
 
+describe('unit · shipped guards · the framework passes the motion rules it ships', () => {
+  // The scripts of `packages/ui` — the motion adapter itself — are what an app's would be: no
+  // second engine, no bare frame loop, no raw canvas, no layout key handed to `.animate(`.
+  // Non-vacuous: the walk reads the motion module, and the last case shows each rule can fire.
+  const SCRIPT_GUARDS = [
+    'animated-layout-script',
+    'effect-without-fallback',
+    'motion-adapter',
+    'raw-frame-loop',
+    'raw-motion-script',
+  ];
+
+  test('every script in packages/ui is clean under the five script rules', async () => {
+    const found = await withEmitted(async (load) => {
+      const sources = guardSources(REPO);
+      const scripts = await sources.files('{apps,packages}/**/*.{ts,tsx}');
+      expect(
+        scripts.filter((file) => file.path.startsWith('packages/ui/src/')).length,
+      ).toBeGreaterThan(100);
+      const all: Finding[] = [];
+      for (const name of SCRIPT_GUARDS) {
+        const guard = (await load(name))['guard'] as Guard;
+        all.push(...(await guard.check(REPO, sources)));
+      }
+      return all;
+    });
+    const own = found.filter(
+      (finding) =>
+        (finding.at ?? '').startsWith('packages/ui/') && /\.tsx?:\d+$/.test(finding.at ?? ''),
+    );
+    // `tokens.ts` DECLARES the easing scale (a curve per rung); the theme's grammar file names curves as EXAMPLES in its refusal messages and holds the
+    // pattern that parses one: pinned by file and code, never by line, so an edit above it holds.
+    // A curve written anywhere else in `packages/ui` is a finding; the motion module, which IS the
+    // adapter, passes with no exemption (its `requestAnimationFrame` calls carry a `// why:`).
+    expect(
+      own
+        .filter(
+          (finding) =>
+            !(
+              finding.code === 'X_RAW_MOTION_SCRIPT' &&
+              [
+                'packages/ui/src/theme/brand-declarations.ts:',
+                'packages/ui/src/tokens/tokens.ts:',
+              ].some((file) => finding.at?.startsWith(file))
+            ),
+        )
+        .map((finding) => `${finding.at} ${finding.code}`),
+    ).toEqual([]);
+  });
+});
+
 describe('unit · shipped guards · no tracked app holds an edited copy', () => {
   for (const app of ['examples/dummy', 'dummy/social-media-clone', 'dummy/docs-site']) {
     test(`${app}/guards holds a shipped guard only as a current form, or not at all`, async () => {
@@ -168,7 +219,7 @@ describe('unit · shipped guards · no tracked app holds an edited copy', () => 
 describe('unit · x g guard · a shipped name is refused: it already runs', () => {
   // One way to get a shipped guard — installing the framework. A copy would run in its place.
   test('every shipped name is refused with X_GUARD_BUILT_IN, and writes nothing', () => {
-    expect(SHIPPED_GUARD_NAMES).toHaveLength(27);
+    expect(SHIPPED_GUARD_NAMES).toHaveLength(32);
     for (const name of SHIPPED_GUARD_NAMES) {
       expect(() => generate({ kind: 'guard', name })).toThrow(
         expect.objectContaining({ code: 'X_GUARD_BUILT_IN' }),

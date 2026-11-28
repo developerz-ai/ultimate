@@ -5,6 +5,7 @@
 
 import { CLIENT_MESSAGES } from './messages-client';
 import { DB_MESSAGES } from './messages-db';
+import { DESIGN_MESSAGES } from './messages-design';
 import { FLOOR_MESSAGES } from './messages-floor';
 import { GATE_MESSAGES } from './messages-gate';
 import { OPS_MESSAGES } from './messages-ops';
@@ -326,6 +327,7 @@ const CATALOG = {
   ...CLIENT_MESSAGES,
   ...REPRO_MESSAGES,
   ...DB_MESSAGES,
+  ...DESIGN_MESSAGES,
   ...SHOT_MESSAGES,
   ...UPGRADE_MESSAGES,
   ...GATE_MESSAGES,

@@ -117,7 +117,7 @@ copy of this table, and they must agree.
 | 2 | `entity`, `policy`, `http`, `auth` |
 | 3 | `action`, `query`, `jobs`, `realtime` |
 | 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui`, `notify`, `scraping` |
-| 5 | `admin`, `testing`, `cli` |
+| 5 | `admin`, `testing`, `cli`, `effects` |
 
 Declared sideways edges, one line each ([record](docs/history/tier-decisions.md)):
 

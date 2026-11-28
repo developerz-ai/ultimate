@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "3b1704aeed076f13",
+  "buildId": "f2e1462968da3948",
   "app": {
     "name": "social-media-clone",
     "version": "1.0.0"
@@ -2993,7 +2993,15 @@
       "package": "@ultimat3/cli"
     },
     {
+      "code": "X_ANIMATED_LAYOUT_SCRIPT",
+      "package": "@ultimat3/cli"
+    },
+    {
       "code": "X_BARE_ERROR",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_EFFECT_WITHOUT_FALLBACK",
       "package": "@ultimat3/cli"
     },
     {
@@ -3017,6 +3025,10 @@
       "package": "@ultimat3/cli"
     },
     {
+      "code": "X_MOTION_ADAPTER",
+      "package": "@ultimat3/cli"
+    },
+    {
       "code": "X_NATIVE_CONFIRM",
       "package": "@ultimat3/cli"
     },
@@ -3033,6 +3045,10 @@
       "package": "@ultimat3/cli"
     },
     {
+      "code": "X_RAW_FRAME_LOOP",
+      "package": "@ultimat3/cli"
+    },
+    {
       "code": "X_RAW_INTERVAL",
       "package": "@ultimat3/cli"
     },
@@ -3042,6 +3058,10 @@
     },
     {
       "code": "X_RAW_MOTION",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_RAW_MOTION_SCRIPT",
       "package": "@ultimat3/cli"
     },
     {

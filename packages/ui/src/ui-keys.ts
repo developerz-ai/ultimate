@@ -26,6 +26,10 @@ export const skip = 'ui.skip';
 /** AppShell's sidebar landmark name. */
 export const navigation = 'ui.navigation';
 export const menu = 'ui.menu';
+/** MotionToggle: the control's name while the page moves (WCAG 2.2.2). */
+export const motionPause = 'ui.motion.pause';
+/** MotionToggle: the control's name while the page is paused. */
+export const motionResume = 'ui.motion.resume';
 export const more = 'ui.more';
 export const required = 'ui.required';
 export const optional = 'ui.optional';

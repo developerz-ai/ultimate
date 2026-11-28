@@ -11,6 +11,7 @@ import type { UpgradeHop, UpgradePin } from './upgrade-plan';
 import { pinMoves } from './upgrade-plan';
 import type { HopCodemods } from './upgrade-report-codemods';
 import { codemodLines } from './upgrade-report-codemods';
+import { kitLines } from './upgrade-report-kit';
 
 /** A dry run's codemod preview and superseded scan; a hop's come from its gate. */
 interface Previewed {
@@ -120,6 +121,7 @@ export const humanLines = (
       : []),
     ...codemodLines(input.codemods ?? gate?.codemods ?? null),
     ...supersededLines(input.superseded ?? gate?.superseded ?? []),
+    ...kitLines(gate?.kit),
     ...(gate?.guards.installed ?? []).map((name) => msg('cli.upgrade.guardInstalled', { name })),
     ...(gate?.guards.baselined ?? []).map((guard) =>
       msg('cli.upgrade.guardBaselined', { name: guard.name, count: guard.findings }),
@@ -228,6 +230,7 @@ export const report = (
     codemods: input.codemods ?? gate?.codemods ?? null,
     superseded: input.superseded ?? gate?.superseded ?? [],
     guards: gate?.guards ?? null,
+    kit: gate?.kit ?? null,
     coverage: gate?.coverage ?? null,
     manifest: gate?.manifest ?? null,
     doctorWarnings: gate?.doctorWarnings ?? [],

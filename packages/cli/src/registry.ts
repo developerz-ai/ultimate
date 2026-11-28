@@ -32,10 +32,12 @@ import { profileSpec } from './cmd-profile-spec';
 // Registered here, not by whichever command body happens to load: `dispatch` renders a CLI code's
 // title for a refusal raised before any body is imported.
 import './error-codes';
+import { designSpec } from './cmd-design-spec';
 import { createHelpCommand, createVersionCommand } from './cmd-help';
 import { i18nSpec } from './cmd-i18n-spec';
 import { impactSpec } from './cmd-impact-spec';
 import { jobsSpec } from './cmd-jobs-spec';
+import { kitSpec } from './cmd-kit-spec';
 import { logsSpec } from './cmd-logs-spec';
 import { mailSpec } from './cmd-mail-spec';
 import { manifestSpec } from './cmd-manifest-spec';
@@ -142,6 +144,8 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(profileSpec, async () => (await import('./cmd-profile')).profileCommand),
   lazy(statusSpec, async () => (await import('./cmd-status')).statusCommand),
   lazy(heavySpec, async () => (await import('./cmd-heavy')).heavyCommand),
+  lazy(kitSpec, async () => (await import('./cmd-kit')).kitCommand),
+  lazy(designSpec, async () => (await import('./cmd-design')).designCommand),
 ];
 
 export const COMMANDS: readonly CliCommand[] = [

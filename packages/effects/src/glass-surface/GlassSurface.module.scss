@@ -1,0 +1,25 @@
+@use '@ultimat3/ui/tokens' as t;
+
+// A pane the page shows through. `t.surface` supplies border, radius and elevation; the fill is
+// the same `surface` role at a measured alpha (`GLASS_SURFACE_ALPHA`, held against the contrast
+// pairs in `glass-surface-view.test.ts`), so text on it keeps the palette's contrast.
+.glass {
+  @include t.surface;
+  background: t.role('surface', var(--glass-alpha, 0.82));
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+
+  // Blur needs the compositor and reads as noise to a user who asked for less transparency:
+  // they get the opaque surface the system already has.
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+    background: t.role('surface');
+    backdrop-filter: none;
+  }
+}
+
+// An engine without `backdrop-filter` shows the translucent fill over unblurred content, which
+// is where legibility drops: it gets the opaque surface too.
+@supports not (backdrop-filter: blur(1px)) {
+  .glass {
+    background: t.role('surface');
+  }
+}

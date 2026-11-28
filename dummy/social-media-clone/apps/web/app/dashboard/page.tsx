@@ -6,7 +6,7 @@
 // (an svg and a hidden data table), so the charts add no JavaScript to the route.
 
 import { currentLocale, t } from '@ultimat3/i18n';
-import { defineRoute } from '@ultimat3/render';
+import { defineRoute, island } from '@ultimat3/render';
 import {
   AreaChart,
   DataTable,
@@ -36,6 +36,16 @@ export interface DashboardData {
   readonly screen: DashboardScreen | null;
 }
 
+/**
+ * The page's one island: counts the figures up, brings in the waiting-requests notice and staggers
+ * the destination cards in. Declared ABOVE `defineRoute` so the route can drain it; `props` are the
+ * browser's keys, already translated.
+ */
+const Motion = island({
+  src: './dashboard-motion.island.tsx',
+  props: ['locale', 'counts', 'waiting'],
+});
+
 export const config = defineRoute({
   render: 'ssr',
   hydrate: 'visible',
@@ -43,6 +53,10 @@ export const config = defineRoute({
   // Auth is a policy, never a route-local flag: one authz system, evaluated everywhere.
   policy: { permission: 'dashboard:read' },
   // The charts and the table are server markup: they moved no byte of this figure.
+  // measured: 58346 B (2026-11-28; x build --target static) — why: the route's first island
+  // (`dashboard-motion.island.tsx`, 57,391 B): `CountUp` on every figure, `Presence` for the
+  // waiting-requests notice, `inView` + `stagger` on the destination cards, over Solid's client
+  // runtime. Inside the 60kb the route already declared, so unchanged.
   budget: { js: '60kb' },
   // A loader is not the place to assert a viewer exists: an empty page beats a thrown TypeError.
   load: async (): Promise<DashboardData> => {
@@ -64,7 +78,7 @@ function Destinations() {
     <Section title={t('app.dashboard.goTo')}>
       <ul class={styles.grid}>
         {DESTINATIONS.map((destination) => (
-          <li>
+          <li data-reveal="">
             <a class={styles.card} href={destination.href}>
               <span class={styles.icon} aria-hidden="true">
                 <Icon glyph={destination.glyph} />
@@ -230,6 +244,25 @@ function TopPosts(props: { readonly screen: DashboardScreen; readonly url: strin
   );
 }
 
+/** The page's sections. The slot is where the island brings in the waiting-requests notice. */
+function Content(props: {
+  readonly screen: DashboardScreen | null;
+  readonly url?: string | undefined;
+}) {
+  const { screen } = props;
+  return (
+    <div class={styles.page}>
+      {screen === null || screen.stats.waiting === 0 ? null : (
+        <div data-slot="waiting" aria-live="polite" />
+      )}
+      {screen === null ? null : <Figures screen={screen} />}
+      {screen === null ? null : <Charts screen={screen} />}
+      {screen === null ? null : <TopPosts screen={screen} url={props.url} />}
+      <Destinations />
+    </div>
+  );
+}
+
 export function Page(props: { readonly data: DashboardData; readonly url?: string | undefined }) {
   const { screen } = props.data;
   return (
@@ -239,12 +272,29 @@ export function Page(props: { readonly data: DashboardData; readonly url?: strin
         title={t('app.dashboard.title')}
         lede={t('app.dashboard.description')}
       />
-      <div class={styles.page}>
-        {screen === null ? null : <Figures screen={screen} />}
-        {screen === null ? null : <Charts screen={screen} />}
-        {screen === null ? null : <TopPosts screen={screen} url={props.url} />}
-        <Destinations />
-      </div>
+      {screen === null ? (
+        <Content screen={null} url={props.url} />
+      ) : (
+        <Motion
+          locale={currentLocale()}
+          counts={{
+            'dashboard-posts': screen.stats.posts,
+            'dashboard-likes': screen.stats.likes,
+            'dashboard-friends': screen.stats.friends,
+            'dashboard-waiting': screen.stats.waiting,
+          }}
+          waiting={
+            screen.stats.waiting === 0
+              ? null
+              : {
+                  text: t('app.dashboard.waiting.notice', { count: screen.stats.waiting }),
+                  href: '/friends',
+                }
+          }
+        >
+          <Content screen={screen} url={props.url} />
+        </Motion>
+      )}
     </AppShell>
   );
 }

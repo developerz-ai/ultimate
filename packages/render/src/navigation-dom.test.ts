@@ -158,6 +158,17 @@ describe('the DOM helpers', () => {
     expect(applied).toBe(3);
   });
 
+  test('transition: a page the reader paused (html[data-motion="paused"]) takes none either', async () => {
+    const paused = new FakeDocument();
+    paused.documentElement.setAttribute('data-motion', 'paused');
+    paused.startViewTransition = () => expect.unreachable('a paused page takes no transition');
+    let applied = 0;
+    await transition(win(paused) as unknown as Window, () => {
+      applied += 1;
+    });
+    expect(applied).toBe(1);
+  });
+
   test('focusMain: <main>, else <h1>, tabindex added once; nothing to focus is nothing', () => {
     const withMain = new FakeDocument([], [h('main', { tabindex: '0' })]);
     focusMain(withMain as unknown as Document);

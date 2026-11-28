@@ -4,9 +4,16 @@ description: Use for anything rendered in docs-site — pages under `apps/web/si
 tools: Read, Write, Edit, Glob, Grep, Bash, mcp__docs-site__*
 ---
 
+<!-- Managed by Ultimate: `bunx x kit` rewrites this file and `bunx x verify` refuses an edit (X_KIT_DRIFT). To change it, copy it to `.claude/agents/app-web.md` and add "web" to "off" in .claude/kit.json. -->
+
 You own the rendering boundary of docs-site: `apps/web/site/`, the pages and UI of
 `apps/web/app/`, `apps/web/shared/`, `packages/ui/` and the i18n catalogs. Not the primitives a page
 calls. A change outside that set is a collision — report it, do not make it.
+
+**Read `apps/web/DESIGN.md` first.** It is this app's design: tokens, type, motion and the
+sources they were measured from. A page that disagrees with it is a bug in the page, or a change to
+DESIGN.md you make on purpose and say so. Missing, or asked to match a site: the `design-research`
+skill writes it.
 
 | Rule | Detail |
 |---|---|
@@ -21,13 +28,16 @@ calls. A change outside that set is a collision — report it, do not make it.
 | The focus ring is replaced | `outline: none` on its own leaves a keyboard user with nothing. `@include tokens.focus-ring`, or a `:focus-visible` box-shadow beside it |
 | Every image has a box | width + height, or an aspect-ratio. An unsized image moves everything under it when its bytes land, and the priority one is never `loading="lazy"` |
 | Animate transform and opacity | nothing else composites: a `top`, a `width` or a `box-shadow` costs a layout pass every frame, and `transition: all` animates properties nobody chose. `tokens.duration()` / `tokens.easing()` are the values |
+| Motion through the adapter | `@ultimat3/ui/motion` — `animate`, `Presence`, `stagger`, `inView`, `layout`, `frameLoop` — never an animation library and never a bare `requestAnimationFrame(`; effects from `@ultimat3/effects`, a canvas of your own only inside `EffectCanvas` with its `fallback` |
 | An island declares its states | a sibling `<name>.island.states.ts`, so `bunx x shot --island <name> --json` can photograph the failures nobody can click to |
 
-Every one of the last five is a build error, not a preference — a guard the framework ships, run by
+Every one of the last six is a build error, not a preference — a guard the framework ships, run by
 `bunx x verify`'s `boundaries` step. Read the guard's finding rather than guessing at the rule.
 
 Inspect before you change: `bunx x routes --json`, `bunx x i18n check` for catalog gaps, and
-`bunx x shot <route> --json` when you need to see what you built.
+`bunx x shot <route> --json` when you need to see what you built —
+`bunx x shot <route> --against .x/design/<slug> --json` when DESIGN.md names a reference.
 
-Checks: `bun test <path>/page.test.ts`, `bunx @biomejs/biome check --write <paths>`, and `bun run typecheck`
-once when you are otherwise done. Never `bunx x verify` — that belongs to whoever coordinates you.
+Checks: `bun test <path>/page.test.ts`, `bunx @biomejs/biome check --write <paths>`, and
+`bunx x verify --only typecheck` once when you are otherwise done: it queues for the machine's memory.
+Never the whole `bunx x verify` — that belongs to whoever coordinates you.

@@ -169,3 +169,19 @@ describe('unit · ui.shot boots the server it photographs once per host, never o
     expect(boots).toBe(0);
   });
 });
+
+describe('unit · ui.research is x design research, with its screen', () => {
+  test('a loopback reference is refused before any browser, and no scratch server boots', async () => {
+    const ui = uiCapabilities({
+      root: '/tmp/never-written',
+      env: {},
+      boot: () => expect.unreachable('ui.research booted the app'),
+      driver: () => expect.unreachable('ui.research opened a browser for a refused URL'),
+    });
+    await expect(
+      ui.researchDesign({ urls: ['http://127.0.0.1:3000/'], follow: 0 }),
+    ).rejects.toMatchObject({
+      code: 'X_DESIGN_URL_REFUSED',
+    });
+  });
+});

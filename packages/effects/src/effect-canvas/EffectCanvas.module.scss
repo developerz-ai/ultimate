@@ -1,0 +1,23 @@
+@use '../effect' as fx;
+
+.root {
+  @include fx.root;
+}
+
+.layer {
+  @include fx.layer;
+}
+
+.content {
+  @include fx.content;
+}
+
+.frame {
+  @include fx.frame('.root');
+  position: absolute;
+  inset: 0;
+}
+
+.canvas {
+  @include fx.canvas('.root');
+}

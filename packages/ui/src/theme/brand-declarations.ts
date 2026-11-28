@@ -14,6 +14,8 @@ import {
   radiusTokens,
   SHADOW_NAMES,
   type ShadowName,
+  type SpringName,
+  springs,
   THEME_ROLES,
   type ThemeRole,
 } from '../tokens/tokens';
@@ -38,6 +40,16 @@ const NUMBER = '-?\\d+(?:\\.\\d+)?';
 const CURVE_PATTERN = new RegExp(
   `^cubic-bezier\\((${NUMBER}), (${NUMBER}), (${NUMBER}), (${NUMBER})\\)$`,
 );
+
+/**
+ * A spring rung's `linear()` curve, as `springLinear()` writes it: two or more stops, each a
+ * number with at most two percentages. A grammar, never a character class — the value lands in a
+ * <style> element. Only the spring rungs take it; `out`/`in`/`in-out`/`spring` stay cubic-bezier.
+ */
+const STOP = `${NUMBER}(?: ${NUMBER}%){0,2}`;
+const LINEAR_PATTERN = new RegExp(`^linear\\(${STOP}(?:, ${STOP})+\\)$`);
+const SPRING_CURVE_EXPECTED =
+  'a curve such as "cubic-bezier(0.34, 1.56, 0.64, 1)" or the linear(…) springLinear() answers';
 
 const TIME_EXPECTED = 'a CSS time such as "180ms", "0.3s" or "0"';
 const CURVE_EXPECTED =
@@ -131,7 +143,8 @@ export function fontDeclarations(
 /** The motion slot: the two scales `_motion.scss` emits, each overridden rung by rung. */
 export interface MotionInput {
   duration?: Partial<Record<DurationName, string>> | undefined;
-  easing?: Partial<Record<EasingName, string>> | undefined;
+  /** The easing rungs and the spring rungs (`gentle` · `snappy` · `bouncy`), each `--easing-<name>`. */
+  easing?: Partial<Record<EasingName | SpringName, string>> | undefined;
 }
 
 const MOTION_SCALES = ['duration', 'easing'] as const;
@@ -176,11 +189,20 @@ export function motionDeclarations(overrides: MotionInput | undefined): string[]
   }
   const easings = overrides.easing ?? {};
   const easingNames = Object.keys(easingTokens) as EasingName[];
-  assertKnown('easing', easings, easingNames, '_motion.scss');
+  const springNames = Object.keys(springs) as SpringName[];
+  assertKnown('easing', easings, [...easingNames, ...springNames], '_motion.scss');
   for (const name of easingNames) {
     const value = easings[name];
     if (value === undefined) continue;
     if (!isCurve(value)) throw invalidBrandTokenError('motion.easing', name, value, CURVE_EXPECTED);
+    out.push(`--easing-${name}: ${value};`);
+  }
+  for (const name of springNames) {
+    const value = easings[name];
+    if (value === undefined) continue;
+    if (!isCurve(value) && !LINEAR_PATTERN.test(value)) {
+      throw invalidBrandTokenError('motion.easing', name, value, SPRING_CURVE_EXPECTED);
+    }
     out.push(`--easing-${name}: ${value};`);
   }
   return out;

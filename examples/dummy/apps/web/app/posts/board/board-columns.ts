@@ -48,3 +48,23 @@ export const isSchedulable = (status: string): status is Schedulable =>
 /** A card may cross columns only between the two schedulable states. */
 export const canMovePost = (post: BoardPost, to: string): boolean =>
   isSchedulable(post.status) && isSchedulable(to);
+
+/** The optimistic half of a move: that one post at `to`, every other post as it is. */
+export const moveTo = (
+  posts: readonly BoardPost[],
+  id: string,
+  to: PostStatus,
+): readonly BoardPost[] => posts.map((post) => (post.id === id ? { ...post, status: to } : post));
+
+/**
+ * The refusal's half: put back ONLY that post, and only while it is still where the move put it.
+ * A whole-board snapshot would undo a later move that was accepted and restore an earlier one that
+ * was refused; a post that has since moved on (another move, a live update) is left alone.
+ */
+export const revertMove = (
+  posts: readonly BoardPost[],
+  id: string,
+  from: PostStatus,
+  to: PostStatus,
+): readonly BoardPost[] =>
+  posts.map((post) => (post.id === id && post.status === to ? { ...post, status: from } : post));

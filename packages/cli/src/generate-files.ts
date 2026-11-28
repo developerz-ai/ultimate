@@ -34,6 +34,8 @@ import { importRowsFiles } from './templates/generate-import-rows';
 import { purgeFiles } from './templates/generate-purge';
 import { webhookReceiverFiles } from './templates/generate-webhook-receiver';
 import { inviteFiles } from './templates/invite';
+import type { EffectEntry } from './templates/island';
+import { EFFECT_ENTRIES } from './templates/island';
 import { helmMonitoringFiles } from './templates/scaffold-helm-alerts';
 import { oidcSignInFiles } from './templates/sign-in-oidc';
 import { passwordSignInFiles } from './templates/sign-in-password';
@@ -55,6 +57,8 @@ export interface GenerateOptions {
    * the path a page's `src` resolved to, and an app's admin is wherever its `defineAdmin` is.
    */
   readonly at?: string;
+  /** `island` only: wrap the panel in this `@ultimat3/effects` entry (`readEffect` has checked it). */
+  readonly effect?: EffectEntry;
   /** `admin:page` only: the permission the page's own work needs, on top of `admin:read`. */
   readonly permission?: string;
   /**
@@ -262,7 +266,12 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
         }),
       );
     case 'island':
-      return dedupe(islandFiles(options.name, { dir: options.at ?? `${surfaceDir}/${feature}` }));
+      return dedupe(
+        islandFiles(options.name, {
+          dir: options.at ?? `${surfaceDir}/${feature}`,
+          effect: options.effect,
+        }),
+      );
     // No `--at`, no surface, no feature: `guards/` is the one directory the gate discovers, and a
     // guard that lived anywhere else would need an app-side registration to be found.
     // A name the framework ships a guard under is refused: that guard already runs, built in, and
@@ -343,4 +352,25 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
       });
     }
   }
+}
+
+const isEffectEntry = (value: string): value is EffectEntry => Object.hasOwn(EFFECT_ENTRIES, value);
+
+/**
+ * `--effect`, against the closed set of entries that can wrap a panel: any other value, and the flag
+ * on a kind that has no panel, is refused before a file is planned (`X_CLI_BAD_FLAG`).
+ */
+export function readEffect(raw: string | undefined, kind: Generator): EffectEntry | undefined {
+  if (raw === undefined) return undefined;
+  const entries = Object.keys(EFFECT_ENTRIES);
+  if (kind === 'island' && isEffectEntry(raw)) return raw;
+  throw new BadFlagError({
+    flag: 'effect',
+    command: 'g',
+    reason:
+      kind === 'island'
+        ? `"${raw}" is no entry that wraps a panel — one of: ${entries.join(', ')}`
+        : `only an island has a panel to wrap, and this is a ${kind}`,
+    fix: 'x g island <name> --effect aurora',
+  });
 }

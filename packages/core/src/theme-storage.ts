@@ -10,3 +10,10 @@
  * wrote another, and a visitor's choice never survived a reload.
  */
 export const THEME_STORAGE_KEY = 'ultimate.theme';
+
+/**
+ * The `localStorage` key the reader's motion pause lives under (WCAG 2.2.2), for the same reason:
+ * `@ultimat3/ui`'s `MotionToggle` writes `"paused"` there, and `@ultimat3/render`'s inlined boot
+ * script reads it and stamps `html[data-motion="paused"]` before first paint.
+ */
+export const MOTION_STORAGE_KEY = 'ultimate.motion';

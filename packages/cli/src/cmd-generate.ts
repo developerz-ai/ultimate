@@ -19,7 +19,7 @@ import { appDisk, plannedDisk } from './generate-disk';
 import { writtenExercises } from './generate-exercise';
 import { assertFeatureExists } from './generate-feature';
 import { assertSliceToRead } from './generate-feature-required';
-import { DEFAULT_APP, generate, sliceDir } from './generate-files';
+import { DEFAULT_APP, generate, readEffect, sliceDir } from './generate-files';
 import { followUpEdits } from './generate-follow-ups';
 import { formatWritten } from './generate-format-written';
 import { runInvite } from './generate-invite';
@@ -99,6 +99,7 @@ export const generateCommand: CliCommand = {
     const surface = readSurface(flagString(ctx.args, 'surface'), kind, name);
     const locales = resolveLocales(await namedOrAppLocales(root, flagList(ctx.args, 'locales')));
     const at = flagString(ctx.args, 'at');
+    const effect = readEffect(flagString(ctx.args, 'effect'), kind);
     // The app workspace the slice lands in; `web` unless an app-local generator names another.
     const app = readApp(flagString(ctx.args, 'app'), root, kind, name);
     // Read with the two above, and refused here for their reason: the value is spliced into the
@@ -150,6 +151,7 @@ export const generateCommand: CliCommand = {
         ...(sliceEntity === undefined ? {} : { sliceEntity }),
         ...(sliceRepo === undefined ? {} : { sliceRepo }),
         ...(at === undefined ? {} : { at }),
+        ...(effect === undefined ? {} : { effect }),
         ...(app === DEFAULT_APP ? {} : { app }),
         ...(permission === undefined ? {} : { permission }),
         surface,

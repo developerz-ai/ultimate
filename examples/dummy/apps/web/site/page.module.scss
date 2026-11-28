@@ -78,3 +78,8 @@
   border-radius: var(--radius-md);
   inline-size: 100%;
 }
+
+// `Aurora`'s root: the hero keeps its own grid inside, the bands only sit behind it.
+.aurora {
+  border-radius: var(--radius-lg);
+}

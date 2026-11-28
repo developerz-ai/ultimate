@@ -6,6 +6,8 @@ import { catalogJson } from '../catalog-json';
 import { catalogPath } from '../locales';
 import type { GeneratedFile, NameSet } from '../naming';
 import { dashboardDetailFiles } from './dashboard-detail';
+import { dashboardMotionEdits, dashboardMotionFiles, MOTION_KEYS } from './dashboard-motion';
+import { baseLandingAurora, effectsDependency, landingMotionTest } from './landing-motion';
 import type { ShapeEdit, ShapeOverlay } from './overlay';
 import { shapeLines } from './shared-edits';
 
@@ -25,6 +27,16 @@ const edits = (): readonly ShapeEdit[] => [
     find: 'cell: (row) => row.title,',
     replace: `cell: (row) => <a href={\`/posts/\${row.id}\`}>{row.title}</a>,`,
   },
+  // list → detail: the content region of both pages shares one name, so the client router morphs
+  // it while the shell around it stays put.
+  {
+    path: 'apps/web/app/posts/page.module.scss',
+    find: '.page {\n',
+    replace: '.page {\n  @include tokens.view-transition-name(post-main);\n\n',
+  },
+  ...dashboardMotionEdits(),
+  ...baseLandingAurora(),
+  effectsDependency(),
   ...shapeLines(
     'dashboard',
     'an internal tool — the `post` table at `/posts` links each row to `apps/web/app/posts/[id]/page.tsx`, and `x g sign-in --password` wrote the sign-in',
@@ -36,6 +48,7 @@ const catalog = (): GeneratedFile => ({
   path: catalogPath('en'),
   merge: 'json',
   contents: catalogJson({
+    ...MOTION_KEYS,
     'app.post.back': 'All posts',
     'app.post.created': 'Created',
     'app.post.detail': 'Post',
@@ -48,6 +61,11 @@ export const dashboardShape: ShapeOverlay = {
   drop: [],
   dropKeys: [],
   edits,
-  files: (app: NameSet): readonly GeneratedFile[] => [...dashboardDetailFiles(app), catalog()],
+  files: (app: NameSet): readonly GeneratedFile[] => [
+    ...dashboardDetailFiles(app),
+    ...dashboardMotionFiles(),
+    landingMotionTest(),
+    catalog(),
+  ],
   generate: [['sign-in', '--password']],
 };

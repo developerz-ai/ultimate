@@ -1,0 +1,52 @@
+@use '@ultimat3/ui/tokens' as t;
+
+@keyframes marquee-run {
+  to {
+    transform: translateX(calc(var(--marquee-sign, -1) * (100% + var(--marquee-gap))));
+  }
+}
+
+.root {
+  --marquee-gap: #{t.space(6)};
+  --marquee-sign: -1;
+  display: flex;
+  gap: var(--marquee-gap);
+  overflow: hidden;
+  // Logical: in a right-to-left page the strip starts at the right edge and travels right.
+  &:dir(rtl) {
+    --marquee-sign: 1;
+  }
+}
+
+.track {
+  display: flex;
+  flex: 0 0 auto;
+  min-inline-size: 100%;
+  gap: var(--marquee-gap);
+  align-items: center;
+  justify-content: space-around;
+  animation: marquee-run var(--marquee-seconds, 30s) linear infinite var(--marquee-direction, normal);
+}
+
+// Hover, keyboard focus anywhere inside, and the MotionToggle (`html[data-motion='paused']`) all
+// stop the strip; none of them needs script.
+.root:hover .track,
+.root:focus-within .track,
+:global(html[data-motion='paused']) .track {
+  animation-play-state: paused;
+}
+
+// Reduced motion: no travel at all, and the one real track scrolls by hand so nothing is clipped.
+@media (prefers-reduced-motion: reduce) {
+  .root {
+    overflow-x: auto;
+  }
+
+  .track {
+    animation: none;
+  }
+
+  .clone {
+    display: none;
+  }
+}

@@ -26,6 +26,8 @@ import { ratchetExerciseFloor } from './upgrade-exercise-floor';
 import { applyHopCodemods } from './upgrade-gate-codemods';
 import type { BaselinedGuard, WithheldGuard } from './upgrade-guards';
 import { installMissingGuards } from './upgrade-guards';
+import type { HopKit } from './upgrade-kit';
+import { readKit } from './upgrade-kit';
 import { parseJson } from './upgrade-registry';
 import type { HopCodemods } from './upgrade-report-codemods';
 import { installedNotRun } from './upgrade-scope';
@@ -142,6 +144,8 @@ export interface HopGate {
    */
   readonly doctorWarnings: readonly GateFinding[];
   readonly guards: HopGuards;
+  /** The managed agent kit the installed CLI wrote (`upgrade-kit.ts`); absent on a gate that ran none. */
+  readonly kit?: HopKit;
   /** The coverage floor a Bun-floor hop moved to what it measured; null when none moved. */
   readonly coverage: HopCoverage | null;
   readonly exercise: HopExercise;
@@ -254,13 +258,15 @@ export type HopStage =
   | 'manifest'
   | 'doctor'
   | 'guards'
+  | 'kit'
   | 'coverage'
   | 'exercise'
   | 'verify';
 
 /**
  * The gate, in order, each stage told apart by `onStage` so a long gate is not a long silence.
- * `guards` runs only when the doctor lists a missing one; `coverage` only on a hop that moved the
+ * `kit` refreshes the managed agent files before `verify` judges them; `guards` runs only when the
+ * doctor lists a missing one; `coverage` only on a hop that moved the
  * Bun floor — both before `verify`, so the verdict is the one on the tree the hop leaves.
  */
 export async function runHopGate(input: {
@@ -300,6 +306,9 @@ export async function runHopGate(input: {
       ...done,
     };
   }
+  // After the codemods deleted the old commands and the guards settled: the kit is the release's.
+  onStage('kit');
+  const kit = readKit(await installed(['kit', '--json']));
   let coverage: HopCoverage | null = null;
   const stated = input.bunMoved === undefined ? undefined : await statedCoverage(root);
   if (input.bunMoved !== undefined && stated !== undefined) {
@@ -338,6 +347,7 @@ export async function runHopGate(input: {
     manifest,
     doctorWarnings,
     guards,
+    kit,
     coverage,
     exercise,
     exerciseFloor,

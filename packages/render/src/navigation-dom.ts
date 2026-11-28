@@ -138,7 +138,11 @@ export async function transition(
   const doc = win.document as Document & {
     startViewTransition?: (update: () => void) => RunningTransition;
   };
-  const still = win.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+  // Reduced motion, or the reader's WCAG 2.2.2 pause (`MotionToggle` writes the attribute
+  // `@ultimat3/ui`'s motion gate and stylesheet read): either way the swap is instant.
+  const still =
+    win.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true ||
+    doc.documentElement?.getAttribute('data-motion') === 'paused';
   if (doc.startViewTransition === undefined || still) {
     apply();
     return;

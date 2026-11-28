@@ -1,0 +1,58 @@
+{
+  "name": "@ultimat3/effects",
+  "version": "31.52.0",
+  "description": "Server-rendered-first visual effects: backgrounds, shaders, interaction and text, each with a static frame and zero network",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "effects",
+    "webgl2",
+    "solidjs",
+    "animation"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/Effects",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": [
+    "./src/errors.ts",
+    "**/*.scss"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/developerz-ai/ultimate.git",
+    "directory": "packages/effects"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/*-fixture.ts",
+    "CATALOG.md",
+    "CLAUDE.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test",
+    "catalog": "bun run ../ui/src/catalog/build-catalog.ts . 'src/*/[A-Z]*.tsx' @ultimat3/effects"
+  },
+  "dependencies": {
+    "@ultimat3/core": "31.52.0",
+    "@ultimat3/money": "31.52.0",
+    "@ultimat3/ui": "31.52.0"
+  },
+  "peerDependencies": {
+    "solid-js": "^1.9.18"
+  }
+}

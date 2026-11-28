@@ -168,6 +168,21 @@ no protocol.
 
 Revisit if a Bun-native, maintained XML-DSig verifier appears.
 
+### Motion and effects — BUILD, decided 2026-11-28
+
+`@ultimat3/ui/motion` (`packages/ui/src/motion/`) is the browser's WAAPI behind the token scale; no
+dependency. Rule (owner ruling, plan 101): every engine is ours — Motion, `solid-motionone`,
+`solid-transition-group` were read for ideas and technique, never code.
+
+| Engine | Candidate | Verdict and reading |
+|---|---|---|
+| the animation engine | `motion` (`animate`, `motion/mini`) | **build** — hybrid `animate` is 26.95 kB gzip, past an island's 20,480 B raw default (`packages/render/src/modes.ts`); `motion/mini` is plain WAAPI and adds nothing over our own wrapper (`animate` 7.3 kB alone, ~0.3 kB beside any ui component); the vanilla path has no reduced-motion handling, ours asks `motionAllowed()` on every call |
+| springs | Motion's spring → `linear()` | **build** — our own sampler of the damped-oscillator closed form (`springLinear()`); the token rungs are its output committed to CSS, so a CSS spring costs 0 B of JS (`spring-linear.test.ts` regenerates them) |
+| presence + layout (FLIP) | `solid-transition-group`, `solid-motionone`, Motion's `animateLayout` | **build** — the Solid two need `@solid-primitives` and `children()`, which ui's seven-function runtime has not got, so `Presence` owns its wrapper element instead; `animateLayout` pulls Motion's projection system, ours is a ~70-line read-then-write FLIP (`layout()`) |
+| visual effects (`@ultimat3/effects`) | Paper Shaders (`@paper-design/shaders`), shaders.com, `ogl`, React Bits | **build** — our own WebGL2 mount (`EffectCanvas`) and our own GLSL, each effect with a static or CSS fallback (`data-effect-backend`); Paper Shaders, shaders.com and `ogl` give ideas and techniques only; React Bits gives ideas only, and its source is never opened (Commons Clause). The `motion-adapter` guard refuses `@paper-design/shaders`, `shaders`, `ogl` and `three` in app code |
+
+Revisit if WAAPI grows a spring easing natively, or an island's budget stops being the constraint; for effects, if WebGPU replaces WebGL2 as the baseline.
+
 ## Dependency ledger
 
 Every dependency admitted at a driver/transport seam under this criterion, in one place.

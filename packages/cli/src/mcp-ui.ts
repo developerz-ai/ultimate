@@ -1,5 +1,5 @@
 // The dev MCP server's eyes and hand — `ui.shot`, `ui.island`, `ui.inspect`, `ui.interact`,
-// `ui.diff` — as the `DevCapabilities` half `packages/mcp` declares and cannot satisfy.
+// `ui.diff`, `ui.research` — as the `DevCapabilities` half `packages/mcp` declares and cannot satisfy.
 //
 // `ui.shot` captures a route, `ui.island` a component's states, `ui.inspect` reads DOM facts for a
 // set of selectors (`mcp-ui-inspect.ts`), `ui.interact` takes steps first, then the picture
@@ -26,9 +26,13 @@ import type {
   UiShotResult,
 } from '@ultimat3/mcp';
 import { describePages, IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
+import type { JsonValue } from '@ultimat3/schema';
 import { appBrowser } from './browser-launcher';
 import type { ShotDriver } from './browser-launcher-port';
 import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
+import { runDesignResearch } from './cmd-design';
+import { DESIGN_DIR } from './cmd-design-paths';
+import { researchJson } from './cmd-design-run';
 import { readRoute, runShot, SHOT_DIR, shotSlug } from './cmd-shot';
 import { islandShot } from './cmd-shot-island';
 import { islandVerdictJson } from './island-verdict';
@@ -87,6 +91,12 @@ export function matches(pattern: string, path: string): boolean {
   return want.every((segment, index) => segment.startsWith(':') || segment === have[index]);
 }
 
+/** `@ultimat3/mcp`'s `UiResearchInput`, structurally: the arguments `ui.research` passes. */
+export interface UiResearchInput {
+  readonly urls: readonly string[];
+  readonly follow: number;
+}
+
 export interface UiHostInput {
   readonly root: string;
   readonly env: Env;
@@ -107,6 +117,12 @@ export interface UiCapabilities {
   interactRoute(interact: UiInteractInput): Promise<UiInteractResult>;
   /** Two captures under `.x/shot/` compared without a browser; never boots the scratch server. */
   diffShots(diff: UiDiffInput): Promise<UiDiffResult>;
+  /**
+   * `ui.research`: `x design research` into `<root>/.x/design/`. Never boots the scratch server —
+   * the page is somebody else's. Spread into `DevCapabilities` by `mcp-host.ts`, where
+   * `@ultimat3/mcp`'s `DevAgentHost.researchDesign` reads it.
+   */
+  researchDesign(research: UiResearchInput, signal?: AbortSignal): Promise<JsonValue>;
   /** Stops the scratch server, if one was booted. Never boots one in order to stop it. */
   close(): Promise<void>;
 }
@@ -194,6 +210,19 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
     // No route gate and no boot: the captures were gated when they were taken, and a diff of two
     // files needs neither a server nor a browser.
     diffShots: (diff) => diffShots({ root }, diff),
+
+    async researchDesign(research, signal) {
+      const outcome = await runDesignResearch({
+        urls: research.urls,
+        follow: research.follow,
+        outDir: join(root, DESIGN_DIR),
+        env,
+        // The injected test browser when there is one; otherwise the screened CDP driver.
+        ...(input.driver === undefined ? {} : { driver: input.driver }),
+        signal,
+      });
+      return researchJson(outcome);
+    },
 
     async shotIsland(island) {
       const { cdpUrl, executablePath } = browser();

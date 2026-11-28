@@ -4,6 +4,7 @@
 // Nothing here animates, so there is no motion for `prefers-reduced-motion` to take away.
 
 @use 'colors';
+@use 'motion';
 @use 'shadow';
 @use 'space';
 @use 'stroke';
@@ -55,5 +56,26 @@
 
   @media (prefers-contrast: more), (forced-colors: active) {
     background-image: none;
+  }
+}
+
+/// A highlight band sweeping across a surface, built from two roles so it reads on both themes.
+/// Skeleton's placeholder and effects' `Shimmer` are this one mixin. Writes `background` and
+/// `animation`; the global reduced-motion rule in `reset.scss` freezes the sweep, which leaves
+/// the still gradient (the static frame), not a blank box.
+@mixin shimmer($base: 'bg-soft', $glint: 'line') {
+  background: linear-gradient(
+      90deg,
+      colors.role($base) 25%,
+      colors.role($glint) 37%,
+      colors.role($base) 63%
+    )
+    0 0 / 200% 100%;
+  animation: ultimate-shimmer calc(#{motion.duration(slower)} * 2) linear infinite;
+
+  @keyframes ultimate-shimmer {
+    to {
+      background-position: -200% 0;
+    }
   }
 }

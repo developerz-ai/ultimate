@@ -7,11 +7,11 @@ import { describe, expect, test } from 'bun:test';
 import type { ValidationIssue } from '@ultimat3/schema';
 import { parse, t, ValidationFailedError } from '@ultimat3/schema';
 import { verifySpec } from '../cmd-verify-spec';
+import { kitFiles } from '../kit/registry';
 import { SPECS } from '../registry';
 import { LINE_CEILING } from '../workspace-checks';
 import { names } from './naming';
 import { claudeFiles } from './scaffold-claude';
-import { claudeCommandFiles } from './scaffold-claude-commands';
 import { docsFiles } from './scaffold-docs';
 import { mcpJsonFile } from './scaffold-mcp-json';
 
@@ -149,11 +149,11 @@ describe('unit · the .claude bundle stays deletable and self-contained', () => 
     expect(allow).toContain('Bash(bunx x g:*)');
   });
 
-  test('the workflow commands and subagents spell every command they run as bunx x', () => {
+  test('the skills and subagents spell every command they run as bunx x', () => {
     const commands = claudeFiles(app).filter(
-      (file) =>
-        file.path.startsWith('.claude/commands/') || file.path.startsWith('.claude/agents/'),
+      (file) => file.path.startsWith('.claude/skills/') || file.path.startsWith('.claude/agents/'),
     );
+    expect(commands.some((file) => file.path.startsWith('.claude/skills/'))).toBe(true);
     expect(commands.some((file) => file.path.startsWith('.claude/agents/'))).toBe(true);
     for (const file of commands) {
       const text = String(file.contents);
@@ -234,12 +234,39 @@ describe('unit · the .claude bundle stays deletable and self-contained', () => 
     }
   });
 
-  test('no command wraps a generator — x g is the one way, and a second one drifts', () => {
-    const commands = claudeFiles(app)
-      .filter((file) => file.path.startsWith('.claude/commands/'))
+  test('no skill wraps a generator — x g is the one way, and a second one drifts', () => {
+    const skills = claudeFiles(app)
+      .filter((file) => file.path.startsWith('.claude/skills/'))
       .map((file) => file.path);
+    expect(skills.length).toBeGreaterThan(0);
     for (const banned of ['new-model', 'new-route', 'new-service', 'generate'])
-      expect(commands.some((path) => path.includes(banned))).toBe(false);
+      expect(skills.some((path) => path.includes(banned))).toBe(false);
+  });
+
+  test('no .claude/commands/ is written — a same-name skill silently shadows a command', () => {
+    expect(claudeFiles(app).filter((file) => file.path.startsWith('.claude/commands/'))).toEqual(
+      [],
+    );
+  });
+
+  test('the README says the managed kit IS enforced, and names the code and its fix', () => {
+    const readme = fileAt('.claude/README.md');
+    expect(readme).not.toContain('Nothing here is\nenforced');
+    expect(readme).not.toContain('Nothing here is enforced');
+    expect(readme).toContain('enforced by `bunx x verify`');
+    expect(readme).toContain('X_KIT_DRIFT');
+    expect(readme).toContain('`bunx x kit`');
+  });
+
+  test('the commands the kit tells an agent to run are pre-approved, the hop itself is not', () => {
+    const allow = parseSettings().permissions.allow;
+    for (const rule of [
+      'Bash(bunx x shot:*)',
+      'Bash(bunx x kit:*)',
+      'Bash(bunx x upgrade --dry-run:*)',
+    ])
+      expect(allow).toContain(rule);
+    expect(allow).not.toContain('Bash(bunx x upgrade:*)');
   });
 });
 
@@ -308,7 +335,7 @@ describe("unit · what the bundle says about `x verify`'s flags is true", () => 
 // `wiki/Many-Agents.md`: a worker runs its own files and the coordinator runs the gate, once. The
 // harness allowed the two scripts that skip the machine ledger and not the ledger's own command.
 describe('unit · the agent harness agrees with the many-agents rules', () => {
-  const commands = claudeCommandFiles(app);
+  const commands = kitFiles(app);
   const command = (path: string): string =>
     String(commands.find((file) => file.path === path)?.contents ?? '');
 
@@ -323,7 +350,7 @@ describe('unit · the agent harness agrees with the many-agents rules', () => {
     expect(fileAt('.claude/README.md')).not.toContain('types on every edit');
   });
 
-  test.each(['.claude/commands/feature.md', '.claude/commands/verify.md'])(
+  test.each(['.claude/skills/feature/SKILL.md', '.claude/skills/verify/SKILL.md'])(
     '%s tells a worker with a file set to leave the gate to the coordinator',
     (path) => {
       expect(command(path)).toContain('Given a file set');

@@ -237,6 +237,7 @@ test('every island in the app is measured, and each is classified by its own gra
     'apps/web/app/posts/[id]/likes-badge.island.tsx',
     'apps/web/app/posts/[id]/summary.island.tsx',
     'apps/web/app/posts/board/board.island.tsx',
+    'apps/web/app/runs/health/health-counts.island.tsx',
     'apps/web/app/runs/run-console.island.tsx',
     'apps/web/app/settings/settings.island.tsx',
     'apps/web/app/update-banner.island.tsx',
@@ -255,6 +256,7 @@ test('every island in the app is measured, and each is classified by its own gra
     '@ultimat3/render/client',
     '@ultimat3/time',
     '@ultimat3/ui',
+    '@ultimat3/ui/motion',
   ]);
   // `@ultimat3/render/client` for `mountOver` in every Solid island below (31.15.0).
   expect(reachable.get('apps/web/app/posts/[id]/like.island.tsx')).toEqual([
@@ -291,10 +293,20 @@ test('every island in the app is measured, and each is classified by its own gra
     '@ultimat3/action',
   ]);
   // The posts board: `@ultimat3/ui`'s `Board`, its strings the server's, and `movePostStatus`
-  // through the typed action client (plan 101, 38-ui-drag-layout).
+  // through the typed action client (plan 101, 38-ui-drag-layout). `@ultimat3/ui/motion`: a card
+  // is a `Presence` and a move is `layout()`. The feed reaches the same subpath for `inView` and
+  // `stagger`, and never the barrel's `MotionToggle`.
   expect(reachable.get('apps/web/app/posts/board/board.island.tsx')).toEqual([
     '@ultimat3/action',
     '@ultimat3/i18n/subset',
+    '@ultimat3/render/client',
+    '@ultimat3/ui',
+    '@ultimat3/ui/motion',
+  ]);
+  // The health counts: `CountUp` from `@ultimat3/effects` over ui's `UiProvider`, mounted into the
+  // paragraphs the server drew (`mountOver`) — no action client, no live read, no catalog.
+  expect(reachable.get('apps/web/app/runs/health/health-counts.island.tsx')).toEqual([
+    '@ultimat3/effects',
     '@ultimat3/render/client',
     '@ultimat3/ui',
   ]);
@@ -331,7 +343,8 @@ test('every island reaching core keeps its side-effecting module, in both builds
   // page's date filter, briefly its own island, is drawn inside the run console).
   // Four from plan 101 slice 11 (K6): `summary` and `contact-sales` reach only the action client,
   // which no longer brings core's barrel (`LEAN_ACTION_CLIENT`).
-  expect(expected).toHaveLength(4);
+  // Five from the health counts island (`CountUp` and `UiProvider` reach core through `@ultimat3/ui`).
+  expect(expected).toHaveLength(5);
   // The same two faces of the flap, on the module realtime anchors: every island reaching it.
   const realtime = reaching((pkg) => pkg === OWN_TITLES_ONLY);
   expect(realtime).toHaveLength(4);

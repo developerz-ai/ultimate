@@ -7,12 +7,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { reportDoctor, runDoctor } from './cmd-doctor';
 import { probe } from './cmd-doctor-fixture';
 import { browserProbe } from './doctor-browser';
+import { kitFiles, kitMarkerFile } from './kit/registry';
 import { renderJson } from './output';
 import { scaffoldGuardFiles } from './templates';
+import { names } from './templates/naming';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -28,6 +30,12 @@ const appRoot = (): string => {
   roots.push(root);
   mkdirSync(join(root, 'guards'));
   for (const file of scaffoldGuardFiles()) writeFileSync(join(root, file.path), file.contents);
+  // The full kit as `x kit` writes it (named for the directory, as `kitAppName` falls back to), so
+  // the agent-kit warning (`doctor-kit.test.ts`) does not join every case that is about another.
+  for (const file of [...kitFiles(names(basename(root))), kitMarkerFile()]) {
+    mkdirSync(dirname(join(root, file.path)), { recursive: true });
+    writeFileSync(join(root, file.path), file.contents);
+  }
   return root;
 };
 

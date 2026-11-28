@@ -93,6 +93,41 @@ export type DurationName = keyof typeof durationTokens;
 export type EasingName = keyof typeof easingTokens;
 
 /**
+ * The spring rungs: physics, plus the `linear()` curve and settle time `springLinear()` (in
+ * `src/motion/spring-linear.ts`) answers for it, COMMITTED so a CSS spring costs no JavaScript.
+ * `spring-linear.test.ts` regenerates each and fails on drift, here and in `_motion.scss`'s
+ * `$spring`. Emitted as `--easing-<name>`, so `t.easing(snappy)` is the spring.
+ */
+export const springs = {
+  gentle: {
+    stiffness: 120,
+    damping: 20,
+    mass: 1,
+    duration: 579,
+    easing:
+      'linear(0, 0.0147, 0.0527, 0.1065, 0.17, 0.2388, 0.3094, 0.3794, 0.4469, 0.5109, 0.5705, 0.6253, 0.6751, 0.7199, 0.7599, 0.7953, 0.8265, 0.8537, 0.8773, 0.8977, 0.9152, 0.9302, 0.9429, 0.9535, 0.9625, 0.97, 0.9762, 0.9814, 0.9856, 0.989, 0.9918, 0.994, 0.9957, 0.9971, 0.9982, 1)',
+  },
+  snappy: {
+    stiffness: 300,
+    damping: 30,
+    mass: 1,
+    duration: 506,
+    easing:
+      'linear(0, 0.0339, 0.1154, 0.2208, 0.3344, 0.4458, 0.5488, 0.6403, 0.7189, 0.7847, 0.8386, 0.8817, 0.9156, 0.9417, 0.9613, 0.9757, 0.9861, 0.9934, 0.9982, 1.0013, 1.0031, 1.004, 1.0043, 1.0042, 1.0039, 1.0035, 1.003, 1.0025, 1.0021, 1.0016, 1.0013, 1)',
+  },
+  bouncy: {
+    stiffness: 200,
+    damping: 12,
+    mass: 1,
+    duration: 1087,
+    easing:
+      'linear(0, 0.0253, 0.0938, 0.1945, 0.3166, 0.4502, 0.5869, 0.7193, 0.8417, 0.9499, 1.0411, 1.114, 1.1682, 1.2045, 1.2242, 1.2294, 1.2225, 1.2058, 1.1821, 1.1537, 1.1229, 1.0915, 1.0614, 1.0336, 1.0091, 0.9886, 0.9723, 0.9603, 0.9524, 0.9483, 0.9474, 0.9493, 0.9533, 0.9589, 0.9655, 0.9726, 0.9797, 0.9866, 0.9929, 0.9984, 1.0031, 1.0067, 1.0093, 1.0111, 1.0119, 1.0121, 1.0116, 1.0106, 1.0093, 1.0078, 1.0061, 1.0045, 1.0029, 1.0015, 1.0002, 0.9992, 0.9984, 0.9978, 0.9974, 0.9973, 0.9972, 0.9974, 0.9976, 0.9979, 0.9983, 0.9986, 1)',
+  },
+} as const;
+
+export type SpringName = keyof typeof springs;
+
+/**
  * The elevation rungs, then the two accent-drawn families: `glow-*` (a halo, no offset — a focused
  * or live edge) and `tinted-*` (a lift whose shadow carries the accent hue — coloured elevation).
  */

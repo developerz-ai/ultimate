@@ -85,6 +85,10 @@ const frameStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 }
 
 .main {
+  @include tokens.view-transition-name(site-main);
+
+  position: relative;
+  isolation: isolate;
   display: grid;
   gap: tokens.space(4);
   padding: tokens.space(8);
@@ -101,6 +105,7 @@ const indexPage = (
 ): string => `// The front page: what the site is, and every page it holds in this locale. Zero JavaScript.
 
 import { useT } from '@${app.kebab}/i18n';
+import { Aurora } from '@ultimat3/effects';
 import { currentLocale, localizedPath } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
@@ -136,6 +141,7 @@ export function Page(props: { readonly data: FrontPage }): JSX.Element {
   const t = useT();
   return (
     <SiteFrame locale={props.data.locale} home={props.data.home} path="/">
+      <Aurora class={styles.aurora} />
       <h1>{t('site.content.headline')}</h1>
       <p class={styles.lede}>{t('site.content.lede')}</p>
       <h2>{t('site.content.pages')}</h2>
@@ -196,6 +202,13 @@ unitTest('it is static, ships zero JavaScript, and says what the site is', async
 `;
 
 const indexStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
+
+// The backdrop is CSS alone (\`data-effect-backend="css"\`): zero JavaScript, behind the frame's main.
+.aurora {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
 
 .lede {
   color: tokens.role('fg-muted');

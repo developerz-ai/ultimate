@@ -1,11 +1,9 @@
 // `ui.diff` — the one `ui.*` tool with no browser in it: two captured PNGs compared, the
 // difference written back as a third.
 //
-// Two PNGs the others wrote, decoded through `@ultimat3/core`'s raw-pixel seam, compared by
-// `ui-diff.ts`, and written back as a third PNG beside the second. No dependency: the seam already
-// reads and writes 8-bit RGBA, and a capture that arrives in another PNG shape (Chrome writes RGB
-// when a page has no transparency) is normalised through `transformImageBytes`, whose encoder emits
-// the one shape the seam reads.
+// Two PNGs the others wrote, decoded and compared by `shot-diff.ts` (shared with
+// `x shot --against`), and written back as a third PNG beside the second. This file is the gate:
+// which paths may be read and written, and that both captures are one size.
 //
 // The path gate is what makes `dev:read` defensible for a tool that opens files: `before`, `after`
 // and `out` are relative to the app root and must resolve — lexically AND through any symlink —
@@ -18,17 +16,10 @@
 import { realpath } from 'node:fs/promises';
 // why: Bun exposes no path primitives; the gate is a resolve-then-prefix check on joined paths.
 import { dirname, resolve, sep } from 'node:path';
-import type { Raster } from '@ultimat3/core';
-import {
-  decodeImage,
-  encodeImage,
-  ImageUnsupportedError,
-  transformImageBytes,
-  UltimateError,
-} from '@ultimat3/core';
+import { UltimateError } from '@ultimat3/core';
 import type { UiDiffInput, UiDiffResult } from '@ultimat3/mcp';
+import { compareRasters, decodeCapture, hash8 } from './shot-diff';
 import { SHOT_DIR } from './shot-server';
-import { changedPercent, diffPixels } from './ui-diff';
 
 export interface DiffDeps {
   readonly root: string;
@@ -110,24 +101,9 @@ const exists = (dir: string): Promise<boolean> =>
     () => false,
   );
 
-/**
- * The seam reads 8-bit RGBA and nothing else. A PNG in any other shape — Chrome's RGB when the page
- * is opaque, a palette from an optimiser — goes once through Bun's codecs, which always write the
- * shape the seam reads. Only `imageUnsupported` is retried that way: a truncated file is a
- * truncated file in either decoder.
- */
-export async function decodeCapture(bytes: Uint8Array): Promise<Raster> {
-  try {
-    return decodeImage(bytes);
-  } catch (error) {
-    if (!(error instanceof ImageUnsupportedError)) throw error;
-    return decodeImage(await transformImageBytes(bytes, { format: 'png' }));
-  }
-}
-
-/** Eight hex digits of the path's 64-bit hash: enough to keep two diffs of one `after` apart. */
-export const hash8 = (text: string): string =>
-  Bun.hash(text).toString(16).padStart(16, '0').slice(0, 8);
+// The decode and the pixel rule are `shot-diff.ts`'s, shared with `x shot --against`; re-exported so
+// this tool's callers keep one import.
+export { decodeCapture, hash8 } from './shot-diff';
 
 export async function diffShots(deps: DiffDeps, input: UiDiffInput): Promise<UiDiffResult> {
   const { root } = deps;
@@ -153,18 +129,17 @@ export async function diffShots(deps: DiffDeps, input: UiDiffInput): Promise<UiD
       },
     });
   }
-  const { width, height } = after;
-  const result = diffPixels(before.pixels, after.pixels, width, height, input.threshold);
+  const result = compareRasters(before, after, input.threshold);
   await assertWritable(root, diff);
-  await Bun.write(diff, encodeImage({ width, height, pixels: result.diffRgba }));
+  await Bun.write(diff, result.diffPng);
   return {
     ok: true,
     before: input.before,
     after: input.after,
-    width,
-    height,
+    width: result.width,
+    height: result.height,
     changedPixels: result.changedPixels,
-    changedPercent: changedPercent(result.changedPixels, width, height),
+    changedPercent: result.changedPercent,
     changedBox: result.changedBox,
     diff,
   };

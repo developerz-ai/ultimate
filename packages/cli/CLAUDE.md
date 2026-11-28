@@ -191,7 +191,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `cmd-tasks-run.ts` | `x tasks run`: `TaskHandle.enqueue()`; production needs `--production` or `ULTIMATE_TASK_RUN=<name>` (`X_TASK_RUN_PRODUCTION`) |
 | `doctor-api-listing.ts` | `x doctor` warns: action/query off a `defineApi()` listing others |
 | `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets` |
-| `cmd-mcp.ts` / `mcp-host*.ts` / `mcp-errors.ts` / `mcp-db-target.ts` / `mcp-test-{output,run}.ts` | `x mcp serve`: 23 tools, two transports; `tests.run`/`verify.run` ARE `x test`/`x verify` † |
+| `cmd-mcp.ts` / `mcp-host*.ts` / `mcp-errors.ts` / `mcp-db-target.ts` / `mcp-test-{output,run}.ts` | `x mcp serve`: 24 tools, two transports; `tests.run`/`verify.run` ARE `x test`/`x verify` † |
 | `cmd-shot*.ts` / `cdp-shot-*.ts` / `browser-launcher*.ts` / `island-*` | `x shot` over raw CDP; `verdict.json` names its own blind spots. Not a gate step |
 | `cmd-profile*.ts` | `x profile <route>`: in-process JSC sampling profile of a route, hottest functions |
 | `mcp-host-logs.ts` | `logs.tail` and `x logs tail`'s reader: path rule, end-first bounded read, per-role tail |

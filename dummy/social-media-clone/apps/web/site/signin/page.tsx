@@ -4,8 +4,9 @@
 
 import type { ActionAnswer } from '@ultimat3/action';
 import { useActionAnswer } from '@ultimat3/action';
+import { TextReveal } from '@ultimat3/effects';
 import { NEXT_PARAM, nextAfterSignIn } from '@ultimat3/http';
-import { t } from '@ultimat3/i18n';
+import { currentLocale, t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { Button } from '@ultimat3/ui';
 import {
@@ -25,6 +26,8 @@ export const config = defineRoute({
   hydrate: 'never',
   // Never from a cache. A stale sign-in form is a form posting at a build that has moved on.
   offline: 'network-only',
+  // measured: 0 B (2026-11-28; x build --target static) — why: unchanged. `TextReveal` is
+  // stylesheet animation: no script, and reduced motion shows the title at rest.
   budget: { js: '0kb' },
   // `createSession` declares `native`: a refused sign-in (a wrong password, a failed challenge)
   // lands back here, `?next=` intact, and this one read in `load` is how the page hears why.
@@ -59,7 +62,9 @@ export function Page(props: SignInProps) {
     <AppShell url={props.url}>
       <div class={styles.auth}>
         <div class={styles.head}>
-          <h1 class={styles.title}>{t('site.signin.title')}</h1>
+          <h1 class={styles.title}>
+            <TextReveal text={t('site.signin.title')} locale={currentLocale()} />
+          </h1>
           <p class={styles.lede}>{t('site.signin.description')}</p>
         </div>
 

@@ -390,5 +390,8 @@
  * and `entity/src/driver-kit-unchecked-warning.ts` (a `defineDriver` store's compare-and-set update,
  * #1379), `query/src/validate-unknown-keys.ts` (#1281's query half) and `realtime/src/cursor-sign.ts`
  * (a live cursor's signature, #1280).
+ * raised 1594 → 1595, measured 1595 (2026-11-28, x design research, metafile walk): `cli/src/messages-design.ts`,
+ * the design-research and `x shot --against` rows `messages.ts` spreads into its one catalog, which
+ * every role's boot lines read through.
  */
-export const SERVING_ROLE_CEILING = 1594;
+export const SERVING_ROLE_CEILING = 1595;
