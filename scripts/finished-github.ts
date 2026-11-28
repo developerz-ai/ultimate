@@ -1,6 +1,6 @@
 // The finished rows read off GitHub's run history: each shape's `scaffold-smoke (<shape>app)` job
-// green on the newest push that ran it (skipped or cancelled is no evidence), seven scheduled
-// `flake-hunt` nights green in a row, and the newest `compat.yml` run green. `gh` is injected; an
+// green on the newest push that ran it (skipped or cancelled is no evidence), four scheduled
+// weekly `flake-hunt` runs green in a row, and the newest `compat.yml` run green. `gh` is injected; an
 // answer it could not give is `unverdicted`, never green.
 
 import { renderFixShellArg } from '../packages/core/src/error-render';
@@ -12,8 +12,10 @@ import type { Finding } from './lib/log';
 
 /** How far back a shape's job is looked for: a push that skipped scaffold-smoke is no evidence. */
 export const SHAPE_RUN_DEPTH = 10;
-export const FLAKE_NIGHTS = 7;
-const NIGHT_MS = 48 * 60 * 60 * 1000;
+/** Four weekly hunts of four rounds: sixteen shuffled orders per suite (`flake-hunt.yml`). */
+export const FLAKE_WEEKS = 4;
+/** A week plus a late runner's slack: an older newest run means the schedule stopped. */
+const WEEK_MS = 8 * 24 * 60 * 60 * 1000;
 
 const CI_RUNS = [
   'run',
@@ -43,7 +45,7 @@ const FLAKE_RUNS = [
   '--status',
   'completed',
   '--limit',
-  String(FLAKE_NIGHTS),
+  String(FLAKE_WEEKS),
   '--json',
   'conclusion,createdAt,url',
 ];
@@ -127,16 +129,16 @@ export async function shapesRow(
 export async function flakeRow(root: string, gh: Runner, nowMs: number): Promise<FinishedRow> {
   const runs = parsedOutput(await gh(FLAKE_RUNS, root));
   if (!Array.isArray(runs)) return unverdicted('tests-deterministic', FLAKE_COMMAND, 'no run list');
-  const nights = runs.filter(isJsonObject);
-  const greenNights = nights.filter((run) => run['conclusion'] === 'success').length;
-  const newest = Date.parse(String(nights[0]?.['createdAt'] ?? ''));
-  const fresh = nowMs - newest <= NIGHT_MS;
-  if (nights.length === FLAKE_NIGHTS && greenNights === FLAKE_NIGHTS && fresh) {
-    return green('tests-deterministic', `the last ${FLAKE_NIGHTS} scheduled flake hunts passed`);
+  const weeks = runs.filter(isJsonObject);
+  const greenWeeks = weeks.filter((run) => run['conclusion'] === 'success').length;
+  const newest = Date.parse(String(weeks[0]?.['createdAt'] ?? ''));
+  const fresh = nowMs - newest <= WEEK_MS;
+  if (weeks.length === FLAKE_WEEKS && greenWeeks === FLAKE_WEEKS && fresh) {
+    return green('tests-deterministic', `the last ${FLAKE_WEEKS} scheduled flake hunts passed`);
   }
   const why = !fresh
-    ? `the newest scheduled flake hunt is not from the last two nights (${nights.length === 0 ? 'none ran' : String(nights[0]?.['createdAt'])})`
-    : `${greenNights} of the last ${nights.length} scheduled flake hunts passed, and ${FLAKE_NIGHTS} green nights in a row are the bar`;
+    ? `the newest scheduled flake hunt is not from the last eight days (${weeks.length === 0 ? 'none ran' : String(weeks[0]?.['createdAt'])})`
+    : `${greenWeeks} of the last ${weeks.length} scheduled flake hunts passed, and ${FLAKE_WEEKS} green weekly runs in a row are the bar`;
   return red('tests-deterministic', why, [
     {
       code: 'X_FINISHED_FLAKY',

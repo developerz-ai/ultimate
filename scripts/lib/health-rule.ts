@@ -10,7 +10,7 @@ import type { Finding } from './log';
 /** The three ways a row can answer. `unverdicted` is a re-run, never a filing. */
 export type Verdict = 'healthy' | 'unhealthy' | 'unverdicted';
 
-/** The rows, in the order `.dz/briefs/health.md`'s table defines them. */
+/** The rows, in the order `docs/ops/health.md`'s table defines them. */
 export const ROW_IDS = [
   'main-green',
   'last-tag-published',

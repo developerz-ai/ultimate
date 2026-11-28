@@ -2,7 +2,7 @@
 // fixtures — green, red and unreadable for each, and a refusing `gh` is never green.
 
 import { describe, expect, test } from 'bun:test';
-import { compatRow, FLAKE_NIGHTS, flakeRow, shapesRow } from './finished-github';
+import { compatRow, FLAKE_WEEKS, flakeRow, shapesRow } from './finished-github';
 import type { Runner } from './finished-rule';
 import type { RunResult } from './lib/run';
 
@@ -77,23 +77,25 @@ describe('finished · every-shape-gates', () => {
 });
 
 describe('finished · tests-deterministic', () => {
-  const night = (conclusion: string, daysAgo: number) => ({
+  const week = (conclusion: string, weeksAgo: number) => ({
     conclusion,
-    createdAt: new Date(NOW - daysAgo * 86_400_000 - 3_600_000).toISOString(),
-    url: `n${daysAgo}`,
+    createdAt: new Date(NOW - weeksAgo * 7 * 86_400_000 - 3_600_000).toISOString(),
+    url: `w${weeksAgo}`,
   });
-  const nights = (count: number, red = -1) =>
-    Array.from({ length: count }, (_, at) => night(at === red ? 'failure' : 'success', at));
+  const weeks = (count: number, red = -1) =>
+    Array.from({ length: count }, (_, at) => week(at === red ? 'failure' : 'success', at));
 
-  test(`${FLAKE_NIGHTS} green nights, the newest fresh, are green`, async () => {
-    expect((await flakeRow('/', fakeGh({ 'run list': nights(7) }), NOW)).verdict).toBe('green');
+  test(`${FLAKE_WEEKS} green weekly runs, the newest fresh, are green`, async () => {
+    expect((await flakeRow('/', fakeGh({ 'run list': weeks(FLAKE_WEEKS) }), NOW)).verdict).toBe(
+      'green',
+    );
   });
 
-  test('one red night, too few nights, or a stopped schedule is red', async () => {
+  test('one red week, too few weeks, or a stopped schedule is red', async () => {
     for (const runs of [
-      nights(7, 3),
-      nights(6),
-      nights(7).map((one) => ({ ...one, createdAt: '2026-11-01T00:00:00Z' })),
+      weeks(FLAKE_WEEKS, 2),
+      weeks(FLAKE_WEEKS - 1),
+      weeks(FLAKE_WEEKS).map((one) => ({ ...one, createdAt: '2026-11-01T00:00:00Z' })),
     ]) {
       const row = await flakeRow('/', fakeGh({ 'run list': runs }), NOW);
       expect(row.verdict).toBe('red');

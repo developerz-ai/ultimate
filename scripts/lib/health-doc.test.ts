@@ -81,7 +81,7 @@ function assertBrief(brief: string): void {
 
 let brief: string;
 beforeAll(async () => {
-  brief = await Bun.file(join(repoRoot(), '.dz/briefs/health.md')).text();
+  brief = await Bun.file(join(repoRoot(), 'docs/ops/health.md')).text();
 });
 
 function replaceOnce(text: string, from: string, to: string): string {

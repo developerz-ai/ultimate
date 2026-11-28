@@ -17,7 +17,7 @@ name: ci
 # beside it: can this diff reach the jobs that read no prose at all (`changes`)? A diff of wiki,
 # docs and root markdown alone skips those six and `packages`; the gate, its verdict and the app
 # gates always run. `changes` also hands `scaffold-smoke` its rows: three on a pull request away
-# from the scaffold code, every one otherwise — and every one each night (`schedule`, below).
+# from the scaffold code, every one otherwise — and every one each week (`schedule`, below).
 #
 # There is still no `lint`, `typecheck`, `boundaries` or `test` job BESIDE the gate — that is the
 # second path axiom 1 forbids, and it once cost ~2.2 runner-minutes for checks the gate then ran
@@ -40,13 +40,16 @@ on:
     branches: [main, next, 'release/[0-9]+.x']
   pull_request:
   workflow_dispatch:
-  # The nightly full run on main: every job, every scaffold row. A pull request away from the
+  # The weekly full run on main (Monday): every job, every scaffold row. A pull request away from the
   # scaffold code runs three of `scaffold-smoke`'s rows (`scripts/lib/ci/scaffold-matrix.ts`), so a
-  # shape-only regression from elsewhere is caught here at the latest. A red night opens or updates
-  # one `ci-nightly` issue (`ci-nightly.yml`) and a green one closes it. Clear of flake-hunt (02:23),
+  # shape-only regression from elsewhere is caught on a push `tested` did not skip, here at the
+  # latest, and in any case on the release commit, whose run is always a run of everything. Weekly,
+  # not nightly, since 2026-11-28: ~100 runner-minutes a night for a matrix most nights repeated
+  # unchanged. A red run opens or updates one `ci-nightly` issue (`ci-nightly.yml`, the name kept
+  # so the open issue still matches) and a green one closes it. Clear of flake-hunt (02:23),
   # the registry audit (06:17) and the security-channel check (07:43).
   schedule:
-    - cron: '11 3 * * *'
+    - cron: '11 3 * * 1'
 
 # A newer push to a PULL REQUEST supersedes the in-flight run for that branch: CI is a signal, not
 # an archive. A push to `main` never supersedes anything, and the group is keyed by SHA there so it
@@ -814,7 +817,7 @@ jobs:
   # from `NEW_SHAPES`) and the monorepo — `SCAFFOLD_ROWS` in `scripts/lib/ci/scaffold-matrix.ts`,
   # handed over by `changes` as `fromJSON`. Eleven rows were ~28 billed minutes a run, so since
   # 2026-11-27 a pull request that touches no scaffold code runs three of them (`SCAFFOLD_SAMPLE`:
-  # `demoapp`, `bareapp`, `saasapp`); a push, a dispatch and the nightly `schedule` run all eleven,
+  # `demoapp`, `bareapp`, `saasapp`); a push, a dispatch and the weekly `schedule` run all eleven,
   # and so does every doubt. `--no-example` is an app with no islands and no example slice — some thirty files
   # fewer, a count `scripts/generator-counts.ts` derives and this comment does not restate — which
   # is precisely why it stayed green through a default scaffold whose fix chain was a loop: the

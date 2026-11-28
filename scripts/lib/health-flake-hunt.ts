@@ -1,5 +1,5 @@
-// The `flake-hunt` row's spec: whether the newest nightly `flake-hunt.yml` run — `unit` and `live`
-// three times each in a shuffled order — ended green, and whether it is still running every night
+// The `flake-hunt` row's spec: whether the newest weekly `flake-hunt.yml` run — `unit` and `live`
+// four times each in a shuffled order — ended green, and whether it is still running every week
 // at all. Not a gate, so nothing else announces its red; the shared scheduled-row reader and judge
 // read it.
 
@@ -12,11 +12,11 @@ const RESTART = 'gh workflow enable flake-hunt.yml && gh workflow run flake-hunt
 const FLAKE_HUNT = scheduledRow({
   row: 'flake-hunt',
   workflow: 'flake-hunt.yml',
-  // Two nights: GitHub stops a schedule on its own.
-  staleMs: 48 * 60 * 60 * 1000,
+  // Eight days, a week plus the slack a late runner needs: GitHub stops a schedule on its own.
+  staleMs: 8 * 24 * 60 * 60 * 1000,
   noun: 'flake hunt',
-  green: 'last night every shuffled round passed',
-  stale: 'no flake hunt in two nights: the schedule stopped',
+  green: 'the newest weekly hunt passed every shuffled round',
+  stale: 'no flake hunt in eight days: the schedule stopped',
   restart: RESTART,
   red: (run) => ({
     reason: `the newest flake hunt ended ${run.conclusion}: ${ISSUES} names each test, its seed and its rerun`,

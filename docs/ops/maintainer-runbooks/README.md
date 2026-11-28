@@ -9,11 +9,11 @@ running app's incidents are [`../06-runbooks.md`](../06-runbooks.md).
 
 | Runbook | Noticed by | Cited by |
 |---|---|---|
-| [`main-red.md`](./main-red.md) | a failed `ci.yml` run on a push to `main`; health row `main-green` | `.dz/briefs/main-red.md` |
-| [`release-commit-red.md`](./release-commit-red.md) | a version stamped on `main` with no tag; health row `stamped-version-tagged` | `.dz/briefs/main-red.md`, `.dz/briefs/adopter-canary.md` |
+| [`main-red.md`](./main-red.md) | a failed `ci.yml` run on a push to `main`; health row `main-green` | the platform's red-base ask (the `main-red` checkup was cut 2026-11-28) |
+| [`release-commit-red.md`](./release-commit-red.md) | a version stamped on `main` with no tag; health row `stamped-version-tagged` | `.dz/briefs/adopter-canary.md` |
 | [`registry-lags.md`](./registry-lags.md) | `bun run scripts/registry-audit.ts --json` not `ok`; the `registry-drift` issue | `.dz/briefs/adopter-canary.md` |
 | [`tag-squatted.md`](./tag-squatted.md) | a `v*` tag that is lightweight, or off its release commit | `.dz/briefs/adopter-canary.md` |
-| [`review-bot-disagrees.md`](./review-bot-disagrees.md) | an open review thread on a PR whose gate is green | `.dz/briefs/audit.md`, `.dz/briefs/main-red.md` |
+| [`review-bot-disagrees.md`](./review-bot-disagrees.md) | an open review thread on a PR whose gate is green | `.dz/briefs/audit.md` |
 | [`model-or-key-retired.md`](./model-or-key-retired.md) | the maintainer bot's runs stop leaving evidence | `.dz/briefs/evidence.md` |
 | [`maintainer-down.md`](./maintainer-down.md) | no bot comment, review or issue for N days | no brief: the bot cannot report its own absence, so a person reads it |
 
