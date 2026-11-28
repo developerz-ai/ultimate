@@ -1,5 +1,5 @@
-// The shape of `.github/workflows/flake-hunt.yml` that keeps the nightly hunt honest: off the gate,
-// both suites shuffled twice, a red round's exit kept (`pipefail`) and its document uploaded,
+// The shape of `.github/workflows/flake-hunt.yml` that keeps the weekly hunt honest: off the gate,
+// both suites shuffled four times, a red round's exit kept (`pipefail`) and its document uploaded,
 // and `issues: write` held by the filing job alone. Reads the REAL workflow.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
@@ -37,17 +37,17 @@ const file = workflow.jobs?.['file'];
 const NOT_CANCELLED = ['$', '{{ !cancelled() }}'].join('');
 const hunt = round?.steps?.find((step) => step.run?.includes('scripts/flake-hunt.ts run'));
 
-describe('unit · flake-hunt.yml is nightly and never a gate', () => {
+describe('unit · flake-hunt.yml is weekly and never a gate', () => {
   test('a schedule and a manual dispatch, nothing a push or a PR starts', () => {
     expect(Object.keys(workflow.on ?? {}).sort()).toEqual(['schedule', 'workflow_dispatch']);
   });
 
-  // Two, since 2026-11-27: a third `unit` round was ~20 of the night's ~83 billed minutes, and each
-  // round shuffles under a fresh seed, so a night's coverage is rounds × nights — the seven-night
-  // `tests-deterministic` row (`scripts/finished-github.ts`) still reads fourteen orders a suite.
-  test('both suites, two rounds each', () => {
+  // Four, weekly, since 2026-11-28 (two a night before): each round shuffles under a fresh seed, so
+  // the four weekly runs the `tests-deterministic` row (`scripts/finished-github.ts`) reads are
+  // sixteen orders a suite.
+  test('both suites, four rounds each', () => {
     expect(round?.strategy?.matrix?.['suite']).toEqual(['unit', 'live']);
-    expect(round?.strategy?.matrix?.['round']).toEqual([1, 2]);
+    expect(round?.strategy?.matrix?.['round']).toEqual([1, 2, 3, 4]);
   });
 });
 

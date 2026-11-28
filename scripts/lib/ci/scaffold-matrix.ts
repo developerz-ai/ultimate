@@ -1,5 +1,5 @@
 // The rows ci.yml's `scaffold-smoke` runs, as the matrix `changes` hands it: every scaffold on a
-// push, a dispatch or the nightly schedule, and on a pull request every scaffold only when the diff
+// push, a dispatch or the weekly schedule, and on a pull request every scaffold only when the diff
 // reaches the code that writes one — otherwise a sample of three. A doubt is every row.
 
 import { NEW_SHAPES } from '../../../packages/cli/src/new-shapes';
@@ -24,7 +24,7 @@ export const SCAFFOLD_ROWS: readonly ScaffoldRow[] = [
 /**
  * What a pull request away from the scaffold code runs: the default (islands, the example slice),
  * the bare app (the one with nothing to read), and `saas` (a shape overlay: tenants, auth, billing).
- * A shape-only regression from elsewhere surfaces on the push to main or the nightly full matrix.
+ * A shape-only regression from elsewhere surfaces on the push to main or the weekly full matrix.
  */
 export const SCAFFOLD_SAMPLE: readonly string[] = ['demoapp', 'bareapp', 'saasapp'];
 

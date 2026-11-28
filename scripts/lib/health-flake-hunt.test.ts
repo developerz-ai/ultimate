@@ -15,7 +15,7 @@ const verdict = (read: { runs: unknown }) => {
   return 'verdict' in answer ? answer.verdict : answer.code;
 };
 
-describe('row 11 · the nightly flake hunt is green', () => {
+describe('row 11 · the weekly flake hunt is green', () => {
   test('a green night is healthy; a red one is unhealthy and names the issues', () => {
     expect(verdict(run({ conclusion: 'success', status: 'completed' }))).toBe('healthy');
     const red = judgeFlakeHunt(run({ conclusion: 'failure', status: 'completed', url: 'u' }), NOW);
@@ -35,14 +35,14 @@ describe('row 11 · the nightly flake hunt is green', () => {
     expect(verdict(run({ conclusion: 'cancelled', status: 'completed' }))).toBe('unverdicted');
   });
 
-  test('a newest run older than two nights is unhealthy: the schedule stopped', () => {
-    const stale = run({ conclusion: 'success', createdAt: '2026-11-13T02:23:00Z' });
+  test('a newest run older than eight days is unhealthy: the schedule stopped', () => {
+    const stale = run({ conclusion: 'success', createdAt: '2026-11-07T02:23:00Z' });
     expect(verdict(stale)).toBe('unhealthy');
-    const fresh = run({ conclusion: 'success', createdAt: '2026-11-13T12:00:01Z' });
+    const fresh = run({ conclusion: 'success', createdAt: '2026-11-07T12:00:01Z' });
     expect(verdict(fresh)).toBe('healthy');
   });
 
-  test('no run yet is no verdict: the first night has not come', () => {
+  test('no run yet is no verdict: the first week has not come', () => {
     expect(verdict({ runs: [] })).toBe('unverdicted');
   });
 

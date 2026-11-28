@@ -13,7 +13,6 @@ import { evaluateIf } from './lib/workflow-if';
 const PUBLISHERS: Readonly<Record<string, string>> = {
   'wiki.yml':
     'publishes wiki/ to the GitHub wiki; the gate`s doc guards read those pages on every PR',
-  'scorecard.yml': 'publishes the OpenSSF score of main; it checks no diff and never gates a merge',
 };
 
 const record = (value: unknown): Readonly<Record<string, unknown>> =>
