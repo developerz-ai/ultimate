@@ -84,17 +84,26 @@ const releaseTags = async (root: string): Promise<readonly string[]> => {
   return listed.output.split('\n').filter((tag) => /^v\d+\.\d+\.\d+$/.test(tag));
 };
 
+/** From 31.53.0 `scaffold-claude.ts` imports `../kit/registry`: the tag's own kit sits beside it. */
+const KIT = 'packages/cli/src/kit';
+
 const fromTag = async (root: string, tag: string, dir: string, forms: Forms): Promise<void> => {
-  mkdirSync(dir, { recursive: true });
+  const templates = join(dir, 'templates');
+  mkdirSync(templates, { recursive: true });
   for (const file of SIBLINGS) {
     const shown = await git(['show', `${tag}:${TEMPLATES}/${file}`], root);
-    if (shown.ok) await Bun.write(join(dir, file), shown.output);
+    if (shown.ok) await Bun.write(join(templates, file), shown.output);
+  }
+  const kit = await git(['ls-tree', '-r', '--name-only', tag, KIT], root);
+  for (const file of kit.ok ? kit.output.split('\n').filter(Boolean) : []) {
+    const shown = await git(['show', `${tag}:${file}`], root);
+    if (shown.ok) await Bun.write(join(dir, 'kit', file.slice(KIT.length + 1)), shown.output);
   }
   for (const { file, exported, only } of SOURCES) {
     const shown = await git(['show', `${tag}:${TEMPLATES}/${file}`], root);
     // An early release wrote these from `scaffold-claude.ts`: it holds no form to record here.
     if (!shown.ok) continue;
-    const path = join(dir, file);
+    const path = join(templates, file);
     await Bun.write(path, shown.output);
     await collect(forms, path, exported, only).catch((error: unknown) => {
       throw failed(tag, error instanceof Error ? error.message : 'the template did not load');

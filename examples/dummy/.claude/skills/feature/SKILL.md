@@ -12,7 +12,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, Skill
 You are the coordinator of a change to **dummy**, an Ultimate app. Read `AGENTS.md` first —
 it is the short form of every rule below, and it wins where the two disagree.
 
-**Done means merged.** One branch, one PR, its CI green — the same `bun run verify` — and merged.
+**Done means merged.** One branch, one PR, every required check green on its head — the same
+`bun run verify`, and the review — and merged.
 A passing unit test is not done; a working `bunx x dev` is not done. Report what you ran, never
 what you assume passed. Read scope from the words: a request that says "draft", "no PR" or "do not
 push" ends there, and your report says where it stopped.
@@ -128,8 +129,10 @@ Commit, push, open one PR whose body lists each slice, its files and the gate ve
 | what CI tested | `bunx x ci tested --json` |
 | review threads | `bunx x pr review --json` — answer each with `bunx x pr reply`, close with `bunx x pr resolve` |
 
-A red CI run is the same gate as yours: read its findings, fix on the branch, push again. Merge when
-CI is green and no thread is open.
+A red CI run is the same gate as yours: read its findings, fix on the branch, push again. Merge only
+when every check on the head commit has passed — a required review included, never merely "no
+thread open" — every thread is resolved, and `gh pr view --json mergeStateStatus` answers
+`CLEAN`, so branch protection agrees.
 
 ## Hard rules
 

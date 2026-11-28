@@ -74,7 +74,8 @@ feature slice each lives in. One that fits none means the design is wrong — sa
 |---|---|---|---|---|
 
 ## Done when
-- Acceptance criteria, ending in `bun run verify` green and the one PR merged.
+- Acceptance criteria, ending in `bun run verify` green and the one PR merged once every required
+  check on its head, the review included, has passed.
 
 ## Risks
 - What an executor must decide, and every premise the code disproved.

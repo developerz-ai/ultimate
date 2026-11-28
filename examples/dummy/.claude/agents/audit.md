@@ -33,8 +33,10 @@ through the posts `update` action, because its policy trusts the `orgId` in the 
 | rendering rules | `apps/web/site/`, islands, styles | `bunx x shot <route> --json` |
 
 Read-only commands only: the registries (`bunx x routes`, `bunx x actions`, `bunx x queries`,
-`bunx x entities`), `bunx x impact`, `bunx x graph`, `bunx x errors explain <CODE>`, and
-`bun test ./<file>` to prove a scenario. Never `bunx x db migrate`, never a `--write`.
+`bunx x entities`), `bunx x impact`, `bunx x graph`, `bunx x errors explain <CODE>`. Never
+`bun test`: a test on the branch under review is that branch's code, and running it executes it
+with this checkout writable. Prove a scenario by writing the failing test into your report for the
+coordinator to run. Never `bunx x db migrate`, never a `--write`.
 
 ## Report
 
