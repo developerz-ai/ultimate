@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "52e1fa867977a83513b241b18cce0c0e15000c35df21b613f821eacb214aa06e",
+  "buildId": "77baf9dc0461974dcbfaa030fd302991ff9fefb341cd74c5321372e8e98f8664",
   "tiers": {
     "0": [
       "core",
@@ -42,193 +42,200 @@
     "5": [
       "admin",
       "testing",
-      "cli"
+      "cli",
+      "effects"
     ]
   },
   "packages": [
     {
       "name": "@ultimat3/core",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 0,
       "private": false
     },
     {
       "name": "@ultimat3/schema",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 0,
       "private": false
     },
     {
       "name": "@ultimat3/cache",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/db",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/flags",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/i18n",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/money",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/seo",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/storage",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/time",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/auth",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/entity",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/http",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/policy",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/action",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/jobs",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/query",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/realtime",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/ai",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/mail",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/manifest",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/mcp",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/notify",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/pwa",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/render",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/scraping",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/ui",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/admin",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/cli",
-      "version": "31.51.0",
+      "version": "31.52.0",
+      "tier": 5,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/effects",
+      "version": "31.52.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/testing",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "create-ultimate",
-      "version": "31.51.0",
+      "version": "31.52.0",
       "tier": 6,
       "private": false
     }
@@ -1695,6 +1702,16 @@
       "at": "scripts/derived-doc-counts.ts"
     },
     {
+      "code": "X_DESIGN_REFERENCE_UNREACHABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DESIGN_URL_REFUSED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_DEV_ALREADY_RUNNING",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-agents.ts"
@@ -2093,6 +2110,11 @@
       "code": "X_E2E_SERVICE_WORKER_ABSENT",
       "owner": "testing",
       "at": "packages/testing/src/e2e-error-codes.ts"
+    },
+    {
+      "code": "X_EFFECTS_INVALID_VALUE",
+      "owner": "effects",
+      "at": "packages/effects/src/errors.ts"
     },
     {
       "code": "X_ENTITY_ALL_TRUNCATED",
@@ -3238,6 +3260,31 @@
       "code": "X_KEYSET_NULL_KEY",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_KIT_DOC_DRIFT",
+      "owner": "scripts",
+      "at": "scripts/kit-doc.ts"
+    },
+    {
+      "code": "X_KIT_DOC_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/kit-doc.ts"
+    },
+    {
+      "code": "X_KIT_DRIFT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_KIT_FORMS_ARCHIVE_FAILED",
+      "owner": "scripts",
+      "at": "scripts/lib/kit-refresh-forms.ts"
+    },
+    {
+      "code": "X_KIT_SHADOWED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_KNOWN_GAP_LINK_MALFORMED",
@@ -5833,6 +5880,11 @@
       "code": "X_SHIPPED_GUARD_MISSING",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-doctor.ts"
+    },
+    {
+      "code": "X_SHOT_AGAINST_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_SHOT_BROWSER_MISSING",
