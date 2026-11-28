@@ -7,6 +7,7 @@ import { loadVersion } from '../../version-loader';
 import { catalogJson } from '../catalog-json';
 import { catalogPath } from '../locales';
 import type { GeneratedFile, NameSet } from '../naming';
+import { baseLandingAurora, effectsDependency, landingMotionTest } from './landing-motion';
 import type { ShapeEdit, ShapeOverlay } from './overlay';
 import { BILLING_DIR, billingFiles } from './saas-billing';
 import { billingReceiverFiles, RECEIVER_NAME } from './saas-receiver';
@@ -18,6 +19,8 @@ const ROLES = 'apps/web/shared/roles.ts';
 const RECEIVER_MODULE = `../app/billing/jobs/${RECEIVER_NAME}`;
 
 const edits = (app: NameSet): readonly ShapeEdit[] => [
+  effectsDependency(),
+  ...baseLandingAurora(),
   // The receiver is a job: listed, so the boot registers it under its name and mounts its route.
   {
     path: API,
@@ -107,6 +110,7 @@ export const saasShape: ShapeOverlay = {
   files: (app: NameSet): readonly GeneratedFile[] => [
     ...billingFiles(app),
     ...billingReceiverFiles(),
+    landingMotionTest(),
     catalog(),
   ],
   generate: [['sign-in', '--password'], ['invite']],

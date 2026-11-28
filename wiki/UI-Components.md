@@ -20,6 +20,8 @@ head -7 node_modules/@ultimat3/ui/CATALOG.md   # the count and every name, on on
 | Drift | `catalog.test.ts` compares the committed file byte-for-byte against a fresh build; a prop change with no regen is a red `x verify` |
 | Hand edits | refused by the same test — the file carries a `GENERATED` banner |
 
+Backgrounds, interaction and text effects (`Aurora`, `SpotlightCard`, `CountUp`, `ShaderBackground`, …) are the optional [`@ultimat3/effects`](Effects) package, not part of this one.
+
 This page does **not** restate the catalog. It covers the four page composites, because they are the ones an agent picks wrong.
 
 **Which component to reach for is not the same question as how it must behave.** The four-state

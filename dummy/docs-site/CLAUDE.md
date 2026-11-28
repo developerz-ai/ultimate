@@ -50,7 +50,7 @@ queries, jobs, MCP tools, published operations and tests it touches, each with p
 | Interaction | a click is answered by a control — never a `<div onClick>`, and never a `role=` where the native tag exists | `semantic-interactive` |
 | Focus | `outline: none` replaces the ring in the same rule or the one beside it, or it does not remove it | `focus-visible` |
 | Images | every image carries width + height or an aspect-ratio, and the priority one is never `loading="lazy"` | `image-dimensions` |
-| Motion | animate `transform` and `opacity` — never a layout property, never `transition: all` | `animated-layout-property` |
+| Motion | animate `transform` and `opacity` — never a layout property, never `transition: all`; reorder with `layout()` from `@ultimat3/ui/motion` | `animated-layout-property`, `animated-layout-script` |
 | Islands | every `*.island.tsx` has a sibling `*.island.states.ts`, so `bunx x shot --island` can photograph its failures | `island-without-states` |
 | Size | one file, one job — 500 lines of reviewable logic, and split past it | `X_FILE_TOO_LONG` |
 
@@ -110,8 +110,8 @@ Commands: `bun run setup`, `bun run dev`, `bun run verify`, `bunx x g <primitive
   table: read it, never edit it. `bunx x verify` fails with `X_SCHEMA_DUMP_DRIFT` when it is not
   what the migrations produce, and `bunx x db gen` rewrites it.
 - `bunx x doctor` explains a broken environment and prints the fix for every finding.
-- `.claude/` holds a harness that reads this file: `/feature`, `/planx`, `/verify` and four
-  boundary-scoped subagents. `.claude/README.md` says what each costs; every file is deletable.
+- `.claude/` holds the agent kit that reads this file: five skills, five boundary-scoped agents.
+  Managed: `bunx x kit` rewrites them, an edit in place is `X_KIT_DRIFT`; yours go in `app-*`.
 
 ## Agent tools
 
@@ -121,8 +121,6 @@ Commands: `bun run setup`, `bun run dev`, `bun run verify`, `bunx x g <primitive
 | `bunx x impact <file|primitive> --json` · `bunx x graph --json` | what an edit reaches, and the app as one graph (declared, import and observed edges) | rebuilt from the loaded app on every call |
 | `.mcp.json` | the dev tools over MCP: routes, schema, policies, the database, tests, the gate — `bunx x mcp tools` lists them | a client that reads `.mcp.json` starts it; from any other, run `bunx @ultimat3/cli mcp serve --transport stdio` here |
 | `POST /mcp` | this app's own tools — every action declaring `mcp: { expose: true }` — for a remote agent | `apps/web/mcp.ts`; under `bun run dev`, `Authorization: Bearer dev-agent.admin`, else an API key |
-| `.claude/commands/feature.md` | build or fix one thing end to end, done when `bun run verify` is green | plain markdown: any agent can read one and follow it |
-| `.claude/commands/planx.md` | write a plan to `docs/plans/` for another agent to execute | the same |
-| `.claude/commands/verify.md` | run the gate and fix what it reports | the same |
+| `.claude/skills/` | `feature` (hive, one PR, done when merged), `planx`, `verify`, `upgrade`, `design-research` | plain markdown any agent can follow; `bunx x kit` keeps them current |
 
 Project notes for docs-site: replace this line with the conventions a newcomer could not guess.

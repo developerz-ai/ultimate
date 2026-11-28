@@ -469,3 +469,58 @@ describe('the drag and viewer modules stay out of islands that do not use them',
     expect(under(one, 'content/languages/')).toEqual([resolve(UI_SRC, 'content/languages/ts.ts')]);
   }, 30_000);
 });
+
+/** An entry importing `names` from `@ultimat3/ui/motion`, held so nothing shakes. */
+const motionSource = (names: readonly string[]): string =>
+  [
+    `import { ${names.join(', ')} } from '${specifier('motion/index')}';`,
+    `export const held = [${names.join(', ')}];`,
+    '',
+  ].join('\n');
+
+/**
+ * Per-entry ceilings for `@ultimat3/ui/motion`, minified as an island ships, `As of 2026-11-28`
+ * (Bun 1.4.4): motionTiming 2,704 B · animate 3,858 · inView+stagger 5,010 · layout 4,562 ·
+ * frameLoop 2,662 · scrollLinked 2,004 · Presence 32,019 · PresenceList 31,577 (each component
+ * pays the same runtime adapter and error registry `Button` does: 29,997). A ceiling is the
+ * measurement plus ~10%, so a regression is noticed and a raise states its bytes here.
+ */
+const MOTION_CEILINGS: readonly (readonly [string, readonly string[], number])[] = [
+  ['motionTiming', ['motionTiming'], 3_000],
+  ['animate', ['animate'], 4_250],
+  ['inView+stagger', ['inView', 'stagger'], 5_500],
+  ['layout', ['layout'], 5_000],
+  ['frameLoop', ['frameLoop'], 3_000],
+  ['scrollLinked', ['scrollLinked'], 2_250],
+  ['Presence', ['Presence'], 35_000],
+  ['PresenceList', ['PresenceList'], 35_000],
+];
+
+describe('@ultimat3/ui/motion: a subpath, measured', () => {
+  test('a barrel-only island carries zero motion modules', async () => {
+    const chunk = await islandOf('barrel-no-motion', ['Button', 'Dialog', 'ThemeToggle']);
+    expect(chunk.modules).toContain(resolve(UI_SRC, 'components/Button.tsx'));
+    expect(under(chunk, 'motion/')).toEqual([]);
+  }, 30_000);
+
+  test('MotionToggle, on the barrel, carries the motion gate and nothing else of motion/', async () => {
+    const chunk = await islandOf('motion-toggle', ['MotionToggle']);
+    expect(under(chunk, 'motion/')).toEqual([resolve(UI_SRC, 'motion/motion-gate.ts')]);
+  }, 30_000);
+
+  test('the script half (no component) reaches no error registry and no Solid adapter', async () => {
+    const chunk = await chunkOf(
+      'motion-scripts',
+      motionSource(['animate', 'stagger', 'inView', 'layout', 'frameLoop', 'scrollLinked']),
+    );
+    expect(chunk.modules).not.toContain(resolve(UI_SRC, 'errors.ts'));
+    expect(chunk.modules).not.toContain(resolve(UI_SRC, 'theme/solid-adapter.ts'));
+  }, 30_000);
+
+  for (const [name, names, ceiling] of MOTION_CEILINGS) {
+    test(`${name} stays under ${ceiling} B minified`, async () => {
+      const bytes = await chunkBytes(`motion-${name.replace(/\W/g, '-')}`, motionSource(names));
+      expect(bytes).toBeLessThanOrEqual(ceiling);
+    }, 30_000);
+  }
+});

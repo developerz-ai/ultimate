@@ -681,6 +681,10 @@
     },
     "loading": "Se încarcă…",
     "menu": "Meniu",
+    "motion": {
+      "pause": "Oprește animațiile",
+      "resume": "Reia animațiile"
+    },
     "more": "Mai mult",
     "navigation": "Navigare",
     "next": "Următor",

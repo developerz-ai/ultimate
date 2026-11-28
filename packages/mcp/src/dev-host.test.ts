@@ -201,6 +201,7 @@ describe('devMcpServer', () => {
       'ui.inspect',
       'ui.interact',
       'ui.island',
+      'ui.research',
       'ui.shot',
       'verify.narrow',
       'verify.run',

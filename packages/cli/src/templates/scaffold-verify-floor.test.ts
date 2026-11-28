@@ -9,6 +9,7 @@ import { belongsToType } from '../test-select';
 import { parseVerifyFloor, VERIFY_FLOOR_FILE } from '../verify-floor';
 import { VERIFY_STEP_NAMES } from '../verify-step';
 import { readStrict } from '../verify-strict';
+import { SCAFFOLD_AGENTS_MD_MAX_BYTES } from './scaffold-docs';
 import { SCAFFOLD_COVERAGE_EXCLUDE } from './scaffold-verify-floor';
 
 const variants = [
@@ -63,6 +64,19 @@ describe('unit · x new · the floor names every gate step', () => {
   test('every scaffold is strict: a step that runs nothing is red unless its skip says why', () => {
     for (const variant of variants) {
       expect([variant.name, floorOf(variant.files).strict.strict]).toEqual([variant.name, true]);
+    }
+  });
+
+  test("the floor declares the AGENTS.md budget the scaffold's own brief needs", () => {
+    for (const variant of variants) {
+      const brief = variant.files.find((file) => file.path === 'AGENTS.md');
+      const bytes = Buffer.byteLength(String(brief?.contents), 'utf8');
+      const declared = floorOf(variant.files).floor.agentsMdMaxBytes;
+      expect({ name: variant.name, declared }).toEqual({
+        name: variant.name,
+        declared: SCAFFOLD_AGENTS_MD_MAX_BYTES,
+      });
+      expect(bytes).toBeLessThanOrEqual(declared ?? 0);
     }
   });
 

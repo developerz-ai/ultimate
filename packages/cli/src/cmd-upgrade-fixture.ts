@@ -146,6 +146,18 @@ export const EXERCISE_RED = JSON.stringify({
     },
   ],
 });
+/** What the installed `x kit --json` answers: written files, and what it left for the author. */
+export const kitDocument = (
+  written: readonly { readonly path: string; readonly action: string }[] = [],
+  findings: readonly unknown[] = [],
+): string =>
+  JSON.stringify({
+    ok: findings.length === 0,
+    command: 'kit',
+    findings,
+    data: { written, unchanged: 0, off: [] },
+  });
+
 const DOCTOR = JSON.stringify({
   ok: true,
   data: {
@@ -169,6 +181,8 @@ interface Script {
   readonly verify?: string;
   readonly verifyCode?: number;
   readonly manifestCode?: number;
+  /** The installed `x kit --json`'s stdout: default, a refresh that wrote nothing. */
+  readonly kit?: string;
   /** Exit code per `bun run <script>`; a script not named here exits 0. */
   readonly scriptCodes?: Readonly<Record<string, number>>;
   /** Findings each guard on disk adds to `boundaries`, by guard name; one not named adds none. */
@@ -281,6 +295,8 @@ export const recording = (script: Script = {}): { runner: Runner; spawned: strin
         );
       case 'x doctor':
         return answer(command, script.doctor ?? DOCTOR);
+      case 'x kit':
+        return answer(command, script.kit ?? kitDocument());
       case 'x upgrade':
         for (const [path, text] of Object.entries(script.codemodsWrite ?? {})) {
           await Bun.write(join(options.cwd, path), text);
@@ -351,6 +367,12 @@ interface Output {
       readonly differs: readonly { name: string; refresh: string }[];
       readonly installed: readonly string[];
       readonly withheld: readonly { name: string; add: string; findings: number | null }[];
+    } | null;
+    readonly kit?: {
+      readonly reported: boolean;
+      readonly written: readonly { path: string; action: string }[];
+      readonly unchanged: number;
+      readonly findings: readonly { code: string; fix: string; at?: string }[];
     } | null;
     readonly coverage: {
       readonly file: string;

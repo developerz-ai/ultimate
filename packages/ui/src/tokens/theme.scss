@@ -20,4 +20,6 @@
 @include touch.emit;
 @include typography.emit;
 @include motion.emit;
+// The view-transition timing and the page-wide motion pause: rules, not properties, but motion's.
+@include motion.guards;
 @include z.emit;

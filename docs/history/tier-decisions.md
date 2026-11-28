@@ -86,3 +86,11 @@ for the same reason.
 - **`db` grew one export for it**: `liveTxConnection`, because `currentTx()` deliberately keeps
   answering a finished scope's handle and a settlement bound to a finished transaction is bound
   to nothing.
+
+**`effects` is tier 5, decided 2026-11-28 (plan 101, slice 07).** `@ultimat3/effects` imports
+`@ultimat3/ui` (tier 4) for its tokens, its Solid adapter and `@ultimat3/ui/motion`'s
+`frameLoop`/`motionAllowed`, so tier 5 *is* its floor: no `FLOOR_ABOVE` row, no sideways edge. It
+is a separate, optional package rather than a folder of `ui` for one reason, measured by
+`scripts/effects-bytes.test.ts`: an app that never imports it pays 0 B, and the WebGL2 mount plus
+its GLSL never enter `ui`'s barrel graph. Nothing at tier 5 imports it, and nothing should — `cli`,
+`admin` and `testing` composing a background would be a business convention (axiom 8).

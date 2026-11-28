@@ -1,0 +1,29 @@
+@use '@ultimat3/ui/tokens' as t;
+
+.card {
+  @include t.surface;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+
+  // The highlight is a background layer ABOVE the fill and below the content: no overlay element,
+  // so no stacking order to manage and text contrast stays the surface's own. `--spot-alpha` is 0
+  // until the pointer or keyboard focus arrives.
+  --spot-alpha: 0;
+  background-image: radial-gradient(
+    var(--spot-size, 20rem) circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    t.role('accent', var(--spot-alpha)),
+    transparent 70%
+  );
+
+  // The pointer and keyboard focus light the same highlight. `:focus-visible` is the keyboard's;
+  // a mouse click on a button inside does not light it a second time.
+  &:hover,
+  &:has(:focus-visible) {
+    --spot-alpha: 0.16;
+  }
+
+  @media (prefers-contrast: more), (forced-colors: active) {
+    background-image: none;
+  }
+}

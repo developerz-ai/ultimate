@@ -12,6 +12,7 @@ import type { CatalogSubset } from '@ultimat3/i18n/subset';
 import { subsetTranslator } from '@ultimat3/i18n/subset';
 import { mountOver } from '@ultimat3/render/client';
 import { Board, type SortMove, setSolidRuntime, UiProvider } from '@ultimat3/ui';
+import { layout, Presence } from '@ultimat3/ui/motion';
 import type { JSX } from 'solid-js';
 import {
   createContext,
@@ -20,6 +21,7 @@ import {
   createRoot,
   createSignal,
   onCleanup,
+  onMount,
   useContext,
 } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -46,6 +48,23 @@ export interface BoardIslandProps {
 
 export function PostBoard(props: BoardIslandProps): JSX.Element {
   const [posts, setPosts] = createSignal<readonly BoardPost[]>(props.posts);
+  let surface: HTMLDivElement | undefined;
+  // The server's board is already on screen: only a card that arrives AFTER the first paint — one
+  // moved into another column — enters with a fade, so loading the page never flickers.
+  let painted = false;
+  onMount(() => {
+    painted = true;
+  });
+
+  /**
+   * One move, animated: every card is measured, the status changes, and each card that landed
+   * elsewhere (the rest slide into the gap) plays from where it was. A card the change unmounted
+   * has no box after it, which `layout` reads as a move to nowhere and animates harmlessly.
+   */
+  const settle = (change: () => void): void => {
+    const cards = surface === undefined ? [] : [...surface.querySelectorAll('[data-presence]')];
+    layout(cards, change, { duration: 'fast', easing: 'snappy' });
+  };
 
   const onMove = async (move: SortMove): Promise<void> => {
     const from = move.fromGroup;
@@ -53,26 +72,34 @@ export function PostBoard(props: BoardIslandProps): JSX.Element {
     // A reorder inside one column asks nothing: a status has no order to keep.
     if (from === to || !isSchedulable(from) || !isSchedulable(to)) return;
     const before = posts();
-    setPosts(before.map((post) => (post.id === move.id ? { ...post, status: to } : post)));
+    settle(() =>
+      setPosts(before.map((post) => (post.id === move.id ? { ...post, status: to } : post))),
+    );
     try {
       await browserClient.movePostStatus({ id: move.id, from, to });
     } catch (error) {
-      setPosts(before);
+      settle(() => setPosts(before));
       throw error;
     }
   };
 
   return (
-    <Board
-      groups={boardColumns(posts(), props.labels.columns)}
-      itemKey={(post: BoardPost) => post.id}
-      renderItem={postCard}
-      label={props.labels.board}
-      onMove={onMove}
-      canDrop={canMovePost}
-      action={props.action}
-      fields={MOVE_FIELDS}
-    />
+    <div ref={surface}>
+      <Board
+        groups={boardColumns(posts(), props.labels.columns)}
+        itemKey={(post: BoardPost) => post.id}
+        renderItem={(post: BoardPost) => (
+          <Presence when={post} appear={painted} duration="fast" easing="snappy">
+            {postCard}
+          </Presence>
+        )}
+        label={props.labels.board}
+        onMove={onMove}
+        canDrop={canMovePost}
+        action={props.action}
+        fields={MOVE_FIELDS}
+      />
+    </div>
   );
 }
 

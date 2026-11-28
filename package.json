@@ -43,6 +43,7 @@
     "frozen-records": "bun run scripts/frozen-records.ts",
     "gate-codes": "bun --preload ./scripts/lib/guard-preload.ts scripts/gate-codes.ts",
     "gate-steps": "bun --preload ./scripts/lib/guard-preload.ts scripts/gate-steps.ts",
+    "kit-doc": "bun run scripts/kit-doc.ts",
     "guards-doc": "bun run scripts/guards-doc.ts",
     "index-of-order": "bun run scripts/index-of-order.ts",
     "keyed-hasher": "bun run scripts/keyed-hasher.ts",

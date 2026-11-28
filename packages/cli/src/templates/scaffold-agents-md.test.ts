@@ -4,12 +4,12 @@
 // name a vendor's product, apart from the literal `.claude/` path the harness lives under.
 
 import { describe, expect, test } from 'bun:test';
-import { AGENTS_MD_MAX_BYTES } from '@ultimat3/manifest';
 import { planNewApp } from '../cmd-new';
 import { NEW_SHAPES } from '../new-shapes';
 import { SPECS } from '../registry';
+import { parseVerifyFloor, VERIFY_FLOOR_FILE } from '../verify-floor';
 import { names } from './naming';
-import { docsFiles } from './scaffold-docs';
+import { docsFiles, SCAFFOLD_AGENTS_MD_MAX_BYTES } from './scaffold-docs';
 import { repoFiles } from './scaffold-repo';
 
 const app = names('ledger-demo');
@@ -103,7 +103,22 @@ describe('unit · AGENTS.md runs as written, for any agent', () => {
   });
 
   test('it stays inside the AGENTS.md budget the manifest step enforces', () => {
-    expect(new TextEncoder().encode(agentsMd()).byteLength).toBeLessThan(AGENTS_MD_MAX_BYTES);
+    expect(new TextEncoder().encode(agentsMd()).byteLength).toBeLessThan(
+      SCAFFOLD_AGENTS_MD_MAX_BYTES,
+    );
+  });
+
+  // The budget the test holds is the one the gate reads: a scaffold's own `x.verify.json`
+  // `agentsMdMaxBytes`. A constant raised here and not written there passes this file and fails
+  // `X_AGENTS_MD_TOO_LARGE` in every new app.
+  test('the scaffolded x.verify.json declares the budget these tests hold the file to', () => {
+    for (const example of [true, false]) {
+      const floor = textAt(planNewApp({ name: 'dashboardapp', example }), VERIFY_FLOOR_FILE);
+      expect({ example, budget: parseVerifyFloor(floor).agentsMdMaxBytes }).toEqual({
+        example,
+        budget: SCAFFOLD_AGENTS_MD_MAX_BYTES,
+      });
+    }
   });
 
   // Every scaffold the `scaffold-smoke` matrix gates, measured as it lands: a shape's overlay edits
@@ -124,7 +139,7 @@ describe('unit · AGENTS.md runs as written, for any agent', () => {
       const files = planNewApp({ name: 'dashboardapp', ...options });
       for (const path of ['CLAUDE.md', 'AGENTS.md']) {
         const bytes = new TextEncoder().encode(textAt(files, path)).byteLength;
-        expect({ path, bytes, over: bytes > AGENTS_MD_MAX_BYTES }).toEqual({
+        expect({ path, bytes, over: bytes > SCAFFOLD_AGENTS_MD_MAX_BYTES }).toEqual({
           path,
           bytes,
           over: false,

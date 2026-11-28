@@ -6,7 +6,8 @@
 // client state to reach for: the hero's depth is two gradients over a masked grid, and the only
 // motion in the page is a hover that a reduced-motion viewer never gets.
 
-import { t } from '@ultimat3/i18n';
+import { Aurora, TextReveal } from '@ultimat3/effects';
+import { currentLocale, t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { Icon, Link } from '@ultimat3/ui';
 import { iconArrowRight } from '@ultimat3/ui/icons/arrow-right';
@@ -19,6 +20,8 @@ export const config = defineRoute({
   render: 'static',
   hydrate: 'never',
   offline: 'precache',
+  // measured: 0 B (2026-11-28; x build --target static) — why: unchanged. `Aurora` (CSS tier) and
+  // `TextReveal` are stylesheet animation: no script, and reduced motion shows every word at rest.
   budget: { js: '0kb' },
   meta: () => ({
     title: t('site.home.title'),
@@ -72,64 +75,72 @@ const SAMPLE: readonly { readonly text: string; readonly comment?: true }[] = [
 export function HomePage(props: { readonly url?: string | undefined }) {
   return (
     <AppShell url={props.url} width="full">
-      <section class={styles.hero}>
-        <div class={styles.heroInner}>
-          <div class={styles.heroText}>
-            <p class={styles.eyebrow}>
-              <span class={styles.pulse} aria-hidden="true" />
-              {t('site.home.eyebrow')}
-            </p>
-            <h1 class={styles.title}>{t('site.home.title')}</h1>
-            <p class={styles.lede}>{t('site.home.description')}</p>
+      {/* `Aurora`'s CSS tier and `TextReveal`: both are stylesheet animation, so the page keeps its
+          0kb budget; reduced motion rests every band and shows every word. */}
+      <Aurora>
+        <section class={styles.hero}>
+          <div class={styles.heroInner}>
+            <div class={styles.heroText}>
+              <p class={styles.eyebrow}>
+                <span class={styles.pulse} aria-hidden="true" />
+                {t('site.home.eyebrow')}
+              </p>
+              <h1 class={styles.title}>
+                <TextReveal text={t('site.home.title')} locale={currentLocale()} />
+              </h1>
+              <p class={styles.lede}>{t('site.home.description')}</p>
 
-            <div class={styles.ctas}>
-              <Link
-                appearance="button"
-                size="lg"
-                href="/feed"
-                iconEnd={<Icon glyph={iconArrowRight} />}
-              >
-                {t('site.home.cta')}
-              </Link>
-              <Link appearance="button" variant="secondary" size="lg" href="/signin">
-                {t('site.home.signin')}
-              </Link>
+              <div class={styles.ctas}>
+                <Link
+                  appearance="button"
+                  size="lg"
+                  href="/feed"
+                  iconEnd={<Icon glyph={iconArrowRight} />}
+                >
+                  {t('site.home.cta')}
+                </Link>
+                <Link appearance="button" variant="secondary" size="lg" href="/signin">
+                  {t('site.home.signin')}
+                </Link>
+              </div>
+
+              <p class={styles.note}>{t('site.home.seeded')}</p>
             </div>
 
-            <p class={styles.note}>{t('site.home.seeded')}</p>
-          </div>
-
-          <div class={styles.decision}>
-            <p class={styles.decisionBar}>{DECISION_CALL}</p>
-            <p class={styles.decisionCaption}>{t('site.home.decision.caption')}</p>
-            <ul class={styles.decisionList}>
-              {DECISION.map((row) => (
-                <li class={row.visible ? styles.rowVisible : styles.rowHidden}>
-                  <span class={styles.rowKey}>{`${AUDIENCE_FIELD}: ${row.audience}`}</span>
-                  <span class={styles.rowVerdict}>
-                    <Icon glyph={row.visible ? iconCircleCheck : iconEyeOff} />
-                    {/* Two literal calls, not one with a computed key: `x i18n check` can only see
+            <div class={styles.decision}>
+              <p class={styles.decisionBar}>{DECISION_CALL}</p>
+              <p class={styles.decisionCaption}>{t('site.home.decision.caption')}</p>
+              <ul class={styles.decisionList}>
+                {DECISION.map((row) => (
+                  <li class={row.visible ? styles.rowVisible : styles.rowHidden}>
+                    <span class={styles.rowKey}>{`${AUDIENCE_FIELD}: ${row.audience}`}</span>
+                    <span class={styles.rowVerdict}>
+                      <Icon glyph={row.visible ? iconCircleCheck : iconEyeOff} />
+                      {/* Two literal calls, not one with a computed key: `x i18n check` can only see
                         a literal, and a key it cannot see is a key it reports as safe to delete. */}
-                    {row.visible ? t('site.home.decision.visible') : t('site.home.decision.hidden')}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p class={styles.decisionNote}>{t('site.home.decision.note')}</p>
+                      {row.visible
+                        ? t('site.home.decision.visible')
+                        : t('site.home.decision.hidden')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p class={styles.decisionNote}>{t('site.home.decision.note')}</p>
+            </div>
           </div>
-        </div>
 
-        <div class={styles.statsRow}>
-          <dl class={styles.stats}>
-            {STATS.map((stat) => (
-              <div class={styles.stat}>
-                <dt class={styles.statLabel}>{t(`site.home.stats.${stat}.label`)}</dt>
-                <dd class={styles.statValue}>{t(`site.home.stats.${stat}.value`)}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      </section>
+          <div class={styles.statsRow}>
+            <dl class={styles.stats}>
+              {STATS.map((stat) => (
+                <div class={styles.stat}>
+                  <dt class={styles.statLabel}>{t(`site.home.stats.${stat}.label`)}</dt>
+                  <dd class={styles.statValue}>{t(`site.home.stats.${stat}.value`)}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </section>
+      </Aurora>
 
       <section class={styles.band}>
         <div class={styles.bandInner}>

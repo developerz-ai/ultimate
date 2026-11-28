@@ -678,6 +678,10 @@
     },
     "loading": "Carregando…",
     "menu": "Menu",
+    "motion": {
+      "pause": "Pausar animações",
+      "resume": "Retomar animações"
+    },
     "more": "Mais",
     "navigation": "Navegação",
     "next": "Próxima",

@@ -129,3 +129,58 @@ is not. It binds a fragment to a field only when the fragment's head is a DECLAR
 mis-split degrades to a form-level error rather than to a wrong control. Delete the line parser the
 day the wire carries the list. (Moved out of `packages/ui/CLAUDE.md` by plan 101 slice 38, for the
 24 KB ceiling.)
+
+## Moved out for plan 101's motion slice
+
+`As of 2026-11-28`. Verbatim, for the 24 KB ceiling, when `@ultimat3/ui/motion` added its rule; the
+short rule stays in `packages/ui/CLAUDE.md`. The barrel rule below is the text BEFORE `./motion`
+became the second measured JavaScript subpath.
+
+- **`VirtualList` holds the row at its box's edge by DOM position** and draws its range where it WILL scroll; drawn for the stale spot, a prepend unmounts the focused row (`ui-virtual-list.e2e.test.ts`).
+- **`VirtualList` re-pins on every move of its drawn range, not only on a layout change** — each move swaps rows for estimated padding — and **bounds itself under a cap**: `.wrap`'s one `minmax(0, 1fr)` row, so a caller's `max-block-size` or flex share scrolls instead of drawing every row (`ui-virtual-list.e2e.test.ts`).
+- **Generated source is a CODE sink.** `build-icons.ts` writes modules every app executes, from network data: attribute values go through `JSON.stringify`, and `SAFE_ATTR_VALUE` refuses anything that is not glyph geometry. Malformed upstream data is `X_UI_INVALID_VALUE`; only real environment faults (no network, no biome) are `X_UI_RUNTIME_MISSING`.
+- **The icon NAME is the third sink, and it has no escape.** It becomes a path under `GLYPHS_DIR` (which `buildIcons` clears), an identifier and a banner, so `SAFE_ICON_NAME` (`/^[a-z0-9]+(-[a-z0-9]+)*$/`) is checked in `parseIconNodes` before `out.set`; `build-icons.test.ts` asserts all 1767 committed names pass.
+- **The barrel is the ONE import path; component subpath exports are refused on measurement** (issue #275). A barrel import and a deep path emit the same modules and bytes, so `@ultimat3/ui/button` would be a second idiom for zero bytes. The one JavaScript subpath besides the barrel is not an exception: `./icons/*` is 1,767 data modules no bundler can split (`./tokens`, `./theme.scss`, `./reset.scss` and `./global.scss` are stylesheets). `scripts/ui-barrel-bytes.test.ts` compares the two paths and names `schema-error-codes.ts` (Bun 1.4.0's load-correlated shake, issue #273) rather than allowing bytes for it.
+- **One path grammar, both directions.** A control's `name` and a schema issue's path are the same string (`items[0].price`), which is what lets a rejection find its control with no per-form mapping table. `parseFieldPath` is the inverse of `@ultimat3/schema`'s `formatPath` (the one the server rendered the path with), refusing `__proto__`, `items[]`, `items.0.price` and an index above `MAX_FIELD_INDEX`.
+- **An issue that matches no declared field is SURFACED, never swallowed.** It goes to `formErrors`, which `<Form error>` announces and focuses; a near miss (`items` against a form holding `items[0].price`) goes there too, because an error rendered against the wrong input is a lie the user acts on. Two issues on one field both survive in the state — `Field`'s one slot renders the first, `messagesFor` has the rest.
+- **Chart series are measured twice**: 3:1 on all four surfaces (`CONTRAST_PAIRS`), and `CHART_DISTINCT_MIN` ΔE apart under protan/deutan/tritan simulation (`colour-vision.ts`, `colour-vision.test.ts`). Moving one channel of one series can break the second check without touching the first.
+
+### Deep import (before `./motion`)
+
+`@ultimat3/ui/icons/*` resolves through the package's `exports` map. Inside this monorepo a
+`tsconfig` that maps `@ultimat3/*` to `packages/*/src` needs the more specific entry
+`"@ultimat3/ui/icons/*": ["./packages/ui/src/icons/glyphs/*"]` for TypeScript to follow it —
+runtime resolution is the `exports` map either way.
+- **`aria-checked` never mirrors a native `checked`.** ARIA outranks host state in the accessibility tree, and on the no-JS path this package supports there is nothing to rewrite the attribute after the user ticks the box. `Checkbox` writes only `'mixed'` (an IDL property with no attribute form, so ARIA is the only server-side lever); `Switch` writes none at all, over a `biome-ignore` that says why.
+- **Live semantics belong to the container that outlives the message.** `ToastRegion`'s `<ol>` carries `aria-live`; a `Toast` is a plain `<li>`. A region created with its content already inside it is not announced, and a `role="status"` on the `<li>` also strips its `listitem` semantics.
+
+## Motion: `@ultimat3/ui/motion`
+
+`As of 2026-11-28` (plan 101, slice 06; issue #1374).
+
+- **Built, not wrapped.** Motion's hybrid `animate` is 26.95 kB gzip, over an island's 20,480 B raw
+  default; `motion/mini` is plain WAAPI and adds nothing over our own wrapper; neither handles
+  reduced motion on the vanilla path. Every engine is ours; reference libraries were read for
+  technique only (rows in `docs/idea/18-build-vs-wrap.md`).
+- **Springs are a CSS easing, sampled.** `springLinear()` samples the damped oscillator's closed
+  form (under-, critically, over-damped) from rest to the last millisecond outside a 0.001 band,
+  one stop per ~60 Hz frame (12–80 stops, four decimals, last stop exactly 1). The three rungs are
+  its output committed to `tokens.ts` and `_motion.scss` — 0 B of JS for a CSS spring — and emitted
+  as `--easing-<name>` with the cubic-bezier `spring` as the pre-`linear()` fallback under
+  `@supports`, so `tokens.test.ts`'s "each partial emits exactly its scales" still reads `easing`.
+- **One gate, two halves.** `motionAllowed()` is false under `prefers-reduced-motion` or
+  `html[data-motion="paused"]`; the stylesheet's half is `reset.scss` (reduced) and `_motion.scss`'s
+  `guards` (paused), both collapsing to `$still` rather than `animation-play-state: paused`, which
+  would freeze an entrance at opacity 0. `MotionToggle` remembers the pause in `localStorage`
+  (`ultimate.motion`) and re-applies it on mount — after first paint, since no boot script reads it.
+- **The subpath is a measurement.** Minified island bytes, Bun 1.4.4: motionTiming 2,704 ·
+  animate 3,858 · inView+stagger 5,010 · layout 4,562 · frameLoop 2,662 · scrollLinked 2,004 ·
+  Presence 32,019 · PresenceList 31,577 · springLinear 11,554 (it reaches the error registry) ·
+  the whole adapter 39,363 (15,420 gzip) — against `Button` alone at 29,997. A barrel-only island
+  retains no motion module; `ui-barrel-bytes.test.ts` pins that and a ceiling per entry.
+- **`Presence` owns its wrapper.** `solid-transition-group` and `solid-motionone` resolve children
+  through `children()` and `@solid-primitives`, which ui's seven-function runtime has not got; a
+  wrapper element is what animates and what stays in the document while it exits. `animate` holds
+  nothing after an enter (`fill: 'backwards'`) and the last frame on an exit (`both`), so no WAAPI
+  fill outlives the node it styled.
+

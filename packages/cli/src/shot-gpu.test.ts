@@ -32,13 +32,19 @@ const inputFor = (overrides: Partial<ShotInput> = {}): ShotInput => ({
 });
 
 /** The probe is a string by contract (`CdpPageLike.evaluate`): its own text runs on a fake navigator. */
-const runProbe = async (navigator: unknown): Promise<unknown> =>
-  new Function('navigator', `return ${GPU_PROBE};`)(navigator);
+const runProbe = async (navigator: unknown, document?: unknown): Promise<unknown> =>
+  new Function('navigator', 'document', `return ${GPU_PROBE};`)(navigator, document);
+
+/** A document whose canvas answers `getContext('webgl2')` with `context` (and nothing else). */
+const documentWith = (context: unknown): unknown => ({
+  createElement: () => ({ getContext: (kind: string) => (kind === 'webgl2' ? context : null) }),
+});
 
 describe('unit · the gpu probe states what the page could reach', () => {
   test('no navigator.gpu: the API is absent and nothing is available', async () => {
     expect(parseGpuProbe(await runProbe({}))).toEqual({
       api: false,
+      webgl2: false,
       available: false,
       adapter: null,
       fallback: false,
@@ -49,6 +55,7 @@ describe('unit · the gpu probe states what the page could reach', () => {
     const gpu = { requestAdapter: async () => null };
     expect(parseGpuProbe(await runProbe({ gpu }))).toEqual({
       api: true,
+      webgl2: false,
       available: false,
       adapter: null,
       fallback: false,
@@ -63,6 +70,7 @@ describe('unit · the gpu probe states what the page could reach', () => {
     const gpu = { requestAdapter: async () => adapter };
     expect(parseGpuProbe(await runProbe({ gpu }))).toEqual({
       api: true,
+      webgl2: false,
       available: true,
       adapter: 'google swiftshader',
       fallback: true,
@@ -78,6 +86,28 @@ describe('unit · the gpu probe states what the page could reach', () => {
     expect(parseGpuProbe(await runProbe({ gpu }))).toMatchObject({ api: true, available: false });
   });
 
+  test('webgl2 is read beside WebGPU: a context that answers, and is not lost, is true', async () => {
+    const live = documentWith({ isContextLost: () => false });
+    expect(parseGpuProbe(await runProbe({}, live))).toMatchObject({ api: false, webgl2: true });
+    const gpu = { requestAdapter: async () => null };
+    expect(parseGpuProbe(await runProbe({ gpu }, live))).toMatchObject({
+      api: true,
+      available: false,
+      webgl2: true,
+    });
+  });
+
+  test('a null context, a lost one, or a page with no canvas reads webgl2: false', async () => {
+    for (const document of [
+      documentWith(null),
+      documentWith({ isContextLost: () => true }),
+      { createElement: () => ({}) },
+      undefined,
+    ]) {
+      expect(parseGpuProbe(await runProbe({}, document))).toMatchObject({ webgl2: false });
+    }
+  });
+
   test('anything that is not the probe shape parses to null', () => {
     expect(parseGpuProbe(undefined)).toBeNull();
     expect(parseGpuProbe({ available: 'yes' })).toBeNull();
@@ -91,7 +121,7 @@ describe('unit · the gpu probe states what the page could reach', () => {
 
 describe('unit · the verdict carries the backend, additively', () => {
   test('gpu rides in the artifact and never gates', () => {
-    const gpu = { api: true, available: false, adapter: null, fallback: false };
+    const gpu = { api: true, webgl2: true, available: false, adapter: null, fallback: false };
     const verdict = buildVerdict(inputFor({ gpu }));
     expect(verdict.ok).toBe(true);
     expect(verdictJson(verdict)).toMatchObject({ gpu });
@@ -108,7 +138,13 @@ describe('unit · runShot asks the page, and the artifact on disk carries the an
 
   test('the adapter the page reported is in verdict.json', async () => {
     const url = 'http://localhost:4321/scene';
-    const gpu = { api: true, available: true, adapter: 'nvidia ampere', fallback: false };
+    const gpu = {
+      api: true,
+      webgl2: true,
+      available: true,
+      adapter: 'nvidia ampere',
+      fallback: false,
+    };
     const driver = fakeShotDriver([
       {
         url,

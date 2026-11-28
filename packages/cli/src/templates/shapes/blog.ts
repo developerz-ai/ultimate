@@ -5,6 +5,7 @@
 import type { GeneratedFile, NameSet } from '../naming';
 import { blogSiteFiles } from './blog-site';
 import { blogSliceFiles } from './blog-slice';
+import { effectsDependency } from './landing-motion';
 import type { ShapeEdit, ShapeOverlay } from './overlay';
 import { claudeRows, shapeLines } from './shared-edits';
 
@@ -40,6 +41,7 @@ unitTest('health and both public reads are registered under their export names',
 `;
 
 const edits = (app: NameSet): readonly ShapeEdit[] => [
+  effectsDependency(),
   {
     path: 'packages/db/src/client.ts',
     find: 'const entities = {};',

@@ -1,4 +1,5 @@
 // The GPU backend the photographed page could reach, read from `navigator.gpu` inside the page.
+// The same page is asked for WebGL2 beside it, because `@ultimat3/effects` picks its backend on it.
 // A WebGPU canvas that came out blank on a headless machine with no adapter is a fact about the
 // machine, not the app — and a picture alone cannot tell the two apart. Recorded, never gating.
 
@@ -7,6 +8,8 @@ import { t, validate } from '@ultimat3/schema';
 import type { JsonValue } from './output';
 
 export interface ShotGpu {
+  /** A `webgl2` context could be made on a canvas and was not lost — the shader tier of an effect. */
+  readonly webgl2: boolean;
   /** `navigator.gpu` exists — the browser exposes WebGPU at all. */
   readonly api: boolean;
   /** `requestAdapter()` answered an adapter: WebGPU is usable on this page, on this machine. */
@@ -24,17 +27,20 @@ export interface ShotGpu {
  * spell the flag `isFallbackAdapter` on the adapter, which is why both are read.
  */
 export const GPU_PROBE =
-  '(async function(){var g=navigator.gpu;' +
-  'if(!g)return{api:false,available:false,adapter:null,fallback:false};var a=null;' +
+  '(async function(){var w=false;' +
+  'try{var c=document.createElement("canvas").getContext("webgl2");' +
+  'w=!!c&&!c.isContextLost();}catch(e){w=false;}var g=navigator.gpu;' +
+  'if(!g)return{api:false,webgl2:w,available:false,adapter:null,fallback:false};var a=null;' +
   'try{a=await Promise.race([g.requestAdapter(),' +
   'new Promise(function(r){setTimeout(function(){r(null);},2000);})]);}catch(e){a=null;}' +
-  'if(!a)return{api:true,available:false,adapter:null,fallback:false};var i=a.info||{};' +
+  'if(!a)return{api:true,webgl2:w,available:false,adapter:null,fallback:false};var i=a.info||{};' +
   'var n=[i.vendor,i.architecture,i.device,i.description].filter(function(s){return !!s;})' +
-  '.join(" ");return{api:true,available:true,adapter:n===""?null:n,' +
+  '.join(" ");return{api:true,webgl2:w,available:true,adapter:n===""?null:n,' +
   'fallback:!!(a.isFallbackAdapter||i.isFallbackAdapter)};})()';
 
 const gpuProbeSchema: StandardSchemaV1<unknown, ShotGpu> = t.object({
   api: t.boolean,
+  webgl2: t.boolean,
   available: t.boolean,
   adapter: t.nullable(t.string),
   fallback: t.boolean,
@@ -58,4 +64,10 @@ export const readShotGpu = (page: {
 export const gpuJson = (gpu: ShotGpu | null | undefined): JsonValue =>
   gpu === null || gpu === undefined
     ? null
-    : { api: gpu.api, available: gpu.available, adapter: gpu.adapter, fallback: gpu.fallback };
+    : {
+        api: gpu.api,
+        webgl2: gpu.webgl2,
+        available: gpu.available,
+        adapter: gpu.adapter,
+        fallback: gpu.fallback,
+      };

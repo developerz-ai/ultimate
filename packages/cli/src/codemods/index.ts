@@ -2,6 +2,7 @@
 // module not listed here is refused by `index.test.ts`; `scripts/template-codemods.ts` refuses a
 // scaffold-owned template change with no codemod (or no written reason) for the next release.
 
+import { codemod as agentKit } from './agent-kit';
 import { codemod as agentsDevMcp } from './agents-dev-mcp';
 import { codemod as authenticatorSessionRefusal } from './authenticator-session-refusal';
 import { codemod as biomeNoDefaultExport } from './biome-no-default-export';
@@ -21,6 +22,7 @@ import { codemod as docsIslandRows } from './docs-island-rows';
 import { codemod as docsManyAgents } from './docs-many-agents';
 import { codemod as docsShippedGuards } from './docs-shipped-guards';
 import { codemod as docsTestServices } from './docs-test-services';
+import { codemod as docsVisualQuality } from './docs-visual-quality';
 import { codemod as docsWorkerCommands } from './docs-worker-commands';
 import { codemod as e2eSuiteFloor } from './e2e-suite-floor';
 import { codemod as formatEditedHook } from './format-edited-hook';
@@ -31,6 +33,7 @@ import { codemod as metricsProbeHealthz } from './metrics-probe-healthz';
 import { codemod as migrateJobOrdered } from './migrate-job-ordered';
 import { codemod as reproGitignore } from './repro-gitignore';
 import { codemod as runtimePin } from './runtime-pin';
+import { codemod as settingsKitAllow } from './settings-kit-allow';
 import { codemod as solidFloor } from './solid-floor';
 import { codemod as testPorts } from './test-ports';
 import { codemod as testServices } from './test-services';
@@ -77,4 +80,7 @@ export const CODEMODS: readonly Codemod[] = [
   docsManyAgents,
   docsWorkerCommands,
   mergeDrivers,
+  agentKit,
+  docsVisualQuality,
+  settingsKitAllow,
 ];

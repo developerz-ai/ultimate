@@ -136,6 +136,7 @@ export function autoScroller(
 /** The browser's frame clock, read only when a drag starts — a server render never gets here. */
 export function browserScrollEnv(): ScrollEnv {
   return {
+    // why: the drag's edge scroll, already stopped by reduced motion and the gesture's end.
     frame: (run) => requestAnimationFrame(run),
     cancelFrame: (handle) => cancelAnimationFrame(handle),
     now: () => performance.now(),

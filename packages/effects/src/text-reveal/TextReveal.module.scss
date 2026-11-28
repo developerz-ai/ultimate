@@ -1,0 +1,39 @@
+@use '@ultimat3/ui/tokens' as t;
+
+@keyframes reveal-in {
+  from {
+    opacity: 0;
+    filter: blur(0.25em);
+    transform: translateY(0.4em);
+  }
+}
+
+.root {
+  display: inline-block;
+  position: relative;
+}
+
+// The one node assistive tech reads; the split below is its visual twin and `aria-hidden`.
+.text {
+  @include t.visually-hidden;
+}
+
+.piece {
+  display: inline-block;
+  white-space: pre;
+  animation: reveal-in t.duration(slow) t.easing(out) both;
+  animation-delay: calc(var(--i) * var(--reveal-step, 40ms));
+}
+
+.rest {
+  white-space: pre-wrap;
+}
+
+.line {
+  display: block;
+}
+
+// A paused page shows the finished text, not a half-faded one.
+:global(html[data-motion='paused']) .piece {
+  animation: none;
+}

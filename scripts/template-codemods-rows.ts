@@ -24,8 +24,95 @@ const PROCESSES_COMPOSE_WHY =
 const PROCESSES_HELM_WHY =
   'new charts pin ULTIMATE_PROCESSES=1 on every role; an existing chart sets no CPU limit, so auto already resolves to one process per pod, and the pin only states it, so x upgrade leaves the chart alone';
 
+const SHAPE_ONLY_WHY =
+  "x new --shape output only; an existing app's pages, styles and package.json are its own code and keep working, so x upgrade leaves them alone";
+
+const KIT_MANAGED_WHY =
+  'a managed agent-kit file: the installed `x kit`, which every hop runs after its codemods, writes it, and `x verify` refuses an edit in place (X_KIT_DRIFT)';
+
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...TEMPLATE_CODEMOD_HISTORY,
+  ...['data', 'server', 'shape', 'web'].map((name) => ({
+    template: `.claude/agents/${name}.md`,
+    since: '31.52.0',
+    codemod: 'agent-kit',
+  })),
+  ...[
+    '.claude/agents/audit.md',
+    '.claude/kit.json',
+    '.claude/skills/design-research/SKILL.md',
+    '.claude/skills/feature/SKILL.md',
+    '.claude/skills/planx/SKILL.md',
+    '.claude/skills/upgrade/SKILL.md',
+    '.claude/skills/verify/SKILL.md',
+  ].map((template) => ({ template, since: '31.52.0', none: KIT_MANAGED_WHY })),
+  {
+    template: '.claude/README.md',
+    since: '31.52.0',
+    none: "the README describes the kit; it is prose beside files the app may delete, and an existing app's copy stays true of the files it holds, so x upgrade leaves it alone",
+  },
+  ...['apps/web/DESIGN.md', 'packages/cli/src/templates/scaffold-design.ts'].map((template) => ({
+    template,
+    since: '31.52.0',
+    none: 'x new writes an app-owned DESIGN.md stub the design-research skill fills; it is never managed, so an existing app writes its own when it wants one',
+  })),
+  {
+    template: 'packages/cli/src/templates/motion-scale.ts',
+    since: '31.52.0',
+    none: 'the shared duration/easing snap table is embedded in the new report-only guards and read by x design research; it writes no app file',
+  },
+  ...['guards/shipped.json', 'packages/cli/src/templates/scaffold-guards.ts'].map((template) => ({
+    template,
+    since: '31.52.0',
+    none: 'the five new guards run built in as warnings in an existing app; only x new writes their error rows into guards/shipped.json, because a stricter row written on upgrade would be a break on 31.x',
+  })),
+  ...['x.verify.json', 'packages/cli/src/templates/scaffold-verify-floor.ts'].map((template) => ({
+    template,
+    since: '31.52.0',
+    none: 'x new now declares agentsMdMaxBytes for the larger brief it writes; an existing app keeps its own x.verify.json and the AGENTS.md it holds, whose size the gate already judges against that floor, so x upgrade leaves it alone',
+  })),
+  ...[
+    'apps/web/app/dashboard/page.tsx',
+    'apps/web/app/dashboard/page.test.ts',
+    'apps/web/app/dashboard/dashboard-motion.island.tsx',
+    'apps/web/app/dashboard/dashboard-motion.island.test.ts',
+    'apps/web/app/dashboard/dashboard-motion.island.states.ts',
+    'apps/web/app/dashboard/dashboard-motion.module.scss',
+    'apps/web/app/posts/page.module.scss',
+    'apps/web/app/posts/[id]/page.module.scss',
+    'apps/web/site/page.tsx',
+    'apps/web/site/page.module.scss',
+    'apps/web/site/landing-motion.test.ts',
+    'apps/web/site/posts/[slug]/page.module.scss',
+    'apps/web/shared/site-frame.module.scss',
+    'package.json',
+    'packages/i18n/catalogs/en.json',
+    'packages/cli/src/templates/shapes/blog.ts',
+    'packages/cli/src/templates/shapes/blog-site.ts',
+    'packages/cli/src/templates/shapes/content.ts',
+    'packages/cli/src/templates/shapes/content-site.ts',
+    'packages/cli/src/templates/shapes/dashboard.ts',
+    'packages/cli/src/templates/shapes/dashboard-detail.ts',
+    'packages/cli/src/templates/shapes/dashboard-motion.ts',
+    'packages/cli/src/templates/shapes/landing-motion.ts',
+    'packages/cli/src/templates/shapes/saas.ts',
+  ].map((template) => ({ template, since: '31.52.0', none: SHAPE_ONLY_WHY })),
+  {
+    template: 'packages/cli/src/templates/island.ts',
+    since: '31.52.0',
+    none: 'written only by x g island --effect',
+  },
+  { template: '.claude/settings.json', since: '31.52.0', codemod: 'settings-kit-allow' },
+  {
+    template: 'packages/cli/src/templates/scaffold-claude.ts',
+    since: '31.52.0',
+    codemod: 'settings-kit-allow',
+  },
+  ...['AGENTS.md', 'CLAUDE.md', 'packages/cli/src/templates/scaffold-docs.ts'].map((template) => ({
+    template,
+    since: '31.52.0',
+    codemod: 'docs-visual-quality',
+  })),
   {
     template: 'biome.json',
     since: '31.50.0',

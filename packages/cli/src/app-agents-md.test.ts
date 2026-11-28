@@ -15,7 +15,7 @@ import { checkAgentsMd } from './app-agents-md';
 import { VERIFY_STEPS } from './cmd-verify';
 import { exec } from './exec';
 import { scaffoldVariants } from './scaffold-fixture';
-import { readVerifyFloor } from './verify-floor';
+import { parseVerifyFloor, readVerifyFloor, VERIFY_FLOOR_FILE } from './verify-floor';
 
 const withRoot = async (run: (root: string) => Promise<void>): Promise<void> => {
   const root = await mkdtemp(join(tmpdir(), 'x-agents-md-'));
@@ -136,7 +136,10 @@ describe('the manifest step runs it', () => {
         await Bun.write(join(root, AGENTS_MD_FILENAME), agents?.contents ?? '');
         // And no warning either: the conventions table `x new` writes names routes and entities,
         // and `@ultimat3/manifest`'s heuristic now tells a conventions table from a facts one.
-        expect(await checkAgentsMd(root)).toEqual({ findings: [], warnings: [] });
+        // Against the budget the scaffold itself declares, as the gate reads it.
+        const floor = variant.files.find((file) => file.path === VERIFY_FLOOR_FILE);
+        const declared = parseVerifyFloor(String(floor?.contents ?? '{}')).agentsMdMaxBytes;
+        expect(await checkAgentsMd(root, declared)).toEqual({ findings: [], warnings: [] });
       });
     },
   );

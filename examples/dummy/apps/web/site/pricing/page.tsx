@@ -19,6 +19,7 @@ import {
 import { useT } from '@postly/i18n';
 import { PlanBadge } from '@postly/ui';
 import { derivePath } from '@ultimat3/action';
+import { SpotlightCard } from '@ultimat3/effects';
 import { defineRoute, island } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
 import type { JSX } from 'solid-js';
@@ -137,6 +138,9 @@ export const config = defineRoute({
   // action as it is written — raised 30kb → 31.5kb.
   // measured: 32279 B (2026-11-07, sweep 2; x build --target static) — why: the contact-sales island's
   // typed client decodes the record envelope's `order` (+63 B over the shared transport).
+  // measured: 27968 B (2026-11-28; x build --target static) — why: unchanged, 0 B for
+  // `SpotlightCard`: the plan cards use its CSS tier (a highlight on hover and keyboard focus is
+  // stylesheet), and the contact island's 26,171 B + the interaction runtime are the whole figure.
   budget: { js: '32kb' },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
@@ -190,21 +194,26 @@ export function Page(props: { readonly query: { currency?: string } }): JSX.Elem
       <ul class={styles.plans}>
         <For each={PLAN_CODES}>
           {(code) => (
-            <li class={styles.plan}>
-              <PlanBadge
-                plan={code}
-                price={priceOf(code, currency())}
-                seats={PLAN_CATALOG[code].seats}
-                withDescription
-              />
-              {/*
-                The enquiry below, not `/signup?plan=…`: nothing serves a signup route, so the
-                query string carried a plan to a 404. The form is on this page and names the same
-                plan list, so the fragment is a target that exists with scripting off.
-              */}
-              <a class={styles.cta} href={`#${CONTACT_FORM_ID}`}>
-                {t('site.pricing.cta', { plan: t(`plans.${code}.name`) })}
-              </a>
+            <li class={styles.planItem}>
+              {/* The CSS tier of `SpotlightCard`: the highlight lights on hover and on keyboard
+                  focus with 0 B of script — the pointer-following half needs an island, and a
+                  plan list is server-rendered text. */}
+              <SpotlightCard class={styles.plan}>
+                <PlanBadge
+                  plan={code}
+                  price={priceOf(code, currency())}
+                  seats={PLAN_CATALOG[code].seats}
+                  withDescription
+                />
+                {/*
+                  The enquiry below, not `/signup?plan=…`: nothing serves a signup route, so the
+                  query string carried a plan to a 404. The form is on this page and names the same
+                  plan list, so the fragment is a target that exists with scripting off.
+                */}
+                <a class={styles.cta} href={`#${CONTACT_FORM_ID}`}>
+                  {t('site.pricing.cta', { plan: t(`plans.${code}.name`) })}
+                </a>
+              </SpotlightCard>
             </li>
           )}
         </For>

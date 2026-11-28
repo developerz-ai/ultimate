@@ -1,11 +1,10 @@
 // The `.claude/` directory `x new` writes: the harness half of what an agent reads, next to the
-// `AGENTS.md`/`CLAUDE.md` half that already shipped. Every file lands in the app's own repo, shows
-// up in the scaffold's diff and is deletable in one line — the framework ships the mechanism, the
-// app keeps or replaces the convention. Nothing here reaches outside the project directory.
+// `AGENTS.md`/`CLAUDE.md` half. The skills and agents are the managed kit (`../kit/registry.ts`):
+// `x kit` re-renders them and the gate refuses an edit in place, so an app's own variant lives
+// under `app-*`. Settings, the hook and this README are the app's from the moment they land.
 
+import { KIT_MARKER, kitFiles, kitMarkerFile } from '../kit/registry';
 import type { GeneratedFile, NameSet } from './naming';
-import { claudeAgentFiles } from './scaffold-claude-agents';
-import { claudeCommandFiles } from './scaffold-claude-commands';
 import { claudeHookFile, HOOK_COMMAND, HOOK_PATH } from './scaffold-claude-hook';
 
 /**
@@ -16,6 +15,9 @@ import { claudeHookFile, HOOK_COMMAND, HOOK_PATH } from './scaffold-claude-hook'
  *
  * The read-only commands the app's own docs tell an agent to run (`x impact` before every edit,
  * `x graph`, `x affected`, `x exercise`, `x mcp tools`) are here too: a prompt on one is a stall.
+ * So are the ones the kit's skills run: `x shot` (the `web` agent and `design-research`), `x kit`
+ * (writes only managed `.claude/` files) and `x upgrade --dry-run` (writes nothing) — never the hop
+ * itself, which moves pins and installs.
  *
  * The hook is the one part of the bundle that ACTS: `--write` rewrites the file just edited, in
  * place. JSON takes no comment (the lesson `scaffold-repo.ts`'s `biome.json` already paid for), so
@@ -57,6 +59,9 @@ const settings = (): string => `{
       "Bash(bunx x db gen:*)",
       "Bash(bunx x db migrate:*)",
       "Bash(bunx x db branch:*)",
+      "Bash(bunx x shot:*)",
+      "Bash(bunx x kit:*)",
+      "Bash(bunx x upgrade --dry-run:*)",
       "Bash(git status)",
       "Bash(git diff:*)",
       "Bash(git log:*)"
@@ -81,46 +86,54 @@ const settings = (): string => `{
 
 const readme = (app: NameSet): string => `# .claude/
 
-What Claude Code reads when it works on ${app.kebab}. Written by \`x new\`, owned by you from the
-moment it lands: edit any file, or delete any file, and nothing in the app breaks. Nothing here is
-enforced by \`bunx x verify\`, and nothing here reaches outside this repository.
+What Claude Code reads when it works on ${app.kebab}. Two kinds of file live here:
 
-One thing in it does *write*: the \`PostToolUse\` hook in \`settings.json\` reformats each file an agent
-edits, in place, the moment it is saved. That is the only thing here that touches your code on its
-own — see [The hook](#the-hook), and delete the \`hooks\` block if you would rather format by hand.
+| Kind | Paths | Who owns it |
+|---|---|---|
+| **managed** | \`skills/{feature,planx,verify,upgrade,design-research}/SKILL.md\`, \`agents/{shape,data,server,web,audit}.md\` | the framework: \`bunx x kit\` writes them, \`bunx x upgrade\` refreshes them |
+| **yours** | \`settings.json\`, \`hooks/\`, \`kit.json\`, this README, anything named \`app-*\` | you, from the moment it lands |
+
+**The managed kit is enforced by \`bunx x verify\`.** Edit a managed file in place and the gate
+fails with \`X_KIT_DRIFT\`; its fix, \`bunx x kit\`, puts the shipped text back. To change one, copy
+it to \`skills/app-<name>/SKILL.md\` or \`agents/app-<name>.md\`, then add the managed name to
+\`"off"\` in \`${KIT_MARKER}\`. A file of yours that takes a managed name is \`X_KIT_SHADOWED\`.
+\`${KIT_MARKER}\` is the opt-in: with it, kit findings are errors; without it, one warning.
+
+One thing here *writes*: the \`PostToolUse\` hook in \`settings.json\` reformats each file an agent
+edits, in place, the moment it is saved — see [The hook](#the-hook).
 
 | Path | What it costs | When you pay it |
 |---|---|---|
 | \`settings.json\` | nothing in context | read once per session; the hook runs per edit |
 | \`hooks/format-edited.ts\` | nothing in context | runs after each edit, on that one file |
-| \`commands/*.md\` | nothing until invoked | the file is read when you type \`/<name>\` |
+| \`skills/*/SKILL.md\` | one \`description\` line each | the body is read when the skill is invoked |
 | \`agents/*.md\` | one \`description\` line each | the body is read only when that agent is dispatched |
-
-So the whole bundle is three description lines of standing cost. The rest is paid on use.
 
 ## What is here
 
 | File | For |
 |---|---|
-| \`commands/feature.md\` | \`/feature\` — build or fix one thing end to end, gated on \`bun run verify\` |
-| \`commands/planx.md\` | \`/planx\` — write a plan to \`docs/plans/\` for another agent to execute |
-| \`commands/verify.md\` | \`/verify\` — run the gate and fix what it reports |
+| \`skills/feature\` | \`/feature\` — a hive in this one checkout: path-disjoint slices, one gate, one PR, done when merged |
+| \`skills/planx\` | \`/planx\` — a plan directory under \`docs/plans/\`: overview, slices, \`status.yml\` |
+| \`skills/verify\` | \`/verify\` — run the gate; check each \`fix:\` line's source, scope and effect before running it |
+| \`skills/upgrade\` | \`/upgrade\` — one major per hop, the report read, the kit refreshed, the gate |
+| \`skills/design-research\` | \`/design-research\` — measure a reference, write \`apps/web/DESIGN.md\`, build, compare |
 | \`agents/shape.md\` | the idea-stage pass: which primitive, which slice, or "do not build this" |
 | \`agents/data.md\` | \`packages/db/\`, \`entity.ts\`, \`repo.ts\` |
 | \`agents/server.md\` | actions, mutators, queries, jobs, tasks, policies, \`apps/web/api/\` |
-| \`agents/web.md\` | \`apps/web/site/\`, pages, \`packages/ui/\`, tokens, i18n |
+| \`agents/web.md\` | \`apps/web/site/\`, pages, \`packages/ui/\`, tokens, i18n — reads \`apps/web/DESIGN.md\` first |
+| \`agents/audit.md\` | read-only review of the paths it is given: \`file:line\` and the scenario that fails |
 
 The agents are scoped by **boundary**, not by role — each one's brief is a file set it may write and
 a line it may not cross. That is what makes two of them safe to run at once.
 
 ## What is deliberately not here
 
-**No command that wraps \`bunx x g\`.** \`bunx x g <kind> <name>\` already is that command, and \`bunx x g --help\` is
-the only list of kinds — a slash command restating it is a second copy that drifts the first time a
-kind is added.
+**No \`commands/\`.** A skill of the same name silently shadows a command, so there is one way:
+skills.
 
-**No size budget on this directory.** How much your app writes down is your convention, not the
-framework's.
+**No skill that wraps \`bunx x g\`.** \`bunx x g <kind> <name>\` already is that command, and
+\`bunx x g --help\` is the only list of kinds.
 
 ## The hook
 
@@ -141,13 +154,13 @@ queues for the machine's memory, which \`bun run typecheck\` does not.
 \`AGENTS.md\` at the repo root — the conventions. \`.claude/\` is only the harness that reads them.
 `;
 
-/** The agent harness for a new app: three commands, four boundary agents, settings, and a map. */
+/** The agent harness for a new app: settings, the hook, a map, the kit marker and the managed kit. */
 export function claudeFiles(app: NameSet): readonly GeneratedFile[] {
   return [
     { path: '.claude/README.md', contents: readme(app) },
     { path: '.claude/settings.json', contents: settings() },
     claudeHookFile(),
-    ...claudeCommandFiles(app),
-    ...claudeAgentFiles(app),
+    kitMarkerFile(),
+    ...kitFiles(app),
   ];
 }

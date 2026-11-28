@@ -7,6 +7,9 @@ import { names } from '../templates';
 import { appFiles } from '../templates/scaffold-app';
 import { SHIPPED_GUARD_NAMES } from '../templates/scaffold-guards';
 import { repoFiles } from '../templates/scaffold-repo';
+import { frozenAgentFiles } from './agent-kit-frozen-agents';
+import { frozenCommandFiles } from './agent-kit-frozen-commands';
+import { frozenReadme } from './agent-kit-frozen-readme';
 import { AGENT_TOOLS } from './agents-dev-mcp';
 import { BIOME_EDITS } from './biome-no-default-export';
 import { BUNFIG_EDITS } from './bunfig-island-coverage';
@@ -30,6 +33,12 @@ for (const file of [
 ]) {
   if (typeof file.contents === 'string') today[file.path] = file.contents;
 }
+
+// The files the kit rewrote are the released ones: this fixture rebuilds an app from before the kit.
+for (const file of [...frozenAgentFiles(names('fxapp')), ...frozenCommandFiles(names('fxapp'))]) {
+  if (typeof file.contents === 'string') today[file.path] = file.contents;
+}
+today['.claude/README.md'] = frozenReadme(names('fxapp'));
 
 export const undo = (text: string, edits: readonly SnippetEdit[]): string => {
   let out = text;

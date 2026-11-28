@@ -539,6 +539,50 @@ import { iconCircleAlert } from '@ultimat3/ui/icons/circle-alert';
 Upstream bump: raise `LUCIDE_VERSION` in `src/icons/build-icons.ts`, run `bun run icons`,
 commit the diff. There is no hand-edited icon in the package.
 
+## Motion
+
+One engine — the browser's WAAPI — driven by the motion token scale, from the subpath
+`@ultimat3/ui/motion` (a barrel-only island pays nothing for it). Full guide and the
+React/Motion mapping: [`wiki/Motion.md`](../../wiki/Motion.md).
+
+```tsx
+import { Card } from '@ultimat3/ui';
+import { inView, layout, Presence, stagger } from '@ultimat3/ui/motion';
+
+declare const open: () => boolean;
+declare const list: HTMLUListElement;
+declare const cards: HTMLElement[];
+declare const reorder: () => void;
+
+export const panel = (
+  <Presence when={open()} easing="snappy">
+    <Card>Saved</Card>
+  </Presence>
+);
+inView(list, () => {
+  stagger([...list.children], [{ opacity: 0, y: '0.5rem' }, { opacity: 1, y: 0 }]);
+});
+layout(cards, reorder); // FLIP: every card glides to where the reorder put it
+```
+
+| Export | Job |
+|---|---|
+| `motionTiming(duration, easing?)` | `{ duration, easing }` read from the RESOLVED `--duration-*` / `--easing-*` — `defineTheme({ motion })` applies; stilled to `0.01` ms, never 0 |
+| `animate(el, frames, options?)` | typed frames (`x`, `y`, `scale`, `rotate`, `opacity`, `filter`, `clipPath`) → WAAPI; `{ finished, cancel, reverse }`; no layout property |
+| `stagger(els, frames, { each, limit })` | one beat (a duration rung) between starts, capped |
+| `inView(el, onEnter, { once, margin, amount })` | one shared `IntersectionObserver` per options; `onEnter` may return a leave callback |
+| `scrollLinked(el, frames, { source, axis, range })` | scroll and view timelines (the engine behind `animation-timeline`); unsupported → the element rests |
+| `layout(els, change, { scale })` | FLIP: every read, the change, every read, then transforms |
+| `Presence` · `PresenceList` | enter/exit for one value or a keyed list; each owns its wrapper element; an exit is held until it finishes |
+| `frameLoop(tick, { el })` | the one per-frame loop; stops on reduced motion, the reader's pause, a hidden tab, an offscreen `el` |
+| `motionAllowed()` · `onMotionChange(fn)` | may the page move: `prefers-reduced-motion` and `html[data-motion="paused"]` |
+| `springs` · `springLinear(spec)` | spring rungs `gentle` · `snappy` · `bouncy` as committed `linear()` curves (`--easing-<name>`, `t.easing(snappy)`), and the generator |
+
+`MotionToggle` (on the barrel) is the WCAG 2.2.2 pause: it writes `data-motion="paused"` on `<html>`,
+which stills every CSS animation and transition (`theme.scss`) and every script above. In SCSS,
+`@include t.view-transition-name(post-#{$id})` names an element for render's route view
+transition.
+
 ## Works without JavaScript
 
 These components are interactive without a client runtime, because the platform already

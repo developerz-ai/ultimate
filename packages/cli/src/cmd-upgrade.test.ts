@@ -37,6 +37,7 @@ describe('unit · x upgrade, the walk', () => {
       'x verify --only boundaries',
       'x g',
       'x verify --only boundaries',
+      'x kit',
       'x exercise',
       'x verify',
     ]);
@@ -294,6 +295,7 @@ describe('unit · x upgrade, on stderr while it runs', () => {
       'manifest',
       'doctor',
       'guards',
+      'kit',
       'exercise',
       'verify',
     ]);

@@ -1,0 +1,23 @@
+@use '../tokens' as t;
+
+// A quiet text control: it sits in a footer or a settings row, never competing with content.
+.toggle {
+  @include t.transition(color);
+
+  display: inline-flex;
+  align-items: center;
+  padding-block: t.space(1);
+  padding-inline: t.space(3);
+  border: t.stroke(hairline) solid t.role('line');
+  border-radius: t.radius(pill);
+  background: transparent;
+  color: t.role('fg-muted');
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    color: t.role('fg');
+  }
+
+  @include t.focus-ring;
+}

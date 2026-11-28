@@ -395,6 +395,11 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x tasks list --json   # then name the task: x tasks run <name> --production --json',
   X_BOUNDARY_DEV_IMPORT:
     'x verify --only boundaries --json   # names the module and its import: move test support to apps/web/test/, which no role loads, or drop the import from a module a role needs',
+  X_DESIGN_URL_REFUSED: 'bunx x design research https://<public-host>/<path>',
+  X_DESIGN_REFERENCE_UNREACHABLE: 'bunx x design research <url> --timeout 60000',
+  X_SHOT_AGAINST_MISSING: 'bunx x design research <url>',
+  X_KIT_DRIFT: 'bunx x kit',
+  X_KIT_SHADOWED: 'git mv .claude/skills/<name> .claude/skills/app-<name>',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

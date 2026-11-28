@@ -1,0 +1,53 @@
+// The frame every background shares: a root that stacks, a decorative layer under the content, a
+// canvas that shows only while a canvas backend draws, and the offscreen pause a CSS animation
+// obeys (`data-effect-paused`). `MotionToggle`'s `html[data-motion='paused']` needs no rule here:
+// ui's `_motion.scss` guards land every animation on its end state, which is frame 0 (no fill).
+
+/// The entry's root: its own stacking context, so the layer never escapes behind the page.
+@mixin root {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+}
+
+/// The decorative layer, under the content (an earlier positioned sibling paints first).
+@mixin layer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  pointer-events: none;
+}
+
+/// The content above the layer.
+@mixin content {
+  position: relative;
+}
+
+/// The canvas fills the layer and is shown only while a canvas backend owns it; under `static`
+/// and `css` the server frame beneath is what the reader sees.
+@mixin canvas($root) {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  visibility: hidden;
+
+  #{$root}:is([data-effect-backend='canvas'], [data-effect-backend='webgl2']) & {
+    visibility: visible;
+  }
+}
+
+/// The server frame under a canvas: hidden while a canvas backend draws, so a canvas that clears
+/// to transparent (tile gaps, an app's own `draw`) never shows a stale frame through it.
+@mixin frame($root) {
+  #{$root}:is([data-effect-backend='canvas'], [data-effect-backend='webgl2']) & {
+    visibility: hidden;
+  }
+}
+
+/// Holds this element's CSS animation while its root is offscreen or in a hidden tab.
+@mixin pausable($root) {
+  #{$root}[data-effect-paused] & {
+    animation-play-state: paused;
+  }
+}

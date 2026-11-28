@@ -14,7 +14,7 @@ import { useT } from '@postly/i18n';
 import { assertCoded, useContext } from '@ultimat3/core';
 import { isEnabled } from '@ultimat3/flags';
 import type { KnownPermission } from '@ultimat3/policy';
-import { defineRoute } from '@ultimat3/render';
+import { defineRoute, island } from '@ultimat3/render';
 import {
   deltaOf,
   Gauge,
@@ -35,6 +35,16 @@ import { runHealthEnabled } from './health-flag';
 import { healthRange } from './health-range';
 import type { RunHealthRow } from './health-view';
 import { eventTrend, failureHalves, heatRows, successPercent } from './health-view';
+
+/**
+ * The tiles' figures, counted up in the browser: wraps the grid, takes each `data-stat` number the
+ * server drew over with a `CountUp`. Declared ABOVE `defineRoute` so the route can drain it;
+ * `props` are the browser's keys.
+ */
+const Counts = island({
+  src: './health-counts.island.tsx',
+  props: ['locale', 'counts'],
+});
 
 /** The layout's update banner — an island of THIS route, so it is declared here. */
 const Banner = updateBannerIsland('../../update-banner.island.tsx');
@@ -75,7 +85,13 @@ export const config = defineRoute({
   // (31,904 → 32,738): a streamed soft visit scrolls to a fragment its hole brings, holds its
   // recovery while the next visit is on its way, reloads a fragment URL it must load for real,
   // and drops keep-alive frames as they arrive. Raised 35.1kb → 36kb.
-  budget: { js: '36kb' },
+  // measured: 86960 B (2026-11-28; x build --target static, against 36,835) — why: +50,125 B, the
+  // counts island (`health-counts.island.tsx`) that counts each tile's figure up with `CountUp`
+  // from `@ultimat3/effects`: Solid's client runtime, `CountUp` over `frameLoop`, the `UiProvider`
+  // that gives it the locale, and core's error titles every island carries. The figures are the
+  // server's text without it, so a reader who stills motion pays the bytes for nothing; the
+  // island is the only way a count animates. Raised 36kb → 85.5kb.
+  budget: { js: '85.5kb' },
   load: async ({ url }): Promise<RunHealthData> => {
     // The kill switch first: switched off, the page does not exist and neither read is sent.
     assertCoded(
@@ -134,32 +150,37 @@ export function Page(props: { readonly data: RunHealthData }): JSX.Element {
         </header>
         <TimeRangePicker range={range} timeZone={zone} label={t('app.runs.health.range.label')} />
         {/* 10rem: two tiles side by side on a phone, four across a monitor. */}
-        <Grid minColumn="10rem">
-          <StatTile
-            stat="runs-total"
-            label={t('app.runs.health.total')}
-            value={count.format(props.data.runs.length)}
-          />
-          <StatTile
-            stat="runs-failed"
-            label={t('app.runs.health.failed')}
-            value={count.format(failures.newer)}
-            delta={deltaOf(failures.newer, failures.older, { absoluteBelow: 10 })}
-            goodWhen="down"
-            hint={t('app.runs.health.failedHint')}
-          />
-          <Gauge
-            label={t('app.runs.health.success')}
-            value={success}
-            max={100}
-            target={95}
-            tone="danger"
-            thresholds={[
-              { at: 80, tone: 'warning' },
-              { at: 95, tone: 'success' },
-            ]}
-          />
-        </Grid>
+        <Counts
+          locale={t.locale}
+          counts={{ 'runs-total': props.data.runs.length, 'runs-failed': failures.newer }}
+        >
+          <Grid minColumn="10rem">
+            <StatTile
+              stat="runs-total"
+              label={t('app.runs.health.total')}
+              value={count.format(props.data.runs.length)}
+            />
+            <StatTile
+              stat="runs-failed"
+              label={t('app.runs.health.failed')}
+              value={count.format(failures.newer)}
+              delta={deltaOf(failures.newer, failures.older, { absoluteBelow: 10 })}
+              goodWhen="down"
+              hint={t('app.runs.health.failedHint')}
+            />
+            <Gauge
+              label={t('app.runs.health.success')}
+              value={success}
+              max={100}
+              target={95}
+              tone="danger"
+              thresholds={[
+                { at: 80, tone: 'warning' },
+                { at: 95, tone: 'success' },
+              ]}
+            />
+          </Grid>
+        </Counts>
         <HeatStrip label={t('app.runs.health.strip')} showCaption rows={rows} />
         <LineChart
           label={t('app.runs.health.trend')}

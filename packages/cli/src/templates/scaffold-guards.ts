@@ -28,23 +28,32 @@
 // Two more are about the REPO: an `await` per turn of a loop, REPORT ONLY (`severity: 'warning'`)
 // until the apps are clean of it, and a `.all()` that says no bound — failing the gate in an app
 // scaffolded from 31.23 on, while an older app keeps the report-only copy it was given. One is
-// about the ENVIRONMENT: a variable is read only once `app.config.ts` declares it.
+// about the ENVIRONMENT: a variable is read only once `app.config.ts` declares it. Five are about
+// MOTION and EFFECTS (`motion-adapter`, `raw-frame-loop`, `effect-without-fallback`, and the SCRIPT
+// halves of two stylesheet rules, `raw-motion-script` and `animated-layout-script`): report-only
+// by their own declaration, since a stricter rule on `main` is a break; `x new` writes their
+// `"error"` rows into `guards/shipped.json` (`STRICT_FROM_NEW`).
 
 import { SHIPPED_GUARD_NAMES as NAMES, type ShippedGuardName } from '../guards-shipped-names';
 import { animatedLayoutPropertyGuardFiles } from './guard-animated-layout-property';
+import { animatedLayoutScriptGuardFiles } from './guard-animated-layout-script';
 import { bareErrorGuardFiles } from './guard-bare-error';
+import { effectWithoutFallbackGuardFiles } from './guard-effect-without-fallback';
 import { errorDeclaredGuardFiles } from './guard-error-declared';
 import { focusVisibleGuardFiles } from './guard-focus-visible';
 import { imageDimensionsGuardFiles } from './guard-image-dimensions';
 import { islandMountClearsGuardFiles } from './guard-island-mount-clears';
 import { islandWithoutStatesGuardFiles } from './guard-island-without-states';
+import { motionAdapterGuardFiles } from './guard-motion-adapter';
 import { nativeConfirmGuardFiles } from './guard-native-confirm';
 import { rawBreakpointGuardFiles } from './guard-raw-breakpoint';
 import { rawColourGuardFiles } from './guard-raw-colour';
 import { rawFetchGuardFiles } from './guard-raw-fetch';
+import { rawFrameLoopGuardFiles } from './guard-raw-frame-loop';
 import { rawIntervalGuardFiles } from './guard-raw-interval';
 import { rawLengthGuardFiles } from './guard-raw-length';
 import { rawMotionGuardFiles } from './guard-raw-motion';
+import { rawMotionScriptGuardFiles } from './guard-raw-motion-script';
 import { rawShadowGuardFiles } from './guard-raw-shadow';
 import { rawZIndexGuardFiles } from './guard-raw-z-index';
 import { repoAwaitInLoopGuardFiles } from './guard-repo-await-in-loop';
@@ -68,19 +77,24 @@ import type { GeneratedFile } from './naming';
  */
 const SHIPPED: Readonly<Record<ShippedGuardName, () => readonly GeneratedFile[]>> = {
   'animated-layout-property': animatedLayoutPropertyGuardFiles,
+  'animated-layout-script': animatedLayoutScriptGuardFiles,
   'bare-error': bareErrorGuardFiles,
+  'effect-without-fallback': effectWithoutFallbackGuardFiles,
   'error-declared': errorDeclaredGuardFiles,
   'focus-visible': focusVisibleGuardFiles,
   'image-dimensions': imageDimensionsGuardFiles,
   'island-mount-clears': islandMountClearsGuardFiles,
   'island-without-states': islandWithoutStatesGuardFiles,
+  'motion-adapter': motionAdapterGuardFiles,
   'native-confirm': nativeConfirmGuardFiles,
   'raw-breakpoint': rawBreakpointGuardFiles,
   'raw-colour': rawColourGuardFiles,
   'raw-fetch': rawFetchGuardFiles,
+  'raw-frame-loop': rawFrameLoopGuardFiles,
   'raw-interval': rawIntervalGuardFiles,
   'raw-length': rawLengthGuardFiles,
   'raw-motion': rawMotionGuardFiles,
+  'raw-motion-script': rawMotionScriptGuardFiles,
   'raw-shadow': rawShadowGuardFiles,
   'raw-z-index': rawZIndexGuardFiles,
   'repo-await-in-loop': repoAwaitInLoopGuardFiles,
@@ -95,6 +109,18 @@ const SHIPPED: Readonly<Record<ShippedGuardName, () => readonly GeneratedFile[]>
   'untranslated-string': untranslatedStringGuardFiles,
   'unzoned-date': unzonedDateGuardFiles,
 };
+
+/**
+ * Guards that ship report-only (`severity: 'warning'`) to every app that predates them and fail
+ * a new one: `x new` writes their `"error"` row. A guard that is strict for everyone needs no row.
+ */
+const STRICT_FROM_NEW: readonly ShippedGuardName[] = [
+  'animated-layout-script',
+  'effect-without-fallback',
+  'motion-adapter',
+  'raw-frame-loop',
+  'raw-motion-script',
+];
 
 /** The names, in the order every list of them is shown. */
 export const SHIPPED_GUARD_NAMES: readonly string[] = NAMES;
@@ -176,5 +202,8 @@ export const shippedGuardTest = (name: string): string | undefined => {
  * that and whose rows are its severities. The app's own guards join it from `x g guard <name>`.
  */
 export const scaffoldGuardFiles = (): readonly GeneratedFile[] => [
-  { path: 'guards/shipped.json', contents: '{\n  "severity": {}\n}\n' },
+  {
+    path: 'guards/shipped.json',
+    contents: `${JSON.stringify({ severity: Object.fromEntries(STRICT_FROM_NEW.map((name) => [name, 'error'])) }, null, 2)}\n`,
+  },
 ];

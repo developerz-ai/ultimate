@@ -22,7 +22,7 @@ import. The CLI wires it.
 | `server-resources.ts` | `resources/read`'s three outcomes, audited, provider in a `try` |
 | `from-action.ts` | action/query → tool; the "one authz system" projection; `toolsFrom` (sweep, skips) vs `toolsListed` (written out, refuses) |
 | `resources.ts` | resources + prompts, stable `ultimate://` URIs |
-| `dev-server.ts` · `dev-ui-*.ts` · `dev-graph-tool.ts` · `dev-agent-tools.ts` | 23 dev tools: 13 here, five `ui.*`, `graph.query`, four agent tools (`db.explain` …). Only an injected `DevHost` |
+| `dev-server.ts` · `dev-ui-*.ts` · `dev-graph-tool.ts` · `dev-agent-tools.ts` | 24 dev tools: 13 here, five `ui.*`, `graph.query`, five agent tools (`db.explain` … `ui.research`). Only an injected `DevHost` |
 | `dev-host.ts` | wires `describe*` from entity/action/query/jobs into a `DevHost` |
 | `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor, and the per-caller rate limit it enforces itself; it keeps the order |
 | `transport-http-answers.ts` | the pre-dispatch answers (401, 403 not-an-agent / origin, 421, 429) and the per-address failure meter |

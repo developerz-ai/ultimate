@@ -18,7 +18,12 @@ import { join } from 'node:path';
 import { planNewApp } from '../cmd-new';
 import { guardFindings, guardPaths } from '../guards';
 import type { Finding } from '../output';
-import { SHIPPED_GUARD_NAMES, scaffoldGuardFiles } from './scaffold-guards';
+import {
+  reportOnlyForm,
+  SHIPPED_GUARD_NAMES,
+  scaffoldGuardFiles,
+  shippedGuardSource,
+} from './scaffold-guards';
 import { linkUi } from './shipped-guard-fixture';
 
 /**
@@ -49,22 +54,27 @@ async function findingsWith(files: Readonly<Record<string, string>>): Promise<re
 
 const codes = (findings: readonly Finding[]): readonly string[] => findings.map((f) => f.code);
 
-/** Every guard the framework ships, spelled out: a twenty-eighth arriving unannounced fails here. */
-const TWENTY_SEVEN: readonly string[] = [
+/** Every guard the framework ships, spelled out: a thirty-third arriving unannounced fails here. */
+const THIRTY_TWO: readonly string[] = [
   'animated-layout-property',
+  'animated-layout-script',
   'bare-error',
+  'effect-without-fallback',
   'error-declared',
   'focus-visible',
   'image-dimensions',
   'island-mount-clears',
   'island-without-states',
+  'motion-adapter',
   'native-confirm',
   'raw-breakpoint',
   'raw-colour',
   'raw-fetch',
+  'raw-frame-loop',
   'raw-interval',
   'raw-length',
   'raw-motion',
+  'raw-motion-script',
   'raw-shadow',
   'raw-z-index',
   'repo-await-in-loop',
@@ -84,8 +94,26 @@ describe('unit · x new · the guards it ships', () => {
   // Built in, never copied: `x new` writes no guard, only the file that opts the app into them —
   // so a fix to a shipped guard reaches the app on its next install, with no hand edit.
   test('guards/ holds no copy of a shipped guard, only guards/shipped.json', () => {
-    expect(SHIPPED_GUARD_NAMES).toEqual([...TWENTY_SEVEN]);
+    expect(SHIPPED_GUARD_NAMES).toEqual([...THIRTY_TWO]);
     expect(scaffoldGuardFiles().map((file) => file.path)).toEqual(['guards/shipped.json']);
+  });
+
+  // A stricter rule on `main` is a break (wiki/Stability.md): the three motion/effect guards are
+  // report-only in an app that predates them, and a NEW app is written the `"error"` row.
+  test('guards/shipped.json gates the report-only motion and effect guards in a new app', () => {
+    const text = scaffoldGuardFiles()[0]?.contents;
+    expect(JSON.parse(String(text))).toEqual({
+      severity: {
+        'animated-layout-script': 'error',
+        'effect-without-fallback': 'error',
+        'motion-adapter': 'error',
+        'raw-frame-loop': 'error',
+        'raw-motion-script': 'error',
+      },
+    });
+    for (const name of Object.keys(JSON.parse(String(text)).severity)) {
+      expect(reportOnlyForm(shippedGuardSource(name) ?? '')).toBe(true);
+    }
   });
 
   // The seam, not a string: what the `boundaries` step runs over a scaffold is every shipped guard,

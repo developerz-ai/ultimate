@@ -1,0 +1,70 @@
+@use '@ultimat3/ui/tokens' as t;
+@use '../effect' as fx;
+
+// Frame 0 of each preset, in CSS. The mesh stops are `0.9 x (1 - smoothstep)` at quarters — the
+// falloff the GLSL computes (`MESH_STOPS` in `shader-background-canvas.ts`, pinned by a test).
+@function mesh-point($i) {
+  $c: var(--fx-c#{$i + 1});
+  @return radial-gradient(
+    ellipse 60% 60% at var(--fx-p#{$i}x) var(--fx-p#{$i}y),
+    rgb($c / 0.9) 0%,
+    rgb($c / 0.759) 25%,
+    rgb($c / 0.45) 50%,
+    rgb($c / 0.141) 75%,
+    rgb($c / 0) 100%
+  );
+}
+
+.root {
+  @include fx.root;
+}
+
+.layer {
+  @include fx.layer;
+}
+
+.content {
+  @include fx.content;
+}
+
+.frame {
+  @include fx.frame('.root');
+  position: absolute;
+  inset: 0;
+}
+
+// Later points paint over earlier ones in the shader; CSS lists its top layer first.
+.mesh {
+  background: mesh-point(2), mesh-point(1), mesh-point(0), rgb(var(--fx-c0));
+}
+
+.grain {
+  background: linear-gradient(var(--fx-angle), rgb(var(--fx-c1)), rgb(var(--fx-c2)));
+}
+
+.dots {
+  background:
+    radial-gradient(circle at center, rgb(var(--fx-c1)) var(--fx-dot), transparent calc(var(--fx-dot) + #{t.stroke(hairline)}))
+      0 0 / var(--fx-pitch) var(--fx-pitch),
+    rgb(var(--fx-c0));
+}
+
+.canvas {
+  @include fx.canvas('.root');
+}
+
+// The SVG grain lies over the gradient and over a Canvas2D frame; the shader draws its own.
+.layer > .grain-overlay {
+  position: absolute;
+  inset: 0;
+
+  .root[data-effect-backend='webgl2'] & {
+    display: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .layer {
+    display: none;
+  }
+}

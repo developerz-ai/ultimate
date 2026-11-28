@@ -79,6 +79,7 @@ const indexPage = (
 ): string => `// The blog index: every published post, newest first. Zero JavaScript.
 
 import { useT } from '@${app.kebab}/i18n';
+import { Aurora } from '@ultimat3/effects';
 import { defineRoute } from '@ultimat3/render';
 import { DateTime } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
@@ -98,6 +99,7 @@ export function Page(props: { readonly data: BlogIndex }): JSX.Element {
   const t = useT();
   return (
     <main class={styles.page}>
+      <Aurora class={styles.aurora} />
       <h1>{t('site.blog.title')}</h1>
       <Show when={props.data.length > 0} fallback={<p>{t('site.blog.empty')}</p>}>
         <ul class={styles.list}>
@@ -269,11 +271,22 @@ unitTest('a slug no published post has is X_NOT_FOUND', async () => {
 const style = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 
 .page {
+  @include tokens.view-transition-name(blog-main);
+
+  position: relative;
+  isolation: isolate;
   display: grid;
   gap: tokens.space(4);
   padding: tokens.space(8);
   background: tokens.role('bg');
   color: tokens.role('fg');
+}
+
+// The backdrop is CSS alone (\`data-effect-backend="css"\`): zero JavaScript, behind the content.
+.aurora {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
 }
 
 .list {
@@ -293,6 +306,8 @@ const style = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 const postStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 
 .page {
+  @include tokens.view-transition-name(blog-main);
+
   display: grid;
   gap: tokens.space(4);
   padding: tokens.space(8);

@@ -1,0 +1,56 @@
+@use '@ultimat3/ui/tokens' as t;
+@use '../effect' as fx;
+
+// One drift cycle, scaled by `--fx-speed`. The base (no transform) is frame 0: the server's frame,
+// and the frame the global reduced-motion rule leaves.
+@keyframes aurora-drift {
+  50% {
+    transform: translate3d(8%, -6%, 0) rotate(8deg) scale(1.15);
+  }
+
+  to {
+    transform: translate3d(-6%, 4%, 0) rotate(-6deg) scale(0.95);
+  }
+}
+
+.root {
+  @include fx.root;
+}
+
+.layer {
+  @include fx.layer;
+  opacity: var(--fx-intensity, 0.5);
+}
+
+.content {
+  @include fx.content;
+}
+
+.band {
+  @include fx.pausable('.root');
+  position: absolute;
+  inset: -25%;
+  animation: aurora-drift calc(#{t.duration(slower)} * 30 / var(--fx-speed, 1)) t.easing(in-out)
+    infinite alternate;
+  will-change: transform;
+}
+
+.band-0 {
+  background: radial-gradient(ellipse 55% 35% at 25% 30%, rgb(var(--fx-c0)), transparent 70%);
+}
+
+.band-1 {
+  background: radial-gradient(ellipse 50% 30% at 70% 25%, rgb(var(--fx-c1)), transparent 70%);
+  animation-delay: calc(#{t.duration(slower)} * -10 / var(--fx-speed, 1));
+}
+
+.band-2 {
+  background: radial-gradient(ellipse 60% 30% at 50% 70%, rgb(var(--fx-c2)), transparent 70%);
+  animation-delay: calc(#{t.duration(slower)} * -20 / var(--fx-speed, 1));
+}
+
+@media (forced-colors: active) {
+  .layer {
+    display: none;
+  }
+}

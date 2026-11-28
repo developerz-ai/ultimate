@@ -238,6 +238,11 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_GUARD_BUILT_IN',
   'X_APP_MIGRATIONS_UNAPPLIED',
   'X_TASK_RUN_PRODUCTION',
+  'X_DESIGN_URL_REFUSED',
+  'X_DESIGN_REFERENCE_UNREACHABLE',
+  'X_SHOT_AGAINST_MISSING',
+  'X_KIT_DRIFT',
+  'X_KIT_SHADOWED',
 ] as const;
 
 /**
@@ -468,6 +473,11 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_APP_MIGRATIONS_UNAPPLIED:
     'a serving role booted over a database missing migrations this build ships',
   X_TASK_RUN_PRODUCTION: 'x tasks run refused to fire a task in production unasked',
+  X_DESIGN_URL_REFUSED: 'design reference URL refused',
+  X_DESIGN_REFERENCE_UNREACHABLE: 'design reference unreachable',
+  X_SHOT_AGAINST_MISSING: 'no reference shot to compare against',
+  X_KIT_DRIFT: 'agent kit file drifted',
+  X_KIT_SHADOWED: 'agent kit name shadowed',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

@@ -2,6 +2,15 @@
 // and its `then:` lines. Data only — `msg()` is the one lookup.
 
 export const UPGRADE_MESSAGES = {
+  // `x kit` and its line in a hop's report: the managed agent files, written by the installed CLI.
+  'cli.kit.current': 'agent kit is current ({count} managed file(s) already as rendered)',
+  'cli.kit.wrote': 'agent kit refreshed: {count} file(s) written',
+  'cli.upgrade.kit':
+    'agent kit: {created} written, {updated} refreshed, {unchanged} already current',
+  'cli.upgrade.kit.file': '  {action} {path}',
+  'cli.upgrade.kit.unreported':
+    'agent kit: the installed CLI has no x kit, so nothing was written — after the next hop run: bunx x kit',
+  'cli.upgrade.kit.finding': 'agent kit, yours to resolve: {code} {at} — fix: {fix}',
   'cli.upgrade.atLatest': 'already at {version}, the newest release',
   'cli.upgrade.atTarget': 'already at {version}; {next} is the next release',
   'cli.upgrade.noApp.done':

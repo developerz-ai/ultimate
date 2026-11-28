@@ -10,10 +10,12 @@ import { i18nIndex } from '../scaffold-i18n';
 import { ADMIN_SPANISH } from './content-admin-es';
 import { CONTENT_LOCALES, contentPageFiles } from './content-pages';
 import { contentSiteFiles } from './content-site';
+import { effectsDependency } from './landing-motion';
 import type { ShapeEdit, ShapeOverlay } from './overlay';
 import { claudeRows, shapeLines } from './shared-edits';
 
 const edits = (): readonly ShapeEdit[] => [
+  effectsDependency(),
   ...claudeRows({
     page: '`apps/web/site/page.test.ts`',
     island: 'none in this shape: `bunx x g island <name>` writes one with its states',

@@ -1,15 +1,21 @@
-// The four dev tools that answer an agent's next question without a shell round trip: `docs.search`
+// The dev tools that answer an agent's next question without a shell round trip: `docs.search`
 // (`x docs`), `db.explain` (a plan, `ANALYZE` inside the read-only transaction), `requests.statements`
-// (`x dev`'s per-request statement ledger) and `verify.narrow` (what to run after editing a file).
-// Each is a projection: the CLI answers through `DevAgentHost`, from the command that already exists.
+// (`x dev`'s per-request statement ledger), `verify.narrow` (what to run after editing a file) and
+// `ui.research` (`x design research`). Each is a projection: the CLI answers through `DevAgentHost`,
+// from the command that already exists.
 
 import { NotImplementedError } from '@ultimat3/core';
+import type { UiResearchInput } from './dev-agent-tools-research';
+import { researchTool } from './dev-agent-tools-research';
 import { EXPLAIN_GUARD, explainStatement, planOf } from './explain-sql';
 import type { QueryLimits, QueryRows } from './query-limits';
 import { QUERY_LIMITS } from './query-limits';
 import { PARSE_GUARD } from './readonly-sql';
 import type { AnyMcpTool, ToolArgs } from './registry';
 import { jsonResult } from './registry';
+
+export type { UiResearchInput } from './dev-agent-tools-research';
+export { UI_RESEARCH_LIMITS } from './dev-agent-tools-research';
 
 /** The ceilings `db.explain` runs under: `db.query`'s timeout, and the one row EXPLAIN answers. */
 export const EXPLAIN_LIMITS: QueryLimits = Object.freeze({ ...QUERY_LIMITS, maxRows: 1 });
@@ -32,6 +38,11 @@ export interface DevAgentHost {
   }): Promise<unknown>;
   /** The `x verify --changed` plan for ONE file, as the commands that run it. Runs nothing. */
   narrowVerify(file: string): Promise<unknown>;
+  /**
+   * `x design research`, in process: each reference's five artefacts under `.x/design/<slug>/`,
+   * every request the page makes screened against private, loopback and link-local addresses.
+   */
+  researchDesign(input: UiResearchInput): Promise<unknown>;
 }
 
 /** The host's capability, or one that refuses: `DevCapabilities` holds these as optional. */
@@ -50,6 +61,7 @@ export function agentHostOf(host: Partial<DevAgentHost>): DevAgentHost {
     requestStatements:
       host.requestStatements?.bind(host) ?? absent('requests.statements', 'requestStatements'),
     narrowVerify: host.narrowVerify?.bind(host) ?? absent('verify.narrow', 'narrowVerify'),
+    researchDesign: host.researchDesign?.bind(host) ?? absent('ui.research', 'researchDesign'),
   };
 }
 
@@ -68,10 +80,16 @@ export interface AgentToolScopes {
   readonly read: string;
   readonly logs: string;
   readonly dbRead: string;
+  /**
+   * `ui.research`'s: it launches a browser, like `ui.shot`. Absent, the tool is not served at all —
+   * never served under a weaker scope.
+   */
+  readonly test?: string | undefined;
 }
 
 export function agentTools(host: DevAgentHost, scopes: AgentToolScopes): readonly AnyMcpTool[] {
   return [
+    ...(scopes.test === undefined ? [] : [researchTool(host, scopes.test)]),
     {
       name: 'docs.search',
       description:

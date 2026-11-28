@@ -27,6 +27,11 @@ export const generateSpec: CommandSpec = {
     { name: 'locales', type: 'string', summary: 'comma-separated locales, default en' },
     { name: 'at', type: 'string', summary: 'island, admin:page: directory to write into' },
     {
+      name: 'effect',
+      type: 'string',
+      summary: 'island: wrap the panel in an @ultimat3/effects entry',
+    },
+    {
       name: 'app',
       type: 'string',
       summary: 'route, island, query: app under apps/',

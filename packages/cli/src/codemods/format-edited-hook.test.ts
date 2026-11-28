@@ -7,6 +7,9 @@ import { describe, expect, test } from 'bun:test';
 import { names } from '../templates';
 import { claudeFiles } from '../templates/scaffold-claude';
 import { HOOK_PATH } from '../templates/scaffold-claude-hook';
+import { frozenAgentFiles } from './agent-kit-frozen-agents';
+import { frozenCommandFiles } from './agent-kit-frozen-commands';
+import { frozenReadme } from './agent-kit-frozen-readme';
 import { memoryCodemodApp } from './codemod';
 import type { SnippetEdit } from './engine-edits';
 import { BIOME_EDITS, codemod, FORMAT_HOOK_EDITS } from './format-edited-hook';
@@ -18,6 +21,11 @@ const current: Record<string, string> = {};
 for (const file of claudeFiles(names('shop'))) {
   if (typeof file.contents === 'string') current[file.path] = file.contents;
 }
+// The files the kit rewrote are the released ones, never today's: this codemod met them as these.
+for (const file of [...frozenAgentFiles(names('shop')), ...frozenCommandFiles(names('shop'))]) {
+  if (typeof file.contents === 'string') current[file.path] = file.contents;
+}
+current[README] = frozenReadme(names('shop'));
 
 /** `edits` undone, last first: each one's `to` must be in the text it is undone from. */
 const before = (text: string, edits: readonly SnippetEdit[]): string => {

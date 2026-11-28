@@ -1,0 +1,49 @@
+@use '@ultimat3/ui/tokens' as t;
+@use '../effect' as fx;
+
+// Transform and opacity only: the compositor moves the orbs, layout and paint never run.
+@keyframes orbs-float {
+  33% {
+    transform: translate3d(12%, -10%, 0) scale(1.1);
+    opacity: 0.8;
+  }
+
+  66% {
+    transform: translate3d(-10%, 8%, 0) scale(0.9);
+    opacity: 1;
+  }
+}
+
+.root {
+  @include fx.root;
+}
+
+.layer {
+  @include fx.layer;
+  opacity: var(--fx-intensity, 0.6);
+}
+
+.content {
+  @include fx.content;
+}
+
+.orb {
+  @include fx.pausable('.root');
+  position: absolute;
+  inset-inline-start: calc(var(--fx-x) - var(--fx-size) / 2);
+  inset-block-start: calc(var(--fx-y) - var(--fx-size) / 2);
+  inline-size: var(--fx-size);
+  aspect-ratio: 1;
+  border-radius: t.radius(full);
+  background: radial-gradient(circle, rgb(var(--fx-c)) 0, rgb(var(--fx-c) / 0) 70%);
+  animation: orbs-float calc(#{t.duration(slower)} * 25 / var(--fx-speed, 1)) t.easing(in-out)
+    infinite;
+  animation-delay: calc(#{t.duration(slower)} * -25 * var(--fx-phase, 0) / var(--fx-speed, 1));
+  will-change: transform, opacity;
+}
+
+@media (forced-colors: active) {
+  .layer {
+    display: none;
+  }
+}

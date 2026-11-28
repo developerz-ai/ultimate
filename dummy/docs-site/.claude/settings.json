@@ -36,7 +36,10 @@
       "Bash(bunx x db branch:*)",
       "Bash(git status)",
       "Bash(git diff:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(bunx x shot:*)",
+      "Bash(bunx x kit:*)",
+      "Bash(bunx x upgrade --dry-run:*)"
     ]
   },
   "hooks": {

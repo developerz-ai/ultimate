@@ -1,9 +1,7 @@
-// The subagents `x new` writes into `.claude/agents/`. Scoped by BOUNDARY, never by role: a
-// researcher/coder/reviewer trio has no file set, so it cannot be told what it may not touch. The
-// app's real boundaries are the eight primitives and the surfaces — one agent per boundary, plus
-// `shape`, the read-only one that decides whether there is anything to build at all.
+// FROZEN at v31.51.0: the agents `x new` wrote before the kit made them managed. Test support for the
+// codemods whose fixtures rebuild an older app — never today's output, which the kit rewrote.
 
-import type { GeneratedFile, NameSet } from './naming';
+import type { GeneratedFile, NameSet } from '../templates/naming';
 
 const shape = (app: NameSet): string => `---
 name: shape
@@ -151,7 +149,7 @@ Never the whole \`bunx x verify\` — that belongs to whoever coordinates you.
 `;
 
 /** One agent per boundary, plus the read-only one that runs before there is a boundary to hold. */
-export function claudeAgentFiles(app: NameSet): readonly GeneratedFile[] {
+export function frozenAgentFiles(app: NameSet): readonly GeneratedFile[] {
   return [
     { path: '.claude/agents/shape.md', contents: shape(app) },
     { path: '.claude/agents/data.md', contents: data(app) },

@@ -13,6 +13,7 @@ import {
   launchChrome,
 } from '@ultimat3/scraping/cdp';
 import type { ShotDriver, ShotSession, ShotSessionInit } from './browser-launcher-port';
+import { type DialScreen, screenedConnection } from './cdp-shot-driver-screen';
 import { cdpShotPage } from './cdp-shot-page';
 import { watchPage } from './cdp-shot-watch';
 
@@ -27,6 +28,12 @@ export interface CdpShotDriverOptions {
   /** Attach here: a provider's `wss://` session, or a sidecar's `http://host:9222`. */
   readonly cdpUrl?: string | undefined;
   readonly viewport?: { readonly width: number; readonly height: number } | undefined;
+  /**
+   * The DNS half of the session's interception (`cdp-shot-driver-screen.ts`): every paused request
+   * on the page AND the browser session is screened by it before the host allow list decides.
+   * `x design research` sets it, because its allow list is every PUBLIC host.
+   */
+  readonly dialScreen?: Omit<DialScreen, 'owns'> | undefined;
   /** Test seams: the two ways a connection comes to exist, so no test needs a browser. */
   readonly launch?:
     | ((executable: string, timeoutMs: number) => Promise<LaunchedBrowser>)
@@ -151,8 +158,15 @@ export function cdpShotDriver(options: CdpShotDriverOptions): ShotDriver {
           });
         }
         // Watching BEFORE the domains are on, so the first request is already counted.
+        const dialScreen = options.dialScreen;
         const watch = watchPage({
-          connection,
+          connection:
+            dialScreen === undefined
+              ? connection
+              : screenedConnection(connection, {
+                  ...dialScreen,
+                  owns: (on) => on === sessionId || on === browserSessionId,
+                }),
           sessionId,
           browserSessionId,
           clock: init.clock,

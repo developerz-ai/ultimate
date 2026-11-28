@@ -57,6 +57,19 @@ unitTest('no ended run: the gauge reads no data, never 0%', async () => {
   expect(view.html).toContain('aria-valuetext="No data"');
 });
 
+unitTest('the tiles carry the final figures and the island that counts them up', async () => {
+  const view = await renderRoute(routeWith(DATA), request);
+  // Three runs, one failed: the server frame IS the final number — script off, crawler, still page.
+  expect(view.html).toMatch(/data-stat="runs-total"[^>]*>3</);
+  expect(view.html).toMatch(/data-stat="runs-failed"[^>]*>1</);
+  // The island is declared with the same final values, one per tile, under the page's locale.
+  const props = view.html.match(/data-x-props="health-counts-1">([^<]*)</)?.[1] ?? '';
+  expect(JSON.parse(props)).toEqual({
+    locale: 'en',
+    counts: { 'runs-total': 3, 'runs-failed': 1 },
+  });
+});
+
 unitTest('the window picker offers the three presets, the default week current', async () => {
   const t = useT();
   const view = await renderRoute(routeWith(DATA), request);

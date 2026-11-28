@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-100 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Board` · `BottomNav` · `Breadcrumb` · `BulkBar` · `Button` · `Calendar` · `Card` · `ChartFrame` · `Checkbox` · `CodeBlock` · `Combobox` · `CommandPalette` · `ConfirmDialog` · `Container` · `CopyButton` · `DataTable` · `DatePicker` · `DateRangePicker` · `DateTime` · `DescriptionList` · `Dialog` · `DiffView` · `Divider` · `DonutChart` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Gauge` · `Grid` · `HeatStrip` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `InlineBar` · `Input` · `JsonView` · `Kbd` · `LineChart` · `AreaChart` · `Link` · `LiveIndicator` · `LocaleSwitcher` · `LogViewer` · `Markdown` · `Menu` · `Meter` · `Money` · `NavList` · `PageHeader` · `Pagination` · `Popover` · `PullToRefresh` · `QrCode` · `Radio` · `RelativeTime` · `SearchableSelect` · `SearchableSelectChips` · `SearchableSelectNative` · `Section` · `Select` · `ShortcutSheet` · `Skeleton` · `Slider` · `SortableList` · `Sparkline` · `Spinner` · `SplitPane` · `Stack` · `StatTile` · `Stepper` · `Switch` · `Table` · `Tabs` · `TerminalView` · `Text` · `Textarea` · `ThemeToggle` · `TimeRangePicker` · `Timeline` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip` · `Tree` · `VirtualList` · `TreeLinkNode` · `TreeSelectNode`
+101 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Board` · `BottomNav` · `Breadcrumb` · `BulkBar` · `Button` · `Calendar` · `Card` · `ChartFrame` · `Checkbox` · `CodeBlock` · `Combobox` · `CommandPalette` · `ConfirmDialog` · `Container` · `CopyButton` · `DataTable` · `DatePicker` · `DateRangePicker` · `DateTime` · `DescriptionList` · `Dialog` · `DiffView` · `Divider` · `DonutChart` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Gauge` · `Grid` · `HeatStrip` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `InlineBar` · `Input` · `JsonView` · `Kbd` · `LineChart` · `AreaChart` · `Link` · `LiveIndicator` · `LocaleSwitcher` · `LogViewer` · `Markdown` · `Menu` · `Meter` · `Money` · `MotionToggle` · `NavList` · `PageHeader` · `Pagination` · `Popover` · `PullToRefresh` · `QrCode` · `Radio` · `RelativeTime` · `SearchableSelect` · `SearchableSelectChips` · `SearchableSelectNative` · `Section` · `Select` · `ShortcutSheet` · `Skeleton` · `Slider` · `SortableList` · `Sparkline` · `Spinner` · `SplitPane` · `Stack` · `StatTile` · `Stepper` · `Switch` · `Table` · `Tabs` · `TerminalView` · `Text` · `Textarea` · `ThemeToggle` · `TimeRangePicker` · `Timeline` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip` · `Tree` · `VirtualList` · `TreeLinkNode` · `TreeSelectNode`
 
 ## Vocabulary
 
@@ -954,6 +954,14 @@ Formats through @ultimat3/money using the locale and currency from context — n
 | `signed` | `boolean` | — | Colour negatives with the danger role, e.g. in a ledger. |
 | `options` | `FormatMoneyOptions` | — | Passed to @ultimat3/money: display, accounting, grouping, fractionDigits. |
 | `format` | `MoneyFormatter` | — |  |
+| `class` | `string` | — |  |
+
+### MotionToggle
+
+The page-wide motion pause, WCAG 2.2.2: one control that stops every animation on the page — CSS through `html[data-motion="paused"]` (`_motion.scss`), scripts through `motionAllowed()`. The choice is remembered; its label names what a press will do.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
 | `class` | `string` | — |  |
 
 ### NavList

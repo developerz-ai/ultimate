@@ -1,0 +1,23 @@
+@use '@ultimat3/ui/tokens' as t;
+
+// Text lit by the shared sweep (`t.shimmer` is ui's, the same one Skeleton paints). Clipped to the
+// glyphs, so the base role keeps the text's own contrast and the glint only brightens it.
+.shimmer {
+  @include t.shimmer('fg-muted', 'fg');
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+:global(html[data-motion='paused']) .shimmer {
+  animation: none;
+}
+
+// No clip support, or forced colours (which would paint the transparent text invisible).
+@media (forced-colors: active) {
+  .shimmer {
+    background: none;
+    color: CanvasText;
+    animation: none;
+  }
+}

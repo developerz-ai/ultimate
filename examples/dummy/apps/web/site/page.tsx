@@ -6,6 +6,7 @@
 
 import { priceDecimalOf } from '@postly/domain';
 import { useT } from '@postly/i18n';
+import { Aurora } from '@ultimat3/effects';
 import { asset, defineRoute } from '@ultimat3/render';
 import { ld, responsiveImage } from '@ultimat3/seo';
 import { Stack } from '@ultimat3/ui';
@@ -19,6 +20,8 @@ export const config = defineRoute({
   offline: 'precache',
   /** Nothing here needs JavaScript: the nav toggle is CSS, the form posts natively. */
   hydrate: 'never',
+  // measured: 0 B (2026-11-28; x build --target static) — why: unchanged. `Aurora` is its CSS
+  // tier, three gradients drifting on `transform`: no script, and reduced motion holds frame 0.
   budget: { js: '0kb' },
   /**
    * The offer is the free plan read out of the catalog, in the currency the URL names — the same
@@ -63,49 +66,55 @@ export function Page(): JSX.Element {
 
   return (
     <main class={styles.page}>
-      <section class={styles.hero}>
-        <Stack gap={4}>
-          <h1>{t('site.hero.title')}</h1>
-          <p class={styles.subtitle}>{t('site.hero.subtitle')}</p>
-          <div class={styles.ctas}>
-            {/*
+      {/* The CSS tier of `Aurora`: three drifting gradients, 0 B of script. Reduced motion holds
+          frame 0, so a still reader reads the same page with the bands at rest. */}
+      <Aurora class={styles.aurora}>
+        <section class={styles.hero}>
+          <Stack gap={4}>
+            <h1>{t('site.hero.title')}</h1>
+            <p class={styles.subtitle}>{t('site.hero.subtitle')}</p>
+            <div class={styles.ctas}>
+              {/*
               `/pricing`, not `/signup`: there is no signup route in this app and no route table
               entry for one — the sign-in surface is `app/auth/login.ts`'s two descriptors, which
               are declared, tested and NOT served (see the app's CLAUDE.md). A CTA on the one page
               a crawler indexes must land somewhere that exists, and `/pricing` is where the free
               plan and the one conversion this app can actually complete both live.
             */}
-            <a class={styles.primary} href="/pricing">
-              {t('site.hero.ctaPrimary')}
-            </a>
-            <a class={styles.secondary} href="/blog">
-              {t('site.hero.ctaSecondary')}
-            </a>
-          </div>
-        </Stack>
-        {/*
+              <a class={styles.primary} href="/pricing">
+                {t('site.hero.ctaPrimary')}
+              </a>
+              <a class={styles.secondary} href="/blog">
+                {t('site.hero.ctaSecondary')}
+              </a>
+            </div>
+          </Stack>
+          {/*
           A committed asset under `site/assets/`, as a `<picture>`: the static build writes every
           width in every offered format beside the page (`/_img/…`), so a CDN serving the export
           answers `image/webp` for the webp candidate. Intrinsic size inlined, so CLS stays 0.
         */}
-        <picture class={styles.heroImage}>
-          <For each={hero.sources}>
-            {(source) => <source type={source.type} srcset={source.srcset} sizes={source.sizes} />}
-          </For>
-          <img
-            src={hero.img.src}
-            srcset={hero.img.srcset}
-            sizes={hero.img.sizes}
-            alt={hero.img.alt}
-            width={hero.img.width}
-            height={hero.img.height}
-            loading={hero.img.loading}
-            decoding={hero.img.decoding}
-            fetchpriority={hero.img.fetchpriority}
-            style={hero.img.style}
-          />
-        </picture>
-      </section>
+          <picture class={styles.heroImage}>
+            <For each={hero.sources}>
+              {(source) => (
+                <source type={source.type} srcset={source.srcset} sizes={source.sizes} />
+              )}
+            </For>
+            <img
+              src={hero.img.src}
+              srcset={hero.img.srcset}
+              sizes={hero.img.sizes}
+              alt={hero.img.alt}
+              width={hero.img.width}
+              height={hero.img.height}
+              loading={hero.img.loading}
+              decoding={hero.img.decoding}
+              fetchpriority={hero.img.fetchpriority}
+              style={hero.img.style}
+            />
+          </picture>
+        </section>
+      </Aurora>
 
       <section class={styles.features}>
         <h2>{t('site.features.heading')}</h2>

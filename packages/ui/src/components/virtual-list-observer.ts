@@ -44,6 +44,7 @@ export function createVirtualListObserver(
       const size = entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height;
       if (key !== undefined) rows.set(key, size);
     }
+    // why: one frame to coalesce a burst of resize reports into one flush — not a loop.
     frame ??= requestAnimationFrame(flush);
   });
   observer.observe(box);

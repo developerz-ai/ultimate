@@ -188,6 +188,8 @@ export type { MeterProps } from './components/Meter';
 export { Meter } from './components/Meter';
 export type { MoneyProps } from './components/Money';
 export { Money } from './components/Money';
+export type { MotionToggleProps } from './components/MotionToggle';
+export { MotionToggle } from './components/MotionToggle';
 export type { MoneyInput } from './components/money-view';
 // --- formatting cores (pure, renderer-free) ----------------------------------
 export { moneyText } from './components/money-view';

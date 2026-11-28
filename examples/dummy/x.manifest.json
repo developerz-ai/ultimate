@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "721cb349d33190ac",
+  "buildId": "b2245a48ebea7b06",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -495,7 +495,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "214.7kb"
+        "js": "220.5kb"
       }
     },
     {
@@ -539,7 +539,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "121.5kb"
+        "js": "129.5kb"
       }
     },
     {
@@ -589,7 +589,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "36kb"
+        "js": "85.5kb"
       }
     },
     {
@@ -9536,7 +9536,15 @@
       "package": "@ultimat3/cli"
     },
     {
+      "code": "X_ANIMATED_LAYOUT_SCRIPT",
+      "package": "@ultimat3/cli"
+    },
+    {
       "code": "X_BARE_ERROR",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_EFFECT_WITHOUT_FALLBACK",
       "package": "@ultimat3/cli"
     },
     {
@@ -9560,6 +9568,10 @@
       "package": "@ultimat3/cli"
     },
     {
+      "code": "X_MOTION_ADAPTER",
+      "package": "@ultimat3/cli"
+    },
+    {
       "code": "X_NATIVE_CONFIRM",
       "package": "@ultimat3/cli"
     },
@@ -9576,6 +9588,10 @@
       "package": "@ultimat3/cli"
     },
     {
+      "code": "X_RAW_FRAME_LOOP",
+      "package": "@ultimat3/cli"
+    },
+    {
       "code": "X_RAW_INTERVAL",
       "package": "@ultimat3/cli"
     },
@@ -9585,6 +9601,10 @@
     },
     {
       "code": "X_RAW_MOTION",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_RAW_MOTION_SCRIPT",
       "package": "@ultimat3/cli"
     },
     {

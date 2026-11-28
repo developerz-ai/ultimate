@@ -1,5 +1,7 @@
-// Durations + easings. Every animated rule ships behind the global
-// `prefers-reduced-motion` guard in `reset.scss`.
+// Durations + easings + spring rungs. Every animated rule ships behind the global
+// `prefers-reduced-motion` guard in `reset.scss`, and the page-wide pause (`guards`, below).
+
+@use 'sass:map';
 
 $duration: (
   instant: 0ms,
@@ -16,6 +18,23 @@ $easing: (
   spring: cubic-bezier(0.34, 1.56, 0.64, 1),
 );
 
+/// The spring rungs as `linear()` curves: `springLinear()` (`src/motion/spring-linear.ts`) output,
+/// committed — `spring-linear.test.ts` regenerates each and fails on drift, here and in `tokens.ts`.
+/// Emitted as `--easing-<name>`, so `easing(snappy)` is the spring; one value per line (the test
+/// reads them that way).
+$spring: (
+  gentle: linear(0, 0.0147, 0.0527, 0.1065, 0.17, 0.2388, 0.3094, 0.3794, 0.4469, 0.5109, 0.5705, 0.6253, 0.6751, 0.7199, 0.7599, 0.7953, 0.8265, 0.8537, 0.8773, 0.8977, 0.9152, 0.9302, 0.9429, 0.9535, 0.9625, 0.97, 0.9762, 0.9814, 0.9856, 0.989, 0.9918, 0.994, 0.9957, 0.9971, 0.9982, 1),
+  snappy: linear(0, 0.0339, 0.1154, 0.2208, 0.3344, 0.4458, 0.5488, 0.6403, 0.7189, 0.7847, 0.8386, 0.8817, 0.9156, 0.9417, 0.9613, 0.9757, 0.9861, 0.9934, 0.9982, 1.0013, 1.0031, 1.004, 1.0043, 1.0042, 1.0039, 1.0035, 1.003, 1.0025, 1.0021, 1.0016, 1.0013, 1),
+  bouncy: linear(0, 0.0253, 0.0938, 0.1945, 0.3166, 0.4502, 0.5869, 0.7193, 0.8417, 0.9499, 1.0411, 1.114, 1.1682, 1.2045, 1.2242, 1.2294, 1.2225, 1.2058, 1.1821, 1.1537, 1.1229, 1.0915, 1.0614, 1.0336, 1.0091, 0.9886, 0.9723, 0.9603, 0.9524, 0.9483, 0.9474, 0.9493, 0.9533, 0.9589, 0.9655, 0.9726, 0.9797, 0.9866, 0.9929, 0.9984, 1.0031, 1.0067, 1.0093, 1.0111, 1.0119, 1.0121, 1.0116, 1.0106, 1.0093, 1.0078, 1.0061, 1.0045, 1.0029, 1.0015, 1.0002, 0.9992, 0.9984, 0.9978, 0.9974, 0.9973, 0.9972, 0.9974, 0.9976, 0.9979, 0.9983, 0.9986, 1),
+);
+
+/// Before `linear()` (Chrome 113, Safari 17.2, Firefox 112) every rung is the one cubic-bezier
+/// spring: a custom property is never validated, so the curve is swapped in under `@supports`.
+$-spring-fallback: ();
+@each $name, $curve in $spring {
+  $-spring-fallback: map.merge($-spring-fallback, ($name: map.get($easing, spring)));
+}
+
 /// What reduced motion collapses every duration to. Never `0`: an animation that takes no time
 /// fires no `animationend`, and a component waiting on that event waits forever.
 $still: 0.01ms;
@@ -25,8 +44,48 @@ $still: 0.01ms;
     @each $name, $value in $duration {
       --duration-#{$name}: #{$value};
     }
-    @each $name, $value in $easing {
+    @each $name, $value in map.merge($easing, $-spring-fallback) {
       --easing-#{$name}: #{$value};
+    }
+  }
+  @include spring-curves;
+}
+
+@mixin spring-curves {
+  @supports (transition-timing-function: linear(0, 1)) {
+    :root {
+      @each $name, $value in $spring {
+        --easing-#{$name}: #{$value};
+      }
+    }
+  }
+}
+
+/// The page-wide pause (WCAG 2.2.2): `<MotionToggle>` writes `data-motion="paused"` on `<html>`
+/// and every CSS animation and transition lands on its end state, as reduced motion does — never
+/// `animation-play-state: paused`, which would freeze an entrance at opacity 0. `motionAllowed()`
+/// (`src/motion/motion-gate.ts`) is the JS half. The view-transition timing rides the same tokens.
+@mixin guards {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: var(--duration-base);
+    animation-timing-function: var(--easing-out);
+  }
+
+  html[data-motion='paused'] {
+    scroll-behavior: auto;
+
+    *,
+    *::before,
+    *::after,
+    &::view-transition-group(*),
+    &::view-transition-old(*),
+    &::view-transition-new(*) {
+      animation-duration: $still !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: $still !important;
+      scroll-behavior: auto !important;
     }
   }
 }

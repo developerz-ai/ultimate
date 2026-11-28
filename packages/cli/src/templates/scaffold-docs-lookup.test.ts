@@ -3,9 +3,8 @@
 // comments claiming gaps closed majors ago lived on in an adopter's tree.
 
 import { describe, expect, test } from 'bun:test';
-import { AGENTS_MD_MAX_BYTES } from '@ultimat3/manifest';
 import { names } from './naming';
-import { docsFiles } from './scaffold-docs';
+import { docsFiles, SCAFFOLD_AGENTS_MD_MAX_BYTES } from './scaffold-docs';
 
 const app = names('ledger-demo');
 
@@ -23,7 +22,7 @@ describe('unit · the convention files name the docs lookup', () => {
 
   test('AGENTS.md still fits the size check the gate holds it to', () => {
     expect(new TextEncoder().encode(fileAt('AGENTS.md')).byteLength).toBeLessThan(
-      AGENTS_MD_MAX_BYTES,
+      SCAFFOLD_AGENTS_MD_MAX_BYTES,
     );
   });
 });

@@ -260,7 +260,12 @@ export const config = defineRoute({
   // +253 B (219,483 → 219,736), the same in every realtime island: the browser keeps the `sig` each
   // patch carries and hands it back on resume, and a malformed one is kept as a refusal marker
   // (#1280). Raised 214.4kb → 214.7kb.
-  budget: { js: '214.7kb' },
+  // measured: 225123 B (2026-11-28; x build --target static, against 219,795) — why: the feed
+  // island +5,328 B (96,979 → 102,307) for `@ultimat3/ui/motion`: a row fades up when it scrolls
+  // into view (`inView`) and the rows that arrive together start one beat apart (`stagger`), both
+  // over `animate` on the motion tokens, so a stilled page shows every row at rest. Raised
+  // 214.7kb → 220.5kb.
+  budget: { js: '220.5kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

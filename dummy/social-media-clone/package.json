@@ -33,6 +33,7 @@
     "@ultimat3/cli": "31.51.0",
     "@ultimat3/core": "31.51.0",
     "@ultimat3/db": "31.51.0",
+    "@ultimat3/effects": "31.51.0",
     "@ultimat3/entity": "31.51.0",
     "@ultimat3/http": "31.51.0",
     "@ultimat3/i18n": "31.51.0",
