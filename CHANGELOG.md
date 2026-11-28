@@ -54,6 +54,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Fixed
 
+- `x new --shape dashboard|blog|saas|content` passes its first `x verify` again: the landing's Aurora layers sit on the z ladder (`tokens.z(...)`), and the dashboard's page test names the motion island beside the theme toggle.
 - The scaffolded `shape` agent's front matter was invalid YAML, so Claude Code loaded it with no description and never dispatched it.
 
 ## Releases
