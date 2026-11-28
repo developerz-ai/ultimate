@@ -197,9 +197,10 @@ $-under: 0.02px;
   box-shadow: var(--shadow-#{$elevation});
 }
 
-/// Both scrollbar engines, plus no scroll chaining to the page.
+/// Both scrollbar engines, and nothing else: no `overscroll-behavior`. Chrome 144+ honours `contain`
+/// on a box with nothing to scroll, so a mixin that set it trapped the page's wheel over every
+/// sidebar and table. A surface that wants to trap sets it itself.
 @mixin custom-scrollbar($thumb: 'line', $track: 'bg-soft') {
-  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: colors.role($thumb) colors.role($track);
 

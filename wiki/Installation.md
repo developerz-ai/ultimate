@@ -201,7 +201,7 @@ Read tools are unrestricted in dev; write tools are scoped to branch environment
 
 | Task | Command |
 |---|---|
-| Framework version bump | `x upgrade --json`, one major per run ([CLI reference](CLI-Reference#x-upgrade)). An app below 30.0.0 has no such command yet: `bunx @ultimat3/cli@latest upgrade --json` |
+| Framework version bump | `x upgrade --json`, one major per run ([CLI reference](CLI-Reference-Tools#x-upgrade)). An app below 30.0.0 has no such command yet: `bunx @ultimat3/cli@latest upgrade --json` |
 | Check what a bump would change | `x upgrade --dry-run --json`: the pins, the Bun floor edits and the section to read. Writes nothing, runs no gate |
 | Remove dev state (embedded PG, storage, caches) | `rm -rf .x` |
 | Remove the CLI | it ships with the app; deleting the repo is the uninstall |

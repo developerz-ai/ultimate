@@ -700,7 +700,7 @@ const verification = await consumeVerification(runtime, {
 | `VERIFICATION_TEMPLATES` | purpose → **catalog key** (`auth.email-verify`, `auth.password-reset`), never copy: the body lives in the app's i18n catalog |
 | `DEFAULT_VERIFICATION_TTL_MS` | 24 h for `email-verify`, 1 h for `password-reset` — a reset link is a password |
 | `MailSender` | the injected port: `send(template, to, data, locale)`. `@ultimat3/mail` is tier 4 and this package is tier 2, so the app wires it |
-| `issueVerification(runtime, input)` | `{ token, expiresAt }`. The token comes back for a test or a CLI; production only ever mails it |
+| `issueVerification(runtime, input)` | `{ token, expiresAt }`. The token comes back for a test or a CLI; production only ever mails it. `to?` names the recipient, and only on a purpose declared `recipient: 'explicit'` (the member invite: its identifier is tenant + address, not an address): mail goes to that `to`, never normalised, and it is required. On any other purpose, `passwordReset` and every sign-in purpose included, a `to` is `X_CONFIG_INVALID` before any row is written, so a request body spread into `issue` cannot redirect a reset link |
 | `consumeVerification(runtime, input)` | the `AuthVerification` row, or `X_UNAUTHENTICATED`. Unknown, spent, expired and mismatched are one answer. Reads only `{ store, clock }` of the runtime. An undeclared purpose on either door is `X_VERIFICATION_PURPOSE_UNKNOWN` |
 
 One live token per `(purpose, identifier)`. A wrong guess destroys nothing: the store's

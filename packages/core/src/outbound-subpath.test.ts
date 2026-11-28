@@ -9,12 +9,21 @@ import * as subpath from './outbound-subpath';
 describe('unit · @ultimat3/core/outbound', () => {
   test('the barrel exports no outbound name; the subpath exports the call and the screen', () => {
     const names = Object.keys(barrel);
-    for (const name of ['outbound', 'screenDial', 'resolveDialHost', 'deadlineSignal']) {
+    const outboundOnly = [
+      'outbound',
+      'screenDial',
+      'resolveDialHost',
+      'deadlineSignal',
+      'configureOutboundProxy',
+    ];
+    for (const name of outboundOnly) {
       expect(names).not.toContain(name);
     }
     expect(typeof subpath.outbound).toBe('function');
     expect(typeof subpath.screenDial).toBe('function');
     expect(typeof subpath.deadlineSignal).toBe('function');
+    // The boot's one installer of `app.config.ts`'s `outbound.proxy`.
+    expect(typeof subpath.configureOutboundProxy).toBe('function');
   });
 
   test('the package exports the subpath at that one file', () => {

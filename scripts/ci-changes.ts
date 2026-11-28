@@ -2,10 +2,12 @@
 // Does this diff reach the heavy CI jobs at all? `heavy: false` only when every changed path is
 // prose no such job reads — `wiki/`, `docs/` and root markdown — and true on any doubt: an empty or
 // missing list, a quoted path, a path the allowlist does not name. Never red: a doubt is a full run.
+// Beside it, the `scaffold-smoke` matrix for this event (`lib/ci/scaffold-matrix.ts`).
 //
-//   bun run scripts/ci-changes.ts <file-of-paths> [--json]
+//   bun run scripts/ci-changes.ts <file-of-paths> [--event <github.event_name>] [--json]
 
 import { parseScriptArgs } from './lib/args';
+import { scaffoldPlan } from './lib/ci/scaffold-matrix';
 import { report } from './lib/log';
 
 /**
@@ -13,11 +15,12 @@ import { report } from './lib/log';
  * `compose-deploy` run code, scaffolds and images; a wiki page or a decision record changes none
  * of them. Markdown under `packages/`, `scripts/`, `docker/`, `examples/` or `dummy/` is NOT here:
  * a package's README ships in its tarball, and an app's docs are its build input. The gate still
- * reads all of it (`errors`, `manifest`, the doc guards) and runs on every diff.
+ * reads all of it (`errors`, `manifest`, the doc guards) and runs on every diff. `docs/` holds
+ * markdown and one `.yml` kind, a plan's `status.yml`, which only the gate's plan guards read.
  */
 const PROSE = [
   /^wiki\/(?:[\w.-]+\/)*[\w-][\w.-]*\.md$/,
-  /^docs\/(?:[\w.-]+\/)*[\w-][\w.-]*\.md$/,
+  /^docs\/(?:[\w.-]+\/)*[\w-][\w.-]*\.(?:md|yml)$/,
   /^[\w-][\w.-]*\.md$/,
 ];
 
@@ -53,13 +56,16 @@ if (import.meta.main) {
   const path = args.positionals[0];
   const file = path === undefined ? undefined : Bun.file(path);
   const text = file !== undefined && (await file.exists()) ? await file.text() : undefined;
-  const verdict = classifyChanges(parseChangedFiles(text));
+  const files = parseChangedFiles(text);
+  const verdict = classifyChanges(files);
+  const event = args.flags.get('event');
+  const scaffold = scaffoldPlan(files, typeof event === 'string' ? event : '');
   report(
     {
       ok: true,
       script: 'ci-changes',
-      summary: `heavy=${String(verdict.heavy)}: ${verdict.reason}`,
-      data: verdict,
+      summary: `heavy=${String(verdict.heavy)}: ${verdict.reason}; scaffold: ${scaffold.reason}`,
+      data: { ...verdict, scaffold },
       lines: verdict.code.slice(0, 20),
     },
     args.json,

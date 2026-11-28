@@ -13,6 +13,8 @@ import type { RateLimitDecision } from '@ultimat3/http';
 import { declaredStatusFor } from '@ultimat3/http';
 import { policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import type { ActionDecision } from './action-decide';
+import type { DecidingActionDef, DecidingStreamActionDef } from './action-decide-def';
 import { streamingDef } from './action-stream';
 import type { ClientMethod, ClientOptions, StreamClientMethod } from './client';
 import type { ContractTest, ContractTestOptions } from './contract-test';
@@ -263,7 +265,11 @@ export interface AnyActionDef {
   readonly audit?: boolean;
   readonly stream?: StandardSchemaV1;
   row?(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
-  handle(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
+  handle(args: {
+    readonly input: unknown;
+    readonly ctx: Ctx;
+    decide(rows: readonly unknown[]): ActionDecision<unknown>;
+  }): unknown;
 }
 
 export interface AnyAction {
@@ -341,6 +347,23 @@ export type ActionFacade<TInput extends StandardSchemaV1, TOutput extends Standa
   'input' | 'output' | 'policy' | 'mcp' | 'as' | 'openapi' | 'client' | 'job' | 'contract'
 >;
 
+// The `Deciding*` pair FIRST: tsc fixes a handler's parameter types on the first overload it
+// tries, so a `({ decide })` handler must meet them before the `ActionDef` pair. That pair resolves
+// nothing an earlier one does not — every `ActionDef` is a `DecidingActionDef` — and stays only
+// because the 31.x public-API lock records `action` by these two signatures (`scripts/public-api.ts`).
+export function action<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  TChunk extends StandardSchemaV1 = StandardSchemaV1,
+  TRow = unknown,
+>(
+  def: DecidingStreamActionDef<TInput, TOutput, TChunk, TRow>,
+): StreamAction<TInput, TOutput, TChunk>;
+export function action<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  TRow = unknown,
+>(def: DecidingActionDef<TInput, TOutput, TRow>): Action<TInput, TOutput>;
 export function action<
   TInput extends StandardSchemaV1,
   TOutput extends StandardSchemaV1,
@@ -356,7 +379,7 @@ export function action<
   TInput extends StandardSchemaV1,
   TOutput extends StandardSchemaV1,
   TRow = unknown,
->(def: ActionDef<TInput, TOutput, TRow>): Action<TInput, TOutput> {
+>(def: DecidingActionDef<TInput, TOutput, TRow>): Action<TInput, TOutput> {
   // Refused where it is written, and frozen before `build` stores it: the list a caller still
   // holds is not the one the descriptor, the document and the wrap read.
   const errors = checkDeclaredErrors(def.errors, declaredStatusFor, 'this action');

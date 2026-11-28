@@ -3,6 +3,7 @@
 // Overflow is contained here, never on <body>.
 .scroller {
   @include t.custom-scrollbar;
+  overscroll-behavior-inline: contain;
   max-inline-size: 100%;
   overflow-x: auto;
   border: 1px solid t.role('line');

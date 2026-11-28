@@ -67,6 +67,7 @@ import { DriverUnavailableError, JobDuplicateError, LeaseLostError } from './err
 import { JobNotFoundError, JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
 import type { JobIntrospection } from './introspection';
 import { COUNTER_BUCKET_MS, MAX_ERROR_STACK_LENGTH } from './introspection';
+import { pgTenantJobs } from './job-status-pg';
 import type { HeldLease, LeaseStore } from './leases';
 import type { StepStore } from './steps';
 
@@ -271,6 +272,7 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
     leases: postgresLeaseStore(exec),
     settleDebt: postgresSettleDebt(exec),
     introspect,
+    tenantJobs: pgTenantJobs(exec),
     async wake(queue) {
       await exec().query(SQL_WAKE, [JOBS_WAKE_CHANNEL, queue ?? '']);
     },

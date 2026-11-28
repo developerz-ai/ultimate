@@ -7,6 +7,7 @@ import { BACKFILL_STATUSES, type BackfillRun, isBackfillStatus } from './backfil
 import { isJobState, JOB_STATES, type JobRecord, type JobState } from './driver';
 import { JobRowStatusUnknownError } from './errors';
 import type { JobProgress } from './introspection';
+import type { JobStatusRow } from './job-status-port';
 import { isStepStatus, STEP_STATUSES, type StepRecord, type StepStatus } from './steps';
 
 export interface StepRow {
@@ -115,6 +116,30 @@ export function toJobRecord(row: JobRow): JobRecord {
     ...(row.last_error_stack === null || row.last_error_stack === undefined
       ? {}
       : { lastErrorStack: row.last_error_stack }),
+    ...progressOf(row.progress),
+  };
+}
+
+/** The columns a tenant fence reads (`job-status-pg.ts`) — `JobStatusRow`'s, and no others. */
+export type JobStatusPgRow = Pick<
+  JobRow,
+  'id' | 'name' | 'attempt' | 'max_attempts' | 'state' | 'run_at' | 'created_at' | 'updated_at'
+> & { readonly progress?: unknown };
+
+export function toJobStatusRow(row: JobStatusPgRow): JobStatusRow {
+  return {
+    id: row.id,
+    name: row.name,
+    state: statusIn<JobState>(JOB_STATES, isJobState, {
+      table: 'x_jobs',
+      column: 'state',
+      value: row.state,
+    }),
+    attempt: row.attempt,
+    maxAttempts: row.max_attempts,
+    runAt: num(row.run_at),
+    createdAt: num(row.created_at),
+    updatedAt: num(row.updated_at),
     ...progressOf(row.progress),
   };
 }

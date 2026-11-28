@@ -9,7 +9,10 @@ pre-commit:
 # push carries (an unused import reached the 31.28.0 release PR), the test programs `tsc -b` never
 # reads (`test-typecheck-gate`, red in CI twice in sweep 6), the build typecheck and the tiers.
 # Parallel: the two `tsc` programs share no output (`tsconfig.tests.json` is noEmit), and the push
-# waits for the slowest one rather than their sum.
+# waits for the slowest one rather than their sum. And the changelog rule set (~1 s): about one PR
+# run in four was red in 2026-11, several on it. Its `[Unreleased]`-line rule only prints a notice
+# here, as the script decides off CI (a branch mid-work owes the line once it is a pull request,
+# and a `no-changelog` label is not readable locally); every other rule refuses the push.
 pre-push:
   parallel: true
   commands:
@@ -24,4 +27,7 @@ pre-push:
       skip: [merge, rebase]
     boundaries:
       run: bun run boundaries
+      skip: [merge, rebase]
+    changelog:
+      run: bun run changelog-check
       skip: [merge, rebase]

@@ -272,6 +272,16 @@ export const exercise = defineExercise(
       empty: 'signs a PUT URL for a pending/ key: nothing is stored until the browser sends it',
       input: (drawn) => ({ ...drawn, filename: 'me.png', contentType: 'image/png', size: 1024 }),
     },
+    // A drawn uuid names no job, so the cancel would answer its 404 every time: a real export of
+    // the drawn org, queued here, is the job it stops.
+    cancelPostsExport: {
+      input: async (drawn) => {
+        const { exportPosts } = await import('./app/posts/jobs/export-posts');
+        const orgId = String(drawn['orgId']);
+        const queued = await exportPosts.enqueue({ orgId, exportId: crypto.randomUUID() });
+        return { ...drawn, jobId: queued.id };
+      },
+    },
     grantPostsImport: {
       input: (drawn) => ({ ...drawn, filename: 'p.csv', contentType: 'text/csv', size: 1024 }),
     },

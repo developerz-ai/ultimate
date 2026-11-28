@@ -225,8 +225,18 @@ describe.skipIf(NO_FLOCK)('reserve', () => {
     expect(events(dir)).toEqual(['+ 10 first']);
     rmSync(busyWhile);
     await third.until('held');
-    expect(events(dir)).toEqual(['+ 10 first', '+ 10 second', '+ 10 third']);
-    for (const one of [first, second, third]) one.child.kill('SIGKILL');
+    // Admission order is the ledger's own: each child appends to `events` after `reserve()` returns,
+    // so that file orders their appends, not their admissions (#1239).
+    // `at` is the admission instant, in ms: FIFO is first <= second <= third, and a same-ms tie is
+    // no violation, so no tiebreak is invented (hold file names are random).
+    const at = new Map(readLedger(dir, await tryLock()).holds.map((hold) => [hold.label, hold.at]));
+    expect([...at.keys()].toSorted()).toEqual(['first', 'second', 'third']);
+    const [one, two, three] = ['first', 'second', 'third'].map(
+      (label) => at.get(label) ?? Number.NaN,
+    );
+    expect(one).toBeLessThanOrEqual(two as number);
+    expect(two).toBeLessThanOrEqual(three as number);
+    for (const held of [first, second, third]) held.child.kill('SIGKILL');
     await Promise.all([first.child.exited, second.child.exited, third.child.exited]);
   }, 30_000);
 

@@ -53,6 +53,8 @@ export { type ChannelDescription, describeChannels } from './channel-describe';
 // What a job or an action publishes an event with: the process's own bus, no hub needed.
 // Its installer is the boot's, on `./adapter` (`adapter.ts`), never here.
 export { publishChannelEvent } from './channel-publish';
+// A resume's cursor as the node judged it; the signer itself is the registry's, never an export.
+export type { CursorDistrusted, CursorTrustOptions } from './cursor-sign';
 export {
   type AgentDial,
   type AgentSocket,
@@ -64,6 +66,7 @@ export {
   DeviceFrameTooLargeError,
   DeviceOfflineError,
   DeviceRequestTimeoutError,
+  DeviceWireVersionError,
 } from './device-errors';
 export {
   DEVICE_NODE_LOST,
@@ -101,7 +104,11 @@ export type {
   DeviceUpgradeTarget,
   DeviceWsData,
 } from './device-upgrade';
-export { DEVICE_CLOSE_REASON_MAX_BYTES, DEVICE_FRAME_MAX_BYTES } from './device-wire';
+export {
+  DEVICE_CLOSE_REASON_MAX_BYTES,
+  DEVICE_FRAME_MAX_BYTES,
+  DEVICE_WIRE_VERSION,
+} from './device-wire';
 export { RealtimeTopologyError } from './errors';
 export {
   InProcessTransport,

@@ -9,6 +9,7 @@ import { planMatrix, verifyPlan } from '../packages/cli/src/verify-plan';
 import { BESIDE_SERIAL_SUITES } from '../packages/cli/src/verify-run';
 import { SHARDABLE_STEPS } from '../packages/cli/src/verify-shard';
 import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';
+import { SCAFFOLD_ROWS } from './lib/ci/scaffold-matrix';
 import type { GatePart } from './lib/ci-parts';
 import { partGaps, scriptCalls, shardSetGaps } from './lib/ci-parts';
 import { expr, type Job, jobOf, planRows, readWorkflow, text } from './lib/ci-workflow-read';
@@ -371,17 +372,17 @@ describe('unit · ci.yml · scaffold-smoke opens the app it scaffolded', () => {
   });
 
   // A shape `x new` accepts is one a stranger can pick, so it gates on a runner of its own: a
-  // name in `NEW_SHAPES` with no row here is a scaffold nothing has ever run `bun run verify` on.
+  // name in `NEW_SHAPES` with no row is a scaffold nothing has ever run `bun run verify` on. The
+  // rows are `SCAFFOLD_ROWS`, handed over by `changes` (`scripts/ci-workflow-changes.test.ts`).
   test('the matrix is the default, --no-example, one row per x new --shape, and the monorepo', () => {
-    const include = listOf(job('scaffold-smoke').strategy?.matrix?.['include']).map(record);
-    expect(include.map((row) => text(row['flags']))).toEqual([
+    expect(SCAFFOLD_ROWS.map((row) => row.flags)).toEqual([
       '',
       '--no-example',
       ...NEW_SHAPES.map((shape) => `--shape ${shape}`),
       // `multiapp`: the default scaffold grown by `x g app` and `x g package` (plan 101, 22 M1).
       '',
     ]);
-    expect(text(include.at(-1)?.['app'])).toBe('multiapp');
+    expect(SCAFFOLD_ROWS.at(-1)?.app).toBe('multiapp');
   });
 });
 

@@ -91,6 +91,20 @@ Fixed cost of a part, measured on `main`: 7–11 s for checkout and setup — th
 services where it starts any (22 s + 8 s before this change, for two servers by hand and two as
 `services:`).
 
+## The jobs, one line each
+
+Moved out of root `CLAUDE.md` on 2026-11-27, for room under its 16 KB ceiling. Each job's question
+is the comment above it in `ci.yml`; `awk '/^jobs:/{j=1;next} j && /^  [a-z-]+:$/{print $1}'
+.github/workflows/ci.yml` re-derives the list.
+
+| Job | What it is |
+|---|---|
+| `gate` | the gate in parts: `x verify --only <steps>` per runner, `unit` sharded. Never a verdict, and never a lint/typecheck job beside it |
+| `verify` | the verdict: `x verify merge` over the parts, red for a step no part ran |
+| `scaffold-smoke` | a scaffolded app gates twice per row (the second gate catches broken generators): every row on a push, a dispatch and the nightly run; on a pull request away from the scaffold code, `demoapp`, `bareapp` and `saasapp` (2026-11-27, below) |
+| `windows` | native Windows in pwsh: lint, typecheck, a path-heavy unit subset, scaffold smoke |
+| `fault-drills` | `x drill` on the reference app: three faults, real Postgres |
+
 ## What holds it
 
 | Claim | Enforced by |
@@ -395,6 +409,30 @@ in the sense this page forbids: its question is the platform, which no Ubuntu ru
 | a path-heavy unit subset, `./`-prefixed, not the full suite | ~2× slower runner, 25-minute budget; bare (no `./`), `packages/core` also selects `examples/dummy/packages/core` |
 | `continue-on-error: true`, outside `verify`'s `needs` | lands red first so the sweep's rows can watch it turn green; flipped to required in the diff that makes it green |
 
+## Cheaper on every pull request, 2026-11-27
+
+Measured over runs of 2026-11-24..27: a full pull-request run was ~120 billed runner-minutes and
+6–7.5 min wall, and about one run in four was red. Plan 101 (`finish-ultimate-close-issues`), W13.
+
+| Change | Why | Billed minutes, estimated |
+|---|---|---|
+| a plan's `status.yml` (`docs/**/*.yml`) is prose to `scripts/ci-changes.ts` | PR #1377 ran every heavy job for one tracker of 15 paths; only the gate's plan guards read it | a docs-and-plan PR: ~45 (the six heavy jobs and `packages`) |
+| `packages` and `packages (merge)` skip on `heavy=false` | every suite of theirs that reads a page is a `unit` file the gate runs on every diff; a page moves no line of source, so only the coverage bar is skipped | a prose-only PR: ~25 |
+| `scaffold-smoke` reads its rows from `changes` (`scripts/lib/ci/scaffold-matrix.ts`): three on a pull request away from the scaffold code, all eleven otherwise | eleven rows were ~28 a run | ~19 per such PR run |
+| `ci.yml` runs in full nightly (`schedule`, 03:11 UTC); `ci-nightly.yml` keeps one `ci-nightly` issue open while it is red | the sample's blind spot — a shape-only regression from outside the scaffold code — surfaces within a night, never only in the Actions tab | +~120 a night |
+| `flake-hunt.yml`: two rounds per suite, not three | a third `unit` round was ~20 of ~83 a night; seven nights still shuffle fourteen orders per suite | ~27 a night |
+| the deploy workflows publish only when a shipped path changed since their last green run (`scripts/lib/ci/deploy-due.ts`) | a docs-only push rebuilt the demo image and redeployed the site | ~3 (demo) / ~1 (site) per such push |
+| `codeql.yml`, an advanced setup that ignores prose and cancels a superseded PR run | default setup ran 112 times in 3.5 days, ~7 min each, docs-only pushes too | ~7 per prose-only push or superseded PR run |
+| `lefthook.yml` pre-push runs `bun run changelog-check` | the changelog rules were among the reds; ~1 s locally | one avoided red round each |
+
+Kept as they were: `reference-app-verify` (the docs site builds `wiki/`, and a job-level `if` cannot
+pick one row of a matrix), and the `flaky` and `release-rehearsal` due checks (folding them into
+`changes` saves at most ~2 runner-minutes on a pull request that changes no test and no stamp,
+and would put both behind `changes` and move two guard tests). `scripts/lib/ci/test-weights.json`
+is not regenerated in this change: run 46012186539's timings flatten the four `unit` shards from
+283–295 s to 288 s each, ~7 s of wall, and put nine test files over `test-slow`'s 20 s budget with
+no stated reason — those headers come first.
+
 ## The other workflows
 
 Moved out of root `CLAUDE.md` on 2026-11-03 to make room for the facts `AGENTS.md` carried alone
@@ -406,8 +444,8 @@ when it became a symlink to `CLAUDE.md`. `ci.yml` runs on pushes to `main`, `nex
 | `release.yml` | that dispatch or a **published** Release → npm via OIDC, after `check` |
 | `registry-audit.yml` | daily → a `registry-drift` issue on disagreement, retitled to the current gap, closed by the next clean run |
 | `actions-cache.yml` | hourly + dispatch → `scripts/actions-cache-prune.ts --apply`: deletes cache entries a newer one supersedes (CodeQL's ~1.1 GB overlay base per `main` push filled the 10 GB cap); one `actions-cache` issue while over the 8 GB budget, closed by the next clean run (added 2026-11-18) |
-| `deploy-social-demo.yml` | green `ci` on `main` → the demo image |
-| `deploy-docs-site.yml` | green `ci` on `main` → `dummy/docs-site`'s static build on GitHub Pages; **inert** — every job skipped — until the owner sets the `DOCS_SITE_ORIGIN` repository variable (`scripts/ci-workflow-shape-docs.test.ts`) |
+| `deploy-social-demo.yml` | green `ci` on `main` → the demo image, when a path the image ships changed since the last green run (2026-11-27) |
+| `deploy-docs-site.yml` | green `ci` on `main` → `dummy/docs-site`'s static build on GitHub Pages, when a path the site is built from changed since the last green run (2026-11-27); **inert** — every job skipped — until the owner sets the `DOCS_SITE_ORIGIN` repository variable (`scripts/ci-workflow-shape-docs.test.ts`) |
 | `wiki.yml` | push to `main` → the wiki |
 | `tutorial-run.yml` | weekly (Sunday 05:29 UTC, added 2026-11-19, so `scripts/health.ts`'s `tutorials-run` row reads a newest `main` run under 8 days old), push to `main` or a PR touching a tutorial, a generator, `x new`, `x db` or the CLI's messages → tutorials 1–4 fence by fence, `X_DOC_TUTORIAL_DIVERGED`; never in `ci`, never required; one concurrency group per ref (on PRs since 2026-11-19, below) |
 | `bench.yml` | weekly + dispatch → re-measured first-hour/http-hello JSON as one PR on `bench/re-measured`, replaced by the next run; never in `ci`. No `release` trigger: a Release `release-tag.yml` creates with `GITHUB_TOKEN` starts no run, so it never fired. Needs Actions allowed to create pull requests (repository and organisation Actions settings); the cost is that required reviews must come from CODEOWNERS, which the bot cannot satisfy. Both 2026-11 runs were refused the PR; a refusal now says so and prints the `gh pr create` that opens it by hand, never the approve switch as the remedy |
@@ -415,6 +453,8 @@ when it became a symlink to `CLAUDE.md`. `ci.yml` runs on pushes to `main`, `nex
 | `scorecard.yml` | push to `main`, weekly, a change to `main`'s rules → the OpenSSF Scorecard run, published to the Scorecard API the README badge reads (`publish_results: true`); never gates a merge (added 2026-11-10) |
 | `security-channel.yml` | daily → asks whether private vulnerability reporting is on, and opens one `security-channel` issue when it is not (added 2026-11-10) |
 | `upgrade-fixtures.yml` | a PR or `main` push touching templates, codemods or upgrade code, weekly, dispatch → one row per past release: scaffold at that version, `x upgrade` to HEAD served from a loopback registry, its gate; `X_UPGRADE_FIXTURE_*`. Its own workflow: a red baseline must not block merges, and every row needs npm (added 2026-11-15) |
-| `flake-hunt.yml` | nightly (02:23 UTC), dispatch with an optional `seed` → `unit` and `live` three rounds each, file and test order shuffled by `bun test --randomize --seed`; one `flake-hunt` issue per failing test, found again by its title, carrying the seed and the rerun line (`scripts/flake-hunt.ts`). Not a gate, outside the 5-minute budget; `issues: write` on the filing job alone; its conclusion is `scripts/health.ts`'s `flake-hunt` row (added 2026-11-15) |
+| `flake-hunt.yml` | nightly (02:23 UTC), dispatch with an optional `seed` → `unit` and `live` two rounds each (three until 2026-11-27), file and test order shuffled by `bun test --randomize --seed`; one `flake-hunt` issue per failing test, found again by its title, carrying the seed and the rerun line (`scripts/flake-hunt.ts`). Not a gate, outside the 5-minute budget; `issues: write` on the filing job alone; its conclusion is `scripts/health.ts`'s `flake-hunt` row (added 2026-11-15) |
 | `compat.yml` | weekly (Sat 03:41 UTC) + dispatch → the gate's `unit` and `live` on Bun latest and canary, Postgres 16/17/18 and Solid's newest 1.x, 30 jobs; one `compat` issue per red cell, closed by its next green run (`scripts/compat.ts`). Not a gate; `issues: write` on the filing job alone; its conclusion is `scripts/health.ts`'s `compat` row (added 2026-11-16) |
+| `ci-nightly.yml` | a scheduled `ci` run on `main` finishing → one `ci-nightly` issue naming the red jobs, retitled and commented each red night, closed by the next green one; no checkout (added 2026-11-27) |
+| `codeql.yml` | push to `main` or a PR, prose (`docs/**`, `wiki/**`, `**/*.md`) ignored, weekly (Mon 04:13 UTC) → CodeQL for `javascript-typescript` and `actions`; replaces the repository's default setup, which must be switched off once it lands (added 2026-11-27) |
 | `next-sync.yml` | weekly (Mon 04:41 UTC) + dispatch → merges `main` into `next`, pushes, dispatches `ci.yml` there (a job-token push starts no workflow); a conflict, or a merge carrying `.github/workflows/` changes the job token may not push, fails the run and opens one `next-sync: main is not merged into next` issue (with the maintainer's exact push command), closed by the next clean run; an optional `NEXT_SYNC_TOKEN` secret (contents + workflows write) lets it push those too. `contents: write` + `actions: write` on the merge job (no install, no repo code), `issues: write` on the report job alone (added 2026-11-16) |

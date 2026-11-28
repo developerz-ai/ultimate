@@ -57,6 +57,7 @@ import * as sendInvite from '../app/orgs/jobs/send-invite';
 import * as warmAvatar from '../app/orgs/jobs/warm-avatar';
 import { PARTNER_SCOPES, resolvePartnerToken } from '../app/partners/oauth';
 import * as abortPostsImport from '../app/posts/actions/abort-posts-import';
+import * as cancelPostsExport from '../app/posts/actions/cancel-posts-export';
 import * as completePostsImport from '../app/posts/actions/complete-posts-import';
 import * as createComment from '../app/posts/actions/create-comment';
 import * as createPost from '../app/posts/actions/create-post';
@@ -95,6 +96,7 @@ import * as postLikesByDay from '../app/posts/queries/post-likes-by-day';
 import * as postRecord from '../app/posts/queries/post-record';
 import * as postReview from '../app/posts/queries/post-review';
 import * as postRevisions from '../app/posts/queries/post-revisions';
+import * as postsExportStatus from '../app/posts/queries/posts-export-status';
 import * as publicPost from '../app/posts/queries/public-post';
 import * as publicPostSlugs from '../app/posts/queries/public-post-slugs';
 import * as publicPosts from '../app/posts/queries/public-posts';
@@ -161,6 +163,7 @@ export const api = defineApi({
     postAttachment,
     createComment,
     requestPostsExport,
+    cancelPostsExport,
     // An export file coming back in parts: the five calls `uploadFile({ multipart })` makes.
     grantPostsImport,
     signPostsImportPart,
@@ -197,6 +200,7 @@ export const api = defineApi({
     orgPosts,
     postRecord,
     postById,
+    postsExportStatus,
     feedActivity,
     postLikesByDay,
     postReview,

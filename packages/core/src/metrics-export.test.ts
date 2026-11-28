@@ -45,7 +45,7 @@ describe('export', () => {
     expect(exporter.collections).toHaveLength(1);
     const collection = exporter.collections[0];
     expect(collection?.at).toBe(Date.parse('2026-08-11T00:00:00.000Z'));
-    expect(collection?.resource.serviceName).toBe('ultimate');
+    expect(collection?.resource.serviceName).toBe('unknown_service');
     expect(
       collection?.metrics.find((metric) => metric.descriptor.name === 'test_export_total')
         ?.points[0]?.value,

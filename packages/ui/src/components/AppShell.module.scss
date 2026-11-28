@@ -202,6 +202,8 @@
 
     .sidebar:popover-open {
       @include t.scrim-backdrop;
+      // The phone drawer traps its own scroll; the in-flow sidebar never does.
+      overscroll-behavior: contain;
       position: fixed;
       inset-block: 0;
       inset-inline-start: 0;

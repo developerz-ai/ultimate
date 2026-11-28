@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "aa2db0383b6924bd3231e6185f9229af3e26d1077fa8562a8aac4386dc57e740",
+  "buildId": "52e1fa867977a83513b241b18cce0c0e15000c35df21b613f821eacb214aa06e",
   "tiers": {
     "0": [
       "core",
@@ -413,6 +413,16 @@
       "code": "X_ADOPTION_CLAIM_UNGENERATED",
       "owner": "scripts",
       "at": "scripts/adoption-claims.ts"
+    },
+    {
+      "code": "X_ADVISORY_ACK_EXPIRED",
+      "owner": "scripts",
+      "at": "scripts/lib/advisory-ack-findings.ts"
+    },
+    {
+      "code": "X_ADVISORY_ACK_STALE",
+      "owner": "scripts",
+      "at": "scripts/lib/advisory-ack-findings.ts"
     },
     {
       "code": "X_ADVISORY_FLOOR_UNMET",
@@ -1760,6 +1770,16 @@
       "at": "packages/realtime/src/error-titles.ts"
     },
     {
+      "code": "X_DEVICE_WIRE_DRIFT",
+      "owner": "scripts",
+      "at": "scripts/device-wire.ts"
+    },
+    {
+      "code": "X_DEVICE_WIRE_VERSION",
+      "owner": "realtime",
+      "at": "packages/realtime/src/error-titles-server.ts"
+    },
+    {
       "code": "X_DOC_BOUNDARY_RULES_STALE",
       "owner": "scripts",
       "at": "scripts/boundary-rule-docs.ts"
@@ -2978,6 +2998,11 @@
       "code": "X_INPUT_INVALID",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_INPUT_UNKNOWN_KEY",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
     },
     {
       "code": "X_INSTANT_INVALID",
@@ -4778,6 +4803,11 @@
       "code": "X_QUERY_NOT_SUBSCRIBABLE",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_QUERY_PLAN_OVER_BUDGET",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_QUERY_PLAN_UNAVAILABLE",

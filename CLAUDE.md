@@ -75,7 +75,7 @@ Run everything from the repo root.
 | test (one name) | `bun test ./packages/core/src/errors.test.ts -t '<name>'` — **always with a path** (a bare `-t` loads every file) |
 | before reporting | `bun run preflight [<paths>]` — cheap ratchets, touched units' coverage, serve-graph on a moved src file: one verdict |
 | coverage, per unit | `bun run coverage` — 30 packages, `create-ultimate` and `scripts/` · `bun run coverage:package <pkg>` |
-| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds the three apps (`x build --target static`), then verifies. As of 2026-11 every `expectedRed` table (`scripts/lib/gated-apps.ts`) is empty: all steps pass. `--app <dir>` gates one |
+| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds the three apps (`x build --target static`), then verifies. `--app <dir>` gates one |
 | a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> \| --off-socket) [--browser \| --server-only]` — registration + `wiki/Error-Codes-<pkg>.md` row + HTTP status. Tier ≤ 4: one of pair 1, tier 5 none; realtime: one of pair 2. A script's code: `--script scripts/<f>.ts`, no `--package` (never-ships list + row) |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | regenerate manifest | `bun run manifest` |
@@ -90,7 +90,7 @@ Run everything from the repo root.
 ```
 packages/       the framework — one package per responsibility, tiered (see below)
 examples/dummy/ the reference app: every primitive, once, idiomatically
-dummy/social-media-clone/  the deployed demo app: production image built on every push to main
+dummy/social-media-clone/  the deployed demo app: its image published from green main
 dummy/docs-site/  the wiki as a static site
 docs/idea/      what and why — the design spec
 docs/architecture/  how it's built — internals
@@ -185,25 +185,12 @@ a list, never a count or ordinal: `PRIMITIVE_FACTORIES` in the same file, held c
 | every CLI flag | [`wiki/CLI-Reference.md`](wiki/CLI-Reference.md) |
 | tables, with no ORM | `entity()` declares; `postgresDriver()` (`packages/entity/src/pg-driver.ts`) is hand-written SQL |
 | realtime capacity, as measured | [`scripts/bench/results/README.md`](scripts/bench/results/README.md) |
-| the deploy-proof milestone | [`docs/history/milestone-11.md`](docs/history/milestone-11.md) · [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md) |
 
 ## CI
 
-Free runners only (public repo): `ubuntu-latest`, `windows-latest`, `macos-latest`. Under 5 min. One runner per unit
-([why](docs/history/ci-split.md)); each job's question is the comment above it in `ci.yml`.
-`awk '/^jobs:/{j=1;next} j && /^  [a-z-]+:$/{print $1}' .github/workflows/ci.yml` re-derives the jobs.
-
-- `gate` — the gate in parts: `x verify --only <steps>` per runner, `unit` sharded. Never a
-  verdict, and never a lint/typecheck job beside it.
-- `verify` — the verdict: `x verify merge` over the parts, red for a step no part ran.
-- `scaffold-smoke` — a scaffolded app gates twice per shape (`demoapp`, `bareapp`); the second
-  gate catches broken generators.
-- `windows` — native Windows in pwsh: lint, typecheck, a path-heavy unit subset, scaffold smoke.
-- `fault-drills` — `x drill` on the reference app: three faults, real Postgres.
-
-`ci.yml` runs on pushes to `main`, `next` and `release/*`. Other workflows (release, deploy,
-`workflow-lint.yml`'s zizmor, …) and their triggers:
-[`ci-split.md`](docs/history/ci-split.md#the-other-workflows).
+Free runners only (public repo), under 5 min, one runner per unit; never a lint/typecheck job
+beside the gate, whose parts `verify` merges. Each job's question is the comment above it in
+`ci.yml`; the jobs and every other workflow: [`ci-split.md`](docs/history/ci-split.md#the-jobs-one-line-each).
 
 ## How to work
 

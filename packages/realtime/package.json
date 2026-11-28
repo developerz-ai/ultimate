@@ -34,10 +34,13 @@
     "./page-runtime": "./src/page-runtime.ts",
     "./page-runtime-wait": "./src/page-runtime-wait.ts",
     "./server": "./src/server.ts",
-    "./sync-worker": "./src/sync-worker.ts"
+    "./sync-worker": "./src/sync-worker.ts",
+    "./device-wire-frames": "./src/device-wire-frames.ts",
+    "./wire/device-v1.json": "./wire/device-v1.json"
   },
   "files": [
     "src",
+    "wire",
     "!src/**/*.test.ts",
     "!src/**/*-fixture.ts",
     "CLAUDE.md",

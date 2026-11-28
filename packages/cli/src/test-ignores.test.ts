@@ -19,6 +19,7 @@ const SAMPLES = [
   'build/d.live.test.ts',
   'examples/e.live.test.ts',
   'dummy/f.live.test.ts',
+  '.claude/worktrees/agent-1/apps/web/k.live.test.ts',
   'dist/g.live.test.ts',
   'packages/x/dist/h.live.test.ts',
   'node_modules/p/i.live.test.ts',
@@ -59,6 +60,7 @@ test('a test under a dot-directory is discovered; .git and .x never are', async 
   try {
     const paths = [
       '.claude/hooks/guard-git.test.ts',
+      '.claude/worktrees/agent-1/a.test.ts',
       '.git/hooks/h.test.ts',
       '.x/verify-static/s.test.ts',
       'node_modules/.cache/c.test.ts',

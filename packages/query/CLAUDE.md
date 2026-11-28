@@ -40,7 +40,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `cursor-value.ts` | what a sort value becomes inside a cursor, and back |
 | `input-shape.ts` | what a read's `input:` may be, given that its route is a query STRING |
 | `sql.ts` | `explainQuery()` / `describeSql()` |
-| `validate.ts` | the input parse — `X_INPUT_INVALID` with `issues` + `issuesTruncated` on `meta`, as action's twin |
+| `validate.ts` | the input parse — `X_INPUT_INVALID` with `issues` + `issuesTruncated` on `meta`; `X_INPUT_UNKNOWN_KEY` warns |
 | `cache.ts` | the read path: the request memo, and the fill through `@ultimat3/cache`'s registered tiers |
 | `search.ts` | `search()` — the query FACTORY over an entity's `.searchable()` columns |
 | `source.ts` | `SqlSource` contract + `from()` in-memory reference |

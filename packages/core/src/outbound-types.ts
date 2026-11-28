@@ -130,6 +130,10 @@ export interface OutboundRequest {
    * Send each hop through an HTTP proxy (`CONNECT` for `https:`). Under `dial: 'public'` the screen
    * still runs first and the tunnel is opened to the approved ADDRESS, the certificate still proven
    * against the name; the proxy itself is the app's own choice, like a `'named'` host.
+   *
+   * Unset: the app-wide proxy, `outbound.proxy` in `app.config.ts`, when one is declared (never
+   * for loopback or an `outbound.direct` host). A resolver answering `undefined` — `proxy: () =>
+   * undefined` — dials this call direct regardless: the one spelling, so the field's type is 31.x's.
    */
   readonly proxy?: OutboundProxy | undefined;
 }

@@ -9,6 +9,7 @@
 
 import type { Secret } from '@ultimat3/core';
 import { isSecret, revealSecret, trimTrailingSlashes } from '@ultimat3/core';
+import { ambientProxyFor } from '@ultimat3/core/outbound';
 import { readAnswerBody } from './answer-body';
 import { billedCall } from './billed';
 import { providerFailure } from './context-overflow';
@@ -237,9 +238,12 @@ class OpenAiProvider implements Provider {
     const { signal } = request;
     const apiKey = this.apiKey();
     const doFetch: AiFetch = this.config.fetch ?? fetch;
+    const url = this.url();
+    // The app-wide egress proxy, asked as `anthropic-provider.ts` asks it: this is not `outbound()`.
+    const proxy = ambientProxyFor(url);
     // From here an abort costs the prompt (`stream-bill.ts`): the request is on its way.
     trackSent(request, model);
-    const response = await doFetch(this.url(), {
+    const response = await doFetch(url, {
       method: 'POST',
       headers: {
         ...(this.config.auth === 'api-key'
@@ -256,6 +260,7 @@ class OpenAiProvider implements Provider {
       body: JSON.stringify(body),
       // Attached only when the caller has one — same rule, same reason, as the Anthropic half.
       ...(signal === undefined ? {} : { signal }),
+      ...(proxy === undefined ? {} : { proxy }),
     });
     if (!response.ok) {
       // An overflow or the transport's code — `context-overflow.ts` decides, for both wires.

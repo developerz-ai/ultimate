@@ -7,6 +7,7 @@ import type { Changelog } from './changelog-sections';
 import { UNRELEASED } from './changelog-sections';
 import type { ApiSymbol } from './public-api-compat';
 import { classify, own } from './public-api-compat';
+import { isConsumedOnly } from './public-api-consumed';
 import type { ApiLock, ApiSnapshot } from './public-api-lock';
 import { LOCK_FORMAT } from './public-api-lock';
 
@@ -47,7 +48,7 @@ export function diffApi(lock: ApiSnapshot, tree: ApiSnapshot): ApiDiff {
         breaks.push({ kind: 'removed', specifier, name, why: 'it is no longer exported' });
         continue;
       }
-      const change = classify(recorded, current);
+      const change = classify(recorded, current, isConsumedOnly(specifier, name));
       if (change.kind === 'break')
         breaks.push({ kind: 'changed', specifier, name, why: change.why });
       else if (change.kind === 'compatible') compatible.push({ specifier, name, why: change.why });

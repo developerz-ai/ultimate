@@ -216,6 +216,31 @@ describe(testName('unit', 'the subscribe fixture drives a whole sync node'), () 
     expect(other.rows()).toHaveLength(2);
   });
 
+  // The cursor a client resumes from is the one its LAST frame left it on: the node signs each
+  // (#1280), and the snapshot's cursor moved to a later lsn by hand is a tampered one — a cold
+  // start. The feed has to carry what a browser carries: the patches' ids and the patch's sig.
+  bunTest('a reconnect after patches it already APPLIED is still a delta', async () => {
+    await driver.subscribe<{ id: string }>(liveNotes, { orgId: ACME }, member('m2', ACME));
+    const feed = await driver.subscribe<{ id: string; title: string }>(
+      liveNotes,
+      { orgId: ACME },
+      member('m1', ACME),
+    );
+    const added = '00000000-0000-4000-8000-0000000000c9';
+    await as(member('m1', ACME), () => db.notes.update(NOTE_ONE, { title: 'seen live' }));
+    await as(member('m1', ACME), () => db.notes.insert({ id: added, orgId: ACME, title: 'new' }));
+    await feed.settled();
+    expect(feed.patches().length).toBeGreaterThanOrEqual(2);
+
+    await as(member('m1', ACME), () => db.notes.update(NOTE_ONE, { title: 'while away' }));
+    await feed.reconnect();
+
+    expect(feed.snapshots()).toBe(1);
+    expect(feed.resubscribedFrom()).toBeDefined();
+    expect(feed.row(NOTE_ONE)?.title).toBe('while away');
+    expect(feed.row(added)?.title).toBe('new');
+  });
+
   // The other half of the same decision, and the honest one to state: a lone subscriber's
   // reconnect re-reads, because its own departure took the window with it.
   bunTest('a lone subscriber reconnecting gets a fresh snapshot, not a silent gap', async () => {

@@ -516,7 +516,33 @@ Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a
 | Reconnect outside the window | one bounded snapshot query at a current LSN. Never WAL history traversal |
 | Cursor unusable and no snapshot path supplied | `X_CURSOR_STALE` |
 | Ordering | LSN is monotonic per DB, so a client can never apply an older change over a newer one |
-| What a cursor carries | `{ qid, lsn, ids, at }` and nothing else, `As of 2026-08-24`. `digest` and `count` were written by every snapshot, encoded and validated on every `subscribe` frame, and **read by nothing** — `digest` cost a canonical-JSON render plus a hash over EVERY ROW of every snapshot, paid once per live query per reconnecting socket in the restart storm this package is measured on, and `count` would have been wrong had it ever gained a reader, because `advance` seeds its set from the already-truncated `ids`. Both are deleted, and that is what moved the wire version ([below](#wire-protocol-version)) |
+| What a cursor carries | `{ qid, lsn, ids, at }` and the node's optional `sig` over the first three ([below](#a-cursor-is-signed), `As of 2026-11`), nothing else. `As of 2026-08-24`: `digest` and `count` were written by every snapshot, encoded and validated on every `subscribe` frame, and **read by nothing** — `digest` cost a canonical-JSON render plus a hash over EVERY ROW of every snapshot, paid once per live query per reconnecting socket in the restart storm this package is measured on, and `count` would have been wrong had it ever gained a reader, because `advance` seeds its set from the already-truncated `ids`. Both are deleted, and that is what moved the wire version ([below](#wire-protocol-version)) |
+
+### A cursor is signed
+
+`As of 2026-11` (#1280). A cursor's `ids` are read as **rows this subscriber holds**: a delete, or a row a policy now refuses, is sent only to a subscriber holding it. On a resume the cursor is client data, so an id added to it was handed that row's `delete` — that the row exists, and when it went. The node signs what it hands out, and trusts ids only under its own signature.
+
+| | |
+|---|---|
+| What is signed | the window (`qid`), the `lsn`, a SHA-256 of the sorted `ids`, and the subscriber — its actor id and tenant. Never `at` (the client's clock), never the `sid` (a reconnect uses a new one) |
+| With what | `@ultimat3/core`'s `keyedFingerprint` under the app's signing secret (`ULTIMATE_CURSOR_SECRET`), with its own derived key. Every `sync` node of one app shares the secret, so a cursor signed on one node resumes on another |
+| Where it rides | down: `snapshot.cursor.sig`, and `patch.sig` — the signature of the cursor that patch leaves the subscriber on. Up: `subscribe.target.cursor.sig` |
+| The client | stores the `sig` of the last frame beside its cursor and echoes it. It never computes one, and holds no key to. A patch that carries none clears it |
+| The browser bundle | carries no signing code: `cursor-sign.ts` is reachable from `@ultimat3/realtime/server` only (`cursor-sign.test.ts` walks the import graph) |
+
+| The `sig` on a resume | What the node does | Counter (`LiveQueryRegistry`) |
+|---|---|---|
+| this cursor's, for this subscriber | resumes from it: a delta inside the window, a snapshot outside. A row really held, revoked while away, is still withdrawn | — |
+| present and not this cursor's: edited `ids` or `lsn`, another subscriber's cursor, another window's, a secret rotated since, or a value that is no sig at all | a **cold start** — one snapshot of what this subscriber may see, no replay, no `delete` for an id it named | `cursorsRefused` · `onCursorRefused` |
+| absent — no `sig` key at all: a client built before 2026-11, or one that stripped its own | resumes as it always did, ids trusted | `unsignedCursors` · `onUnsignedCursor` |
+
+- **No honest client sends a mismatched `sig`** — only the node mints one — so the cold start is not a break. A steady `cursorsRefused` outside a secret rotation is somebody editing cursors.
+- **The unsigned row is open on `main`**, on purpose: refusing it is a break, and it flips on `next` (an unsigned cursor cold-starts). `unsignedCursors` counts resumes that sent no `sig` — old builds, or a client stripping its own; at zero, nothing resumes unsigned.
+- **Rotating the signing secret costs every open subscription one snapshot** on its next resume, as it invalidates every pagination cursor.
+- **A subscriber's own older cursor still verifies.** It names rows it really held at that position; replaying it reveals nothing it was not sent.
+- **Never the obvious fix**: intersecting `ids` with what the policy admits now cannot tell a forged id from a row held and since revoked, and drops the withdraw the second one is owed.
+- **Optional on the wire, so no `PROTOCOL_VERSION` bump**: an older node sends no `sig` and ignores one. Only an **absent** `sig` is unsigned. One that is present and is no sig — not a string, `null`, longer than 64 characters, outside `[a-z0-9:]` — is kept by the decoder as a marker that verifies for nobody: a cold start, counted in `cursorsRefused`, never a refused frame and never the legacy path.
+- **Cost**: one keyed fingerprint per subscriber per patch frame, ≈ 11 µs (measured 2026-11-27, one core); the ids digest is cached per ids array, and an update moves no id.
 
 ## Inbound frame order
 
@@ -711,7 +737,7 @@ No channel kind carries an ordered, two-way byte stream to a browser — a termi
 | old node ← new client (v3) | the same, at the other end |
 | v1 ↔ v2 (2026-08-24) | the old node's `cursor()` reads `digest` through a `str()` that **throws on an absent field**, which is precisely why that was a version and not a silent widening |
 
-**The version guards incompatibility, never novelty.** Two earlier realtime changes deliberately did not move it: an additive optional field (`snapshot.entity`) and a removed field read through `list()` (`hello.resume`) are both readable in either direction, because `decode` builds a whitelist object and `list()` answers `[]` for an absent key. `cursor()` is the other kind of reader — `str`/`num` throw — so removing a field it reads is the one shape that needs the number.
+**The version guards incompatibility, never novelty.** Two earlier realtime changes deliberately did not move it: an additive optional field (`snapshot.entity`; `cursor.sig` and `patch.sig` since) and a removed field read through `list()` (`hello.resume`) are both readable in either direction, because `decode` builds a whitelist object and `list()` answers `[]` for an absent key. `cursor()` is the other kind of reader — `str`/`num` throw — so removing a field it reads is the one shape that needs the number.
 
 ## Build skew
 
@@ -810,6 +836,7 @@ the listener's websocket paths are fixed when it binds. A container scans once, 
 | `X_DEVICE_OFFLINE` | `deviceLink.request()` named a device no node holds a socket for under the caller's tenant | `x doctor --json`, then retry once the device redials |
 | `X_DEVICE_REQUEST_TIMEOUT` | the device took the request and sent no `response` with its id before `deadlineMs`; or the holding node did not confirm a `disconnect()` | a longer `deadlineMs`, or answer every request the node sends the device; a disconnect: retry, a dead holder closes on its own |
 | `X_DEVICE_FRAME_TOO_LARGE` | a device frame, or a `request()` frame, past `DEVICE_FRAME_MAX_BYTES` | split the payload, or store the bytes and send their key |
+| `X_DEVICE_WIRE_VERSION` | a `deviceAgent` read a node `hello` whose `v` is above the `DEVICE_WIRE_VERSION` it speaks (1; a hello with no `v` reads as 1). Server-only: raised in the agent, never on a browser's wire | `bun update @ultimat3/realtime` on the agent side, then restart it — or pin the node to the version the device firmware speaks |
 | `X_BUILD_SKEW` | client build's contract is incompatible with the server's | reload the client; see the fix line on the error |
 
 Verbatim shapes: [`packages/realtime/src/errors.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/errors.ts). Full index: [Error codes](Error-Codes).

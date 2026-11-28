@@ -86,7 +86,10 @@ option, then `S3_ENDPOINT`/`AWS_ENDPOINT`, `S3_REGION`/`AWS_REGION`,
 `<bucket>.<endpoint host>` — or the endpoint as given when its host already starts with
 `<bucket>.` (`https://media.acct.r2.cloudflarestorage.com`), never the bucket twice.
 `s3Driver({ fetch, clock })` inject the signed path's transport and its clock (tests; default the
-global `fetch` and `systemClock`); `S3FetchLike` is the shape.
+global `fetch` and `systemClock`); `S3FetchLike` is the shape. The signed path sends through the
+app-wide egress proxy (`outbound.proxy`; `init.proxy`), an endpoint on loopback or an
+`outbound.direct` host excepted. `Bun.S3Client`'s plain calls do not: it takes no proxy option and
+honours only the process-wide `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` (measured, Bun 1.4.4).
 `localDriver` keeps content type, etag, `cacheControl` and `metadata` in a `<root>/.meta/`
 sidecar so `get()`/`list()` round-trip everything `put()` was handed; sidecars never appear in
 `list()`. `s3Driver` STORES both — a `put()` carrying `cacheControl`, `metadata`, `retention` or

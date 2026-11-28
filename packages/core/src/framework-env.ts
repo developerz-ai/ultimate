@@ -60,6 +60,8 @@ export const FRAMEWORK_ENV: readonly FrameworkEnvName[] = [
   // libpq's own TLS mode: stated, it keeps `database.ssl` from adding `sslmode=require`.
   ...contract('cli', 'PGSSLMODE'),
   ...toggles('cli', 'OTEL_SDK_DISABLED'),
+  // The OTel service identity, read once at boot (`serve-boot-telemetry.ts`), before the app name.
+  ...contract('cli', 'OTEL_SERVICE_NAME', 'OTEL_RESOURCE_ATTRIBUTES'),
   ...internal('cli', 'ULTIMATE_SEED_TIER', 'ULTIMATE_STATE_DIR', 'ULTIMATE_BUILD_CAPTURE'),
   ...internal('cli', 'ULTIMATE_TASK_RUN'),
   ...internal('cli', 'ULTIMATE_DEV_CHILD', 'ULTIMATE_DEV_SUPERVISOR_PID', 'X_ENV'),

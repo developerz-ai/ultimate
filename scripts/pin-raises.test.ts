@@ -256,6 +256,7 @@ describe('the tables that live inside a script', () => {
       'scripts/factory-names-pins.ts',
       'scripts/wiki-fences-backlog.ts',
       'scripts/package-front.ts',
+      'scripts/lib/advisory-acknowledged.ts',
     ]);
   });
 

@@ -193,4 +193,4 @@ afterAll(() => setAssetResolver(undefined));
 `x shot <route> --locale en` photographs `/en/<route>` with `Accept-Language: en`. With no
 `--locale`, `Accept-Language` is still pinned to the app's default locale. `x shot --matrix`
 photographs every site route in every locale, in light and dark, at 390 and 1440 px, into
-`.x/shot/matrix/`, with an `index.html` contact sheet. See [CLI reference](CLI-Reference#x-shot).
+`.x/shot/matrix/`, with an `index.html` contact sheet. See [CLI reference](CLI-Reference-Tools#x-shot).

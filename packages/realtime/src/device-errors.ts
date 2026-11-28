@@ -102,3 +102,14 @@ export function deviceAuthUnavailable(detail: string): RealtimeError {
     fix: 'x doctor --json',
   });
 }
+
+/** The node's `hello` named a wire version newer than this agent speaks. */
+export class DeviceWireVersionError extends RealtimeError {
+  constructor(args: { spoken: number; node: number }) {
+    super({
+      code: 'X_DEVICE_WIRE_VERSION',
+      cause: `the node's hello carries device wire v${args.node}, and this agent speaks up to v${args.spoken}, so it cannot read the node's frames`,
+      fix: 'bun update @ultimat3/realtime   # on the agent side, then restart it — or pin the node to the version the device firmware speaks',
+    });
+  }
+}

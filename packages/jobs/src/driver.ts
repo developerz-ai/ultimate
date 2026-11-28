@@ -15,6 +15,7 @@ import type { BackfillLedger } from './backfill-ledger';
 import type { AckOptions, NackOptions, SettleDebt } from './driver-settle';
 import { ClaimQueuesEmptyError } from './errors';
 import type { JobIntrospection, JobProgress } from './introspection';
+import type { TenantJobs } from './job-status-port';
 import type { LeaseStore } from './leases';
 import type { StepRecord, StepStore } from './steps';
 
@@ -358,6 +359,12 @@ export interface JobDriver {
    */
   readonly settleDebt?: SettleDebt;
   readonly introspect?: JobIntrospection;
+  /**
+   * A tenant's own read and cancel of ONE job, fenced on the tenant inside the store — what
+   * `jobStatusFor`/`cancelJobFor` call. Optional for a hand-rolled driver, which those then refuse
+   * (`X_JOB_INTROSPECTION_UNSUPPORTED`); memory, pg and redis each ship one (`job-status-*.ts`).
+   */
+  readonly tenantJobs?: TenantJobs;
   /**
    * How many rows wait (`ready` or `delayed`) on `queue`, counted no further than `cap`: what an
    * enqueue of a job declaring `maxPending` asks first (`enqueue-backlog.ts`). Optional for a

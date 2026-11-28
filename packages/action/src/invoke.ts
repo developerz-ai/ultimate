@@ -31,6 +31,7 @@ import {
 import { statusFor } from '@ultimat3/http';
 import { maskSensitive } from '@ultimat3/schema';
 import type { AnyAction, AnyActionDef, InvokeOptions } from './action';
+import { decideFor } from './action-decide';
 import { declarationOf, drainsItsHandler } from './action-stream';
 import type { AuditRecord } from './audit';
 import {
@@ -365,6 +366,10 @@ async function perform(
   // already decided, per call, by `guardActionBeforeInput` above: a revoked `can()` is refused
   // here too. In flight or absent, nothing has been decided yet, so the rule decides.
   const answered = def.row !== undefined && peeked !== undefined && peeked.status !== 'in-flight';
+  // The handler's `decide(rows)`: this declaration's policy, this caller, this parsed input, this
+  // surface — bound here so a handler can name none of them. Built after the parse, so `row()`
+  // and anything before the input stage never hold one.
+  const decide = decideFor(def.policy, { actor: actorOf(ctx), input, ctx }, surface);
   if (!answered) await judgeRow();
 
   // Output parsing sits inside `run` so a replayed idempotent response is the parsed value too —
@@ -378,7 +383,9 @@ async function perform(
     // passing the outer `ctx.signal` onward would fail its vendor call and settle a failure.
     const override = drainsItsHandler(def) ? undefined : handlerOverrideOf(def);
     const handle = override ?? def.handle.bind(def);
-    const produced = await judgedHandler(def, name, () => handle({ input, ctx: useContext() }));
+    const produced = await judgedHandler(def, name, () =>
+      handle({ input, ctx: useContext(), decide }),
+    );
     return validateOutput(def.output, produced, name);
   };
   // The meter is drawn LAST before the handler, on every surface `surface: 'server'` included: a

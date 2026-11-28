@@ -14,7 +14,7 @@ import type {
   ChannelSubscribeTarget,
   ReplayGapFrame,
 } from './channel-wire';
-import type { LiveCursor } from './cursor';
+import { type LiveCursor, wireSig } from './cursor';
 import {
   isParsedJsonObject,
   isRow,
@@ -153,6 +153,13 @@ export interface PatchFrame {
    * it always was — so no `PROTOCOL_VERSION` bump.
    */
   readonly writes?: readonly string[];
+  /**
+   * The node's signature over the cursor this subscriber holds AFTER folding these patches
+   * (`LiveCursor.sig`). The client stores it on its advanced cursor and echoes it on resume; a
+   * patch without one leaves that cursor unsigned. Additive and optional, for the reason `writes`
+   * is. A PRESENT value that is no sig is kept as `CURSOR_SIG_MALFORMED`, never read as absent.
+   */
+  readonly sig?: string;
 }
 
 export interface AckFrame {
@@ -285,7 +292,9 @@ export function decode(raw: string | Uint8Array): Frame {
         lsn: str(parsed, 'lsn'),
       } as const;
       const writes = writesOf(parsed, 'patch.writes');
-      return writes.length === 0 ? base : { ...base, writes };
+      const named = writes.length === 0 ? base : { ...base, writes };
+      const sig = wireSig(parsed['sig']);
+      return sig === undefined ? named : { ...named, sig };
     }
     case 'ack':
       return {
@@ -388,7 +397,7 @@ function row(value: unknown): LiveRow {
 
 function cursor(value: unknown): LiveCursor {
   if (!isParsedJsonObject(value)) throw fail('cursor must be an object');
-  return {
+  const base = {
     qid: str(value, 'qid'),
     lsn: str(value, 'lsn'),
     ids: list(value, 'ids', FRAME_LIMITS.cursorIds, 'cursor.ids').map((id) => {
@@ -397,6 +406,11 @@ function cursor(value: unknown): LiveCursor {
     }),
     at: num(value, 'at'),
   };
+  // Absent stays absent — a client older than the signature. Present and no sig is KEPT, as the
+  // marker that verifies for nobody: dropped, a tampered cursor read as a legacy one. Never a
+  // refused frame either way — the subscriber is served, from a cold start.
+  const sig = wireSig(value['sig']);
+  return sig === undefined ? base : { ...base, sig };
 }
 
 function patch(value: unknown): RowPatch {

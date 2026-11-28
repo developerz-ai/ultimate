@@ -22,7 +22,7 @@ import {
   forgetDeviceSockets,
 } from './device-socket';
 import type { DeviceGrant } from './device-upgrade';
-import { DEVICE_FRAME_MAX_BYTES } from './device-wire';
+import { DEVICE_FRAME_MAX_BYTES, DEVICE_WIRE_VERSION } from './device-wire';
 import { InProcessTransport } from './fanout';
 
 let paths = 0;
@@ -119,6 +119,7 @@ describe('unit · deviceSocket request/response', () => {
     const ws = await dial('tok-a');
     expect(ws.sent[0]).toEqual({
       type: 'hello',
+      v: DEVICE_WIRE_VERSION,
       heartbeatMs: 10_000,
       maxFrameBytes: DEVICE_FRAME_MAX_BYTES,
     });

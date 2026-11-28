@@ -6,7 +6,7 @@ import type { RowPatch } from './json';
 import { PROTOCOL_VERSION } from './sync-protocol';
 
 /**
- * Byte-for-byte `encode(patchFrame(sid, patches, lsn, writes))` with `patches` already encoded:
+ * Byte-for-byte `encode(patchFrame(sid, patches, lsn, writes, sig))` with `patches` already encoded:
  * the same keys in the same order, and `JSON.stringify` is compositional with no indentation.
  * Pinned against the unshared spelling by `live-fanout.test.ts`.
  */
@@ -15,10 +15,12 @@ export function encodePatchFrame(
   patchesJson: string,
   lsn: string,
   writes: readonly string[],
+  sig?: string,
 ): string {
   const head = `{"type":"patch","v":${JSON.stringify(PROTOCOL_VERSION)},"sid":${JSON.stringify(sid)}`;
   const tail = writes.length === 0 ? '' : `,"writes":${JSON.stringify(writes)}`;
-  return `${head},"patches":${patchesJson},"lsn":${JSON.stringify(lsn)}${tail}}`;
+  const signed = sig === undefined ? '' : `,"sig":${JSON.stringify(sig)}`;
+  return `${head},"patches":${patchesJson},"lsn":${JSON.stringify(lsn)}${tail}${signed}}`;
 }
 
 /** The gate let every patch through untouched: the shared encoding is this subscriber's too. */

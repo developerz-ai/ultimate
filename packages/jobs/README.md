@@ -2072,6 +2072,39 @@ immediately; a RUNNING one stops at its next heartbeat, which no longer matches 
 aborts the attempt — `steps.ts` then refuses every write. `ack` and `nack` are fenced on
 `state = 'running'`, so the worker that was cancelled cannot un-cancel it on the way out.
 
+## A tenant's own job: `jobStatusFor` and `cancelJobFor`
+
+The operator verbs above take an id and no tenant. An END USER's status page or cancel button
+takes these two, from an app `query` and `action` under the app's own policy — functions, not a
+factory: who may read or cancel is policy, and `jobs`, `action` and `query` share tier 3.
+
+```ts
+import type { JobDriver } from '@ultimat3/jobs';
+import { cancelJobFor, jobStatusFor } from '@ultimat3/jobs';
+
+declare const driver: JobDriver;
+declare const jobId: string;
+declare const orgId: string;
+declare const actorId: string;
+
+const status = await jobStatusFor(driver, { jobId, tenantId: orgId, name: 'posts.export' });
+const after = await cancelJobFor(driver, { jobId, tenantId: orgId, reason: `by ${actorId}` });
+```
+
+| Rule | Why |
+|---|---|
+| `JobStatus` is `id`, `name`, `state`, `attempt`, `maxAttempts`, `progress`, `runAt`, `createdAt`, `updatedAt` — copied field by field | never `input`, `lastError`, its stack, `traceparent`, `enqueuedBy`, the queue or the claim: a status endpoint is where a payload or a stack would reach an end user |
+| another tenant's job, a job queued for NO tenant and a missing id all answer `undefined` | the fence is IN the store (`JobDriver.tenantJobs`: a pg `where id = $1 and tenant_id = $2`, a Redis script, the memory map) — one lookup, one answer, nothing to tell apart |
+| `name`, when given, is part of the fence | an export endpoint answers for exports only, never another job of the same org |
+| `cancelJobFor` cancels only a LIVE job, under the same fence, and answers it as it now stands | `cancelled`, or the finished state it had; another tenant's job is a no-op answering `undefined` — never `X_JOB_NOT_CANCELLABLE`, which would say it exists |
+| an id that is not a lowercase uuid, an empty tenant or an empty `name` answers `undefined` without a lookup; an empty `reason` is no reason (the row keeps its `lastError`) | every driver alike: Postgres never sees a malformed uuid, and a script's `''` never reads as "any name" |
+| a hand-rolled driver with no `tenantJobs` | `X_JOB_INTROSPECTION_UNSUPPORTED` — memory, pg and redis all ship one |
+
+The worked recipe is the reference app's `postsExportStatus` query and `cancelPostsExport` action
+(`examples/dummy/apps/web/app/posts/export-job.ts`). Every `.job()` enqueue — direct, staged
+through the outbox, `enqueueMany`, a task's fire — stamps the tenant the job declares
+(`tenant: (input) => input.orgId`); a `tenant: 'none'` job is reachable by no tenant call.
+
 ## Metrics
 
 | Series | Kind | Answers |

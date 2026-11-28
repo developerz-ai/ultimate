@@ -153,6 +153,22 @@ export function hardExit(
   };
 }
 
+/**
+ * A stop this process begins on its own because serving on is unsafe — the embedded session that
+ * could not be made `x_app` again after a migrate pass (`dev-db-migrator-hold.ts`). Its own hard
+ * exit, since an unsupervised `x dev` starts no watch: that drain meets a database whose turn is
+ * never given back, and a hook waiting on it must not keep the process. Exit 1 if it comes to that.
+ */
+export function stopDevServing(
+  signal: string,
+  exit: (code: number) => void = (code) => process.exit(code),
+  begin: (signal: string) => Promise<void> = drain,
+  afterMs: () => number = devHardExitMs,
+): void {
+  hardExit(exit, afterMs)(1);
+  void begin(signal);
+}
+
 /** What the supervisor sends for a stop: the signal it would have forwarded on POSIX. */
 export interface DevDrainMessage {
   readonly type: 'x-dev-drain';

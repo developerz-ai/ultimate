@@ -72,6 +72,7 @@
 
 .list {
   @include t.custom-scrollbar;
+  overscroll-behavior: contain;
 
   overflow-y: auto;
   padding: t.space(2);

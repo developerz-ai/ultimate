@@ -44,6 +44,10 @@ export const nearestName = (input: string, candidates: readonly string[]): strin
   let best: string | undefined;
   let bestScore = MAX_EDITS + 1;
   for (const candidate of candidates) {
+    // Edits are at least the length gap, so a gap past the cutoff can never answer — and skipping
+    // it BEFORE `distance` is what bounds the cost: the input may be a caller's (an unknown input
+    // key), and its grid is (input + 1) × (candidate + 1) numbers. A 1M-char key was ~300 MB.
+    if (Math.abs(input.length - candidate.length) > cutoff(input, candidate)) continue;
     const score = distance(input, candidate);
     if (score < bestScore && score <= cutoff(input, candidate)) {
       best = candidate;

@@ -92,6 +92,7 @@ export function defineMemberInvite(input: DefineMemberInviteInput): MemberInvite
     template: input.template,
     ttlMs: input.ttlMs,
     identifier: (raw) => raw,
+    recipient: 'explicit',
   });
   const runtime = (auth: Auth, mail: MailSender): VerificationRuntime => ({
     store: auth.adapter,
@@ -105,12 +106,10 @@ export function defineMemberInvite(input: DefineMemberInviteInput): MemberInvite
     async invite(auth, mail, invite) {
       const orgId = tenantOf(invite.orgId);
       const to = normaliseEmail(invite.email);
-      // The store key is not an address; the mail goes to the address it was built from.
-      const addressed: MailSender = {
-        send: (template, _key, data, locale) => mail.send(template, to, data, locale),
-      };
-      return purpose.issue(runtime(auth, addressed), {
+      return purpose.issue(runtime(auth, mail), {
         identifier: storeKey(orgId, to),
+        // The store key is not an address; the mail goes to the address it was built from.
+        to,
         locale: invite.locale,
         link: invite.link,
         data: invite.data,

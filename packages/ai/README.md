@@ -70,6 +70,11 @@ const answer = await ai.scope(budgetKeysFor(actor), async () => {
 | `openAiProvider({ baseUrl, models, apiKey, auth? })` | the OpenAI chat-completions format | OpenAI, Azure, vLLM, Ollama, LiteLLM, a company gateway — [below](#the-openai-format--azure-vllm-ollama-your-own-gateway) |
 | your own `Provider` | anything | `{ name, models, generate, stream }` — the same contract both adapters implement |
 
+Both shipped providers send through the app-wide egress proxy (`outbound.proxy` in `app.config.ts`)
+when one is declared — asked per request with `ambientProxyFor` and passed to `fetch` as
+`init.proxy` — and dial direct for a `baseUrl` on loopback or an `outbound.direct` host (a sidecar
+gateway, a local Ollama). [Outbound HTTP](https://github.com/developerz-ai/ultimate/wiki/Outbound-HTTP).
+
 Peers: neither adapter is the default, each serves exactly the `models` list the app hands it (an
 empty one is `X_AI_REQUEST_INVALID` at construction), and the gateway routes a model to the first
 provider whose `models` lists it.

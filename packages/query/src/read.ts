@@ -471,7 +471,7 @@ async function admit(
       nowMs: ctx.now().getTime(),
     });
   }
-  const input = await parseQueryInput(def.input, raw, name);
+  const input = await parseQueryInput(def.input, raw, name, unenforced === undefined);
   if (failureCaptureActive()) recordFailureInput(maskSensitive(def.input, input, REDACTED));
   // The audit record's copy, masked by THIS read's own schema — never a key table (`action`'s rule).
   if (trace !== null) trace.input = maskSensitive(def.input, input, REDACTED);

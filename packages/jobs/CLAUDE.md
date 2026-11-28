@@ -237,6 +237,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `inspect.ts` | `--json` introspection; `operatorInput`: `[redacted]` whole with no handle, else `redactInput(maskSensitive(…))` |
 | `inspect-operator.ts` | the verbs `x jobs` binds: remove, promote, pause, resume, resolve-step |
 | `inspect-unsupported.ts` | `requireIntrospection`: every verb's guard, `X_JOB_INTROSPECTION_UNSUPPORTED` (redis ships no `introspect`) |
+| `job-status*.ts` | `jobStatusFor`/`cancelJobFor`; `JobDriver.tenantJobs`, tenant-fenced, per driver |
 | `introspection.ts` | `JobIntrospection`, every operator type, and the bounds |
 | `counters.ts` / `counter-batch.ts` | bucket arithmetic, `nackOutcome`, the memory counters; the pg driver's per-process batch, flushed every 10 s and on close |
 | `driver-memory-operator.ts` / `driver-pg-operator.ts` | each driver's operator members |

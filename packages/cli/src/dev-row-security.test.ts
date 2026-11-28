@@ -1,6 +1,8 @@
 // `x dev` on PGlite with `database.rowSecurity`: the migrate path owns the tables as `x_migrator`,
 // the boot serves as `x_app`, and a raw read under tenant A sees A's row alone — B's is refused by
 // the database, not the repository. Off, the same app boots as PGlite's superuser and sees both.
+// And while it serves, the dev server takes `x db migrate|rollback` itself: as `x_migrator`, with
+// every concurrent read waiting and answering as `x_app`.
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API and no recursive delete.
@@ -13,6 +15,8 @@ import { ctxOf, resetLifecycle, runWithContext, userActor } from '@ultimat3/core
 import { db, enableRowSecuritySql, sql } from '@ultimat3/db';
 import { startDev } from './cmd-dev';
 import { resetRegistries } from './cmd-dev-fixture';
+import { migrateInDev } from './dev-db-migrate';
+import { rollbackInDev } from './dev-db-rollback';
 import { runMigrations } from './serve';
 
 const BOOT_TIMEOUT_MS = 90_000;
@@ -24,6 +28,14 @@ const MIGRATION = [
   'create table posts (id int primary key, org_id uuid not null);',
   ...enableRowSecuritySql('posts', 'org_id', 'uuid'),
   `insert into posts values (1, '${A}'), (2, '${B}');`,
+].join('\n');
+
+const NOTES = [
+  'create table notes (id int primary key, org_id uuid not null);',
+  ...enableRowSecuritySql('notes', 'org_id', 'uuid'),
+  `insert into notes values (1, '${A}'), (2, '${B}');`,
+  '-- down',
+  'drop table notes;',
 ].join('\n');
 
 async function appRoot(rowSecurity: boolean): Promise<string> {
@@ -42,12 +54,24 @@ const count = async (): Promise<number> =>
   (await db().one<{ n: number }>(sql`select count(*)::int as n from posts`))?.n ?? -1;
 const asTenantA = <T>(run: () => Promise<T>): Promise<T> =>
   runWithContext(ctxOf({ actor: userActor({ id: 'u1', orgId: A }) }), run);
-const owner = async (): Promise<string | undefined> =>
+const owner = async (table = 'posts'): Promise<string | undefined> =>
   (
     await db().one<{ owner: string }>(
-      sql`select pg_get_userbyid(relowner) as owner from pg_class where relname = 'posts'`,
+      sql`select pg_get_userbyid(relowner) as owner from pg_class where relname = ${table}`,
     )
   )?.owner;
+const currentRole = async (): Promise<string | undefined> =>
+  (await db().one<{ role: string }>(sql`select current_user as role`))?.role;
+/** Tenant A's count of `posts` and the role that answered, asked again until `stop` is set. */
+async function readsUntil(stop: { done: boolean }): Promise<Set<string>> {
+  const seen = new Set<string>();
+  while (!stop.done) {
+    seen.add(await asTenantA(async () => `${String(await count())} as ${await currentRole()}`));
+    // A macrotask turn: PGlite alone settles in microtasks, and the pass under test reads files.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  return seen;
+}
 
 afterEach(() => {
   resetRegistries();
@@ -70,6 +94,38 @@ describe('x dev · row security on PGlite', () => {
         expect(await count()).toBe(0);
         const role = await db().one<{ role: string }>(sql`select current_user as role`);
         expect(role?.role).toBe('x_app');
+      } finally {
+        await server.stop();
+      }
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
+  test(
+    'on: x db migrate and rollback run in the serving process as x_migrator, never seen by a read',
+    async () => {
+      const root = await appRoot(true);
+      await runMigrations({ root, env: {} });
+      const server = await startDev({ root, port: 0, env: {}, roles: ['web'] });
+      try {
+        await Bun.write(join(root, 'packages/db/migrations/0001_notes.sql'), NOTES);
+        const stop = { done: false };
+        const reads = readsUntil(stop);
+        const applied = await migrateInDev(root, {});
+        expect(applied.applied).toEqual(['0001_notes']);
+        expect(applied.catalog.tables.map((table) => table.name)).toContain('notes');
+        expect(await owner('notes')).toBe('x_migrator');
+        expect(await currentRole()).toBe('x_app');
+        expect(await asTenantA(count)).toBe(1);
+        const notes = (): Promise<readonly unknown[]> => db().query(sql`select id from notes`);
+        expect(await asTenantA(notes)).toEqual([{ id: 1 }]);
+
+        expect(await rollbackInDev(root, {}, 1)).toEqual({ reverted: ['0001_notes'] });
+        expect(await owner('notes')).toBeUndefined();
+        expect(await currentRole()).toBe('x_app');
+        stop.done = true;
+        // Every read issued across both passes: one tenant's row, answered by the app role.
+        expect([...(await reads)]).toEqual(['1 as x_app']);
       } finally {
         await server.stop();
       }

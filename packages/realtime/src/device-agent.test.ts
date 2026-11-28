@@ -4,10 +4,17 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { markListening } from '@ultimat3/core';
+import { CLOSE } from './close-codes';
 import { type DeviceAgent, deviceAgent } from './device-agent';
 import { deviceActor, ORG_A } from './device-fixture';
-import { type DeviceAttachment, type DeviceSocket, deviceSocket } from './device-socket';
+import {
+  type DeviceAttachment,
+  type DeviceSocket,
+  deviceSocket,
+  forgetDeviceSockets,
+} from './device-socket';
 import type { DeviceWsData } from './device-upgrade';
+import { DEVICE_WIRE_VERSION } from './device-wire';
 import { InProcessTransport } from './fanout';
 import type { JsonValue } from './json';
 
@@ -15,6 +22,9 @@ let paths = 0;
 const cleanups: (() => void)[] = [];
 afterEach(() => {
   for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+  // A path is declared once per process: a rerun in the same process (flake-hunt) declares the
+  // same `/agent-test-<n>` again, which is the duplicate the registry refuses.
+  forgetDeviceSockets();
 });
 
 async function serve(onFrame: (frame: JsonValue) => JsonValue | undefined = () => undefined) {
@@ -156,5 +166,107 @@ describe('unit · a device agent closed mid-dial', () => {
     await Promise.resolve();
     expect(dials).toBe(0);
     expect(agent.connected).toBe(false);
+  });
+});
+
+describe('unit · a device agent meets a newer wire', () => {
+  const hello = (v: number | undefined) =>
+    JSON.stringify({
+      type: 'hello',
+      ...(v === undefined ? {} : { v }),
+      heartbeatMs: 5,
+      maxFrameBytes: 9,
+    });
+
+  async function against(text: string) {
+    const closes: { code: number | undefined; reason: string | undefined }[] = [];
+    const beats: number[] = [];
+    const socket = {
+      send() {},
+      close(code?: number, reason?: string) {
+        closes.push({ code, reason });
+      },
+      onopen: null as (() => void) | null,
+      onmessage: null as ((event: { readonly data: unknown }) => void) | null,
+      onclose: null as (() => void) | null,
+    };
+    const agent = deviceAgent({
+      url: 'ws://device.test/link',
+      token: () => 't',
+      onRequest: () => null,
+      dial: () => socket,
+      schedule: (_run, ms) => {
+        beats.push(ms);
+        return () => undefined;
+      },
+    });
+    cleanups.push(() => agent.close());
+    await Promise.resolve();
+    await Promise.resolve();
+    socket.onmessage?.({ data: text });
+    return { closes, beats };
+  }
+
+  test('a hello with v above DEVICE_WIRE_VERSION closes with X_DEVICE_WIRE_VERSION, no beat', async () => {
+    const { closes, beats } = await against(hello(DEVICE_WIRE_VERSION + 1));
+    expect(closes).toEqual([{ code: CLOSE.versionSkew, reason: 'X_DEVICE_WIRE_VERSION' }]);
+    expect(beats).toEqual([]);
+  });
+
+  test('a hello at the spoken version, or with no v, beats and stays open', async () => {
+    for (const v of [DEVICE_WIRE_VERSION, undefined]) {
+      const { closes, beats } = await against(hello(v));
+      expect(closes).toEqual([]);
+      expect(beats).toEqual([5]);
+    }
+  });
+});
+
+describe('unit · a device agent redialing against a newer wire', () => {
+  test('each version-skew close backs off further: an opened socket is not a healthy one', async () => {
+    const delays: number[] = [];
+    const pending: (() => void)[] = [];
+    const agent = deviceAgent({
+      url: 'ws://device.test/link',
+      token: () => 't',
+      onRequest: () => null,
+      backoff: { base: 100, max: 100_000, factor: 2, jitter: 'none' },
+      schedule: (run, ms) => {
+        delays.push(ms);
+        pending.push(run);
+        return () => undefined;
+      },
+      dial: () => {
+        const socket = {
+          send() {},
+          close() {
+            socket.onclose?.();
+          },
+          onopen: null as (() => void) | null,
+          onmessage: null as ((event: { readonly data: unknown }) => void) | null,
+          onclose: null as (() => void) | null,
+        };
+        queueMicrotask(() => {
+          socket.onopen?.();
+          socket.onmessage?.({
+            data: JSON.stringify({
+              type: 'hello',
+              v: DEVICE_WIRE_VERSION + 1,
+              heartbeatMs: 5,
+              maxFrameBytes: 9,
+            }),
+          });
+        });
+        return socket;
+      },
+    });
+    cleanups.push(() => agent.close());
+    for (let round = 0; round < 4; round += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      for (const run of pending.splice(0)) run();
+    }
+    expect(delays.length).toBeGreaterThanOrEqual(3);
+    expect(delays.slice(0, 3)).toEqual([...delays.slice(0, 3)].sort((a, b) => a - b));
+    expect(delays[2]).toBeGreaterThan(delays[0] ?? 0);
   });
 });

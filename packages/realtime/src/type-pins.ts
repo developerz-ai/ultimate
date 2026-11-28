@@ -5,6 +5,8 @@
 
 import type { AsyncState, Row } from '@ultimat3/core';
 import type { LiveHandle, Unsubscribe } from './client-contract';
+import type { CursorTrustOptions } from './cursor-sign';
+import type { LiveQueryRegistryOptions } from './live-query-options';
 import type { QueryAccessor, QueryRef } from './use-query';
 import type { RecordAccessor, useRecords } from './use-record';
 
@@ -58,3 +60,18 @@ export type _RecordAccessorIsDisposable = Assert<
   [RecordAccessor<Row>] extends [Disposable] ? true : false
 >;
 export type _UnsubscribeIsDisposable = Assert<[Unsubscribe] extends [Disposable] ? true : false>;
+
+/**
+ * `LiveQueryRegistryOptions` restates the two cursor-trust hooks as members rather than extending
+ * `CursorTrustOptions` (its heading is 31.51.0's public API): the registry hands its options to
+ * `CursorTrust`, so the two stay one shape or this is a build error.
+ */
+export type _RegistryOptionsAreCursorTrustOptions = Assert<
+  LiveQueryRegistryOptions extends CursorTrustOptions ? true : false
+>;
+export type _RegistryHooksAreTheTrustHooks = Assert<
+  Equals<
+    Pick<LiveQueryRegistryOptions, keyof CursorTrustOptions>,
+    Pick<CursorTrustOptions, keyof CursorTrustOptions>
+  >
+>;

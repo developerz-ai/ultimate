@@ -9,6 +9,7 @@
 
 import type { Actor } from '@ultimat3/core';
 import { UltimateError } from '@ultimat3/core';
+import type { LiveCursor, RowPatch } from '@ultimat3/realtime';
 import type { LiveReplicator } from '@ultimat3/realtime/server';
 import { startLiveReplicator } from '@ultimat3/realtime/server';
 import type { LiveFeed, LiveFeedPatch, LiveTarget } from './fixture-drivers';
@@ -24,20 +25,17 @@ interface SnapshotFrameLike {
   readonly type: 'snapshot';
   readonly sid: string;
   readonly rows: readonly Row[];
-  /** `@ultimat3/realtime`'s `LiveCursor`, carried back verbatim on a resume. */
-  readonly cursor: { readonly qid: string; readonly lsn: string };
+  /** The node's cursor, signed for this subscriber; its `sig` is never computed here. */
+  readonly cursor: LiveCursor;
 }
 
 interface PatchFrameLike {
   readonly type: 'patch';
   readonly sid: string;
-  readonly patches: readonly {
-    readonly op: 'insert' | 'update' | 'delete';
-    readonly id: string;
-    readonly row: Record<string, unknown> | null;
-    readonly lsn: string;
-  }[];
+  readonly patches: readonly RowPatch[];
   readonly lsn: string;
+  /** The node's signature of the cursor these patches leave the subscriber on. */
+  readonly sig?: string;
 }
 
 export interface SubscribeDriver {
@@ -123,7 +121,7 @@ export async function subscribeDriver(): Promise<SubscribeDriver> {
       let rows: readonly Row[] = [];
       let snapshots = 0;
       let lsn = '';
-      let cursor: unknown = null;
+      let cursor: LiveCursor | null = null;
       const patches: LiveFeedPatch<R>[] = [];
       const frames = mine();
       for (const frame of frames) {
@@ -142,6 +140,13 @@ export async function subscribeDriver(): Promise<SubscribeDriver> {
           patches.push({ op: one.op, row: { id: one.id, ...(one.row ?? {}) } as unknown as R });
         }
         lsn = patch.lsn;
+        // The cursor moves with every patch, as a browser's does (`client-frames.ts`): the ids
+        // through realtime's own `advance`, and the sig THIS frame carried — the snapshot's sig
+        // covers the snapshot's position, and beside a later lsn it reads as a tampered cursor.
+        if (cursor !== null && patch.lsn !== '') {
+          const next: LiveCursor = realtime.advance(cursor, patch.patches, patch.lsn, cursor.at);
+          cursor = patch.sig === undefined ? next : { ...next, sig: patch.sig };
+        }
       }
       const last = marks[marks.length - 1];
       const resumedFrom =
@@ -169,9 +174,10 @@ export async function subscribeDriver(): Promise<SubscribeDriver> {
       reconnect: async () => {
         const held = state();
         if (held.cursor === null) return;
-        // The cursor the client holds: the snapshot's, advanced to the last patch it applied. That
-        // is what a real client carries, and what `resumeFrom` compares against the retained window.
-        const askedLsn = held.lsn;
+        // The cursor the client holds: the snapshot's, advanced over every patch it applied and
+        // carrying the last frame's sig. That is what a real client sends back, verbatim, and what
+        // the node verifies before `resumeFrom` compares it against the retained window.
+        const askedLsn = held.cursor.lsn;
         marks.push({ at: held.frames.length, askedLsn });
         connection.send({
           type: 'subscribe',
@@ -190,7 +196,7 @@ export async function subscribeDriver(): Promise<SubscribeDriver> {
             kind: 'query',
             qid: target.name,
             input,
-            cursor: { ...(held.cursor as Record<string, unknown>), lsn: askedLsn },
+            cursor: held.cursor,
           },
         });
         await replicator.settled();

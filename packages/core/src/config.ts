@@ -23,6 +23,7 @@ import { type MailConfig, type MailSectionInput, mailIssues, mergeMail } from '.
 import { type Input, lastSaid, layered } from './config-merge';
 import type { NavigationConfig, NavigationSectionInput } from './config-navigation';
 import { mergeNavigation, navigationIssues } from './config-navigation';
+import * as outboundSection from './config-outbound';
 import type { PwaConfig, PwaOfflineConfig } from './config-pwa';
 import { PWA_FIX, PWA_PUSH_FIX, pwaIssues, pwaPushIssues } from './config-pwa';
 import { removedKeyFix, removedKeyIssue, removedKeysIn } from './config-removed';
@@ -130,12 +131,8 @@ export interface DatabaseConfig {
  * place. It was also the second exported type called `CacheTier` in the tree; the other is
  * `@ultimat3/cache`'s tier INTERFACE, which is the one every implementation names.
  *
- * No `driver` and no `urlEnv` either, deleted 2026-08-22 and for the same reason one rung further
- * up: `tiers` is what BUILDS the ladder (`packages/cli/src/dev-cache.ts`), so `driver: 'redis'`
- * beside `tiers: ['request-memo', 'lru']` was a second selector that selected nothing — the shape
- * `examples/dummy/app.config.ts` shipped. `urlEnv` was `database.urlEnv` verbatim: the Redis tier
- * reads the literal `REDIS_URL`, so `urlEnv: 'MY_REDIS'` made nothing read `MY_REDIS`. Which rungs
- * exist is `cache.tiers` and only that; a rung the environment cannot supply refuses the boot.
+ * No `driver` and no `urlEnv` either (deleted 2026-08-22): selectors that selected nothing. Which
+ * rungs exist is `cache.tiers` and only that; a rung the environment cannot supply refuses the boot.
  */
 export interface CacheConfig {
   /** At least 1: the rungs refuse a lease of no length, so 0 is refused here rather than at boot. */
@@ -189,12 +186,9 @@ export interface JobsConfig {
 }
 
 /**
- * No `heartbeatMs` (deleted 2026-08-19) and no `tier` (deleted 2026-08-23): read by nothing. The
- * socket beat is `new LiveClient({ heartbeatMs })`, the presence beat is derived, and an app's
- * realtime tier is what it DECLARES (a `channel()`, a `live: true` query) — never a config key.
- * No `transport` and no `urlEnv` either (deleted in 31.0.0): the bus is the `transport` adapter
- * port — `NATS_URL` set builds NATS, unset builds the in-process bus, and any other `Transport` is
- * `runtime.ts`'s `transport` — so a closed two-member union here could only refuse a third bus.
+ * No `heartbeatMs`, `tier`, `transport` or `urlEnv` (deleted 2026-08 and in 31.0.0): read by
+ * nothing. The beats are the client's and derived, the tier is what an app DECLARES, and the bus
+ * is the `transport` adapter port (`NATS_URL` set builds NATS, else the in-process bus).
  */
 export interface RealtimeConfig {
   readonly enabled: boolean;
@@ -240,6 +234,8 @@ export interface AppConfig {
   readonly clientErrors: clientErrors.ClientErrorsConfig;
   readonly failureCapture: failureCapture.FailureCaptureConfig;
   readonly time: timeSection.AppTimeConfig;
+  /** Optional in the TYPE only (a pre-31.52 literal compiles): `defineConfig` always fills it. */
+  readonly outbound?: outboundSection.OutboundConfig | undefined;
 }
 
 /**
@@ -263,6 +259,8 @@ export interface AppConfigInput
     failureCapture.FailureCaptureSectionInput,
     timeSection.TimeSectionInput {
   readonly name: string;
+  /** A member, not an `extends`: the interface's heading is part of its 31.x public API. */
+  readonly outbound?: outboundSection.OutboundSectionInput['outbound'];
   readonly theme?: Input<ThemeConfig> | undefined;
   readonly auth?: Input<AuthConfig> | undefined;
   readonly pwa?: PwaConfigInput | undefined;
@@ -361,6 +359,7 @@ function validate(config: AppConfig): void {
   clientErrors.clientErrorsIssues(config, issues);
   failureCapture.failureCaptureIssues(config, issues);
   timeSection.timeIssues(config, issues);
+  outboundSection.outboundIssues(config, issues);
 
   if (cacheTierIssues(config.cache.tiers, issues)) tierFix.push(CACHE_TIER_FIX);
 
@@ -451,6 +450,7 @@ function merge(name: string, layers: readonly AppConfigOverlay[]): AppConfig {
     ...clientErrors.mergeClientErrors(layers),
     ...failureCapture.mergeFailureCapture(layers),
     ...timeSection.mergeTime(layers),
+    ...outboundSection.mergeOutbound(layers),
   };
 }
 

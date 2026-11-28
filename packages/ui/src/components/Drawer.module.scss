@@ -119,6 +119,7 @@
 
 .body {
   @include t.custom-scrollbar;
+  overscroll-behavior: contain;
   flex: 1;
   padding: t.space(4);
   overflow-y: auto;

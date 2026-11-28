@@ -37,3 +37,25 @@ export const PostSlugTaken = defineError<string>({
     'across every org, so a slug is unique in all of them',
   fix: "createPost({ ...input, slug: '<an-unused-slug>' })   # or a title that slugifies differently",
 });
+
+/**
+ * 404 for an export job the acting org does not have — one answer whether the id names nothing or
+ * another org's export: `jobStatusFor`/`cancelJobFor` cannot tell the two apart, by design, so
+ * neither can a caller probing ids.
+ */
+export const PostsExportNotFound = defineError<string>({
+  code: 'X_POSTS_EXPORT_NOT_FOUND',
+  title: "no such posts export in the actor's organisation",
+  status: 404,
+  cause: (jobId) => `no posts export job ${JSON.stringify(jobId)} in the actor's organisation`,
+  fix: 'requestPostsExport({ orgId })   # pass the jobId it answers to postsExportStatus/cancelPostsExport',
+});
+
+/** 503: reading or cancelling an export needs the job queue, and this process installed none. */
+export const PostsExportQueueUnavailable = defineError<string>({
+  code: 'X_POSTS_EXPORT_QUEUE_UNAVAILABLE',
+  title: 'this process has no job queue to read an export from',
+  status: 503,
+  cause: (what) => `${what} needs the job queue, and this process installed no job driver`,
+  fix: 'x dev',
+});

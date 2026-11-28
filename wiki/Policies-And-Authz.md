@@ -44,6 +44,16 @@ Policies live in `<feature>/policy.ts` and are referenced by name from the featu
 
 The decision is surface-blind. The surface selects only how a denial is *rendered* — never whether authz runs, and never how input was validated.
 
+### Many rows in one action — `decide(rows)`
+
+A handler acting on a batch asks the action's own policy once per row: `handle({ input, ctx,
+decide })`, `decide(rows) → { allowed, denied: [{ row, code, reason }] }`. Same rule, same
+surface as the call, one `policy.decision` event per row (`evaluateEach` in `@ultimat3/policy`). Rows
+are its only parameter — another policy cannot be named. Only an exact allow allows; a throwing
+predicate fails the call; a `null`/`undefined` row is denied without asking. The call's own guard
+asks the rule with `row: null` first, so a batch rule answers `row === null` as "may this actor do
+this at all". Skip-denied or abort-all is the app's choice (axiom 8): no bulk-action factory ships.
+
 | Aspect | Rule |
 |---|---|
 | Projects to | HTTP guard, live-query row filter, job actor check, MCP tool gate, admin visibility |

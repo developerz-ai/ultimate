@@ -10,6 +10,7 @@
 import type { DrainConfig, LifecycleOptions, Role } from '@ultimat3/core';
 import { configureLifecycle, logger, UltimateError } from '@ultimat3/core';
 import { installBuildId } from '@ultimat3/core/adapter';
+import { configureOutboundProxy } from '@ultimat3/core/outbound';
 import { loadAppConfig } from './app-config-load';
 import { armFailureCapture } from './failure-capture-boot';
 import type { MetricsEndpoint } from './metrics-endpoint';
@@ -28,6 +29,7 @@ import { releaseOrThrow, startServices } from './runtime-services';
 import type { BootTimeline } from './serve-boot-phases';
 import { bootTimeline } from './serve-boot-phases';
 import { type BootProbe, openBootProbe } from './serve-boot-probe';
+import { configureServiceIdentity, type ServiceIdentityBoot } from './serve-boot-telemetry';
 import { bootWarningConcerns, warnAtBoot } from './serve-boot-warnings';
 import { loadDrainConfig, loadHealthConfig } from './serve-drain';
 import {
@@ -103,9 +105,19 @@ export async function bootServing(boot: {
   readonly metrics: MetricsEndpoint;
 }): Promise<ServedApp> {
   const { options } = boot;
+  // Before the config loads, from the env alone (#1361): a span the app's config opens already
+  // names the service the deploy named. The app's `name` and the build id fill in below.
+  // FIRST in the unwind list, so it is released last: the exporter's final flush still names it.
+  const identity = configureServiceIdentity(options.env);
+  boot.acquired.unshift(identity.release);
   // Before anything is started or created: a role `app.config.ts` does not list is refused while
   // there is nothing to unwind but the scrape listener.
-  assertRoleDeclared(boot.role, await loadAppConfig(options.root));
+  const appConfig = await loadAppConfig(options.root);
+  identity.named(appConfig?.name);
+  assertRoleDeclared(boot.role, appConfig);
+  // `outbound.proxy`, before any service or app module can send: every `outbound()` call that
+  // names no proxy of its own — APNs, FCM, OAuth, a webhook — goes through it from here on.
+  boot.acquired.push(configureOutboundProxy(appConfig?.outbound));
   // The role's own grace FIRST, before the services: the schema wait runs inside them, and a worker
   // SIGTERMed mid-wait sat through web's readiness grace. `app.config.ts`'s `drain` section is
   // applied over this once the app is loaded (`bootRoles`).
@@ -136,6 +148,7 @@ export async function bootServing(boot: {
   timeline.phase('services');
   return bootRoles({
     ...boot,
+    identity,
     runtime,
     timeline,
     ...(tls === undefined ? {} : { tls }),
@@ -170,6 +183,8 @@ export function refuseHalfLoadedApp(role: Role, findings: readonly Finding[]): v
 async function bootRoles(boot: {
   readonly options: ServeOptions;
   readonly role: Role;
+  /** The service identity `bootServing` named from the env and the config; the build id is ours. */
+  readonly identity: ServiceIdentityBoot;
   readonly runtime: RunningServices;
   readonly acquired: (() => void | Promise<void>)[];
   /** The scrape listener `serveApp` opened before any of this work; `startRoles` adopts it. */
@@ -187,11 +202,14 @@ async function bootRoles(boot: {
   // shipped chart and nothing read it, so every deployment that configured a collector got an empty
   // dashboard. `x dev` keeps its own recorder — the `/_x` timeline is a different sink with a
   // different lifetime — so this is the production boot's alone (axiom 6).
-  // At the FRONT of the unwind list, so the stop and a failed boot's rollback alike release it
-  // last: the drain's own spans and the final counter snapshot still have somewhere to go.
+  // At the FRONT of the unwind list (behind only the service identity), so the stop and a failed
+  // boot's rollback alike release it last but one: the drain's own spans and the final counter
+  // snapshot still have somewhere to go, under the service's own name.
   // The config first, for `database.slowStatementMs`: `app.config.ts` declares, it registers no hook.
   const appConfig = await loadAppConfig(options.root);
-  acquired.unshift(
+  acquired.splice(
+    acquired.indexOf(boot.identity.release) + 1,
+    0,
     startOtlpExport(options.env, { slowStatementMs: appConfig?.database.slowStatementMs }),
   );
   // The image's compiled stylesheets, before the first page is imported — importing one IS
@@ -223,6 +241,7 @@ async function bootRoles(boot: {
   // Core's one copy: `ctx.buildId` (a job's audit row), `/healthz` and `/readyz` read this, never
   // `BUILD_ID` — an unstamped image's `''` would otherwise disagree with `x-ultimate-build`.
   acquired.push(installBuildId(buildId));
+  boot.identity.built(buildId);
   timeline.phase('build-id');
   // Before the first socket opens: everything above this line fails loudly into the container's
   // own logs, everything below it is a served request, a claimed job or a routed frame.

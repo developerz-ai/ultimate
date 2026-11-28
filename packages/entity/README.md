@@ -1035,7 +1035,7 @@ the search mirror and the `entity.bulk` report are the same.
 |---|---|
 | Bound | a pre-write count past `MAX_ASSERTED_ROWS` is `X_INVARIANT_VIOLATED`. Postgres also bounds returned rows inside a transaction, rolling back if the count drifts. Sweep with `.where(filter).inBatches(1000)`, or use `updateWhere`, which answers a count |
 | Statements on Postgres | one when the filter names the whole primary key and no rule only the app can judge is declared. Otherwise a `count(*)` goes first, without an explicit lock |
-| `defineDriver` store | refuses before writing: the store reports only a count, not the rows it wrote. Use `updateWhere` for a count or a repository implementing atomic `updateWhereReturning` |
+| `defineDriver` store | with `updateChecked` on an unversioned entity: the won compare-and-set names exactly the rows written, read back by key (a raced row is re-judged, one that left the filter is not answered). Otherwise refuses before writing: the store reports only a count, not the rows it wrote — use `updateWhere`, or implement `updateChecked` ("Custom drivers") |
 | `Repo` without it | optional on the contract: the call is `X_INVARIANT_VIOLATED` with nothing written |
 
 | Bulk insert | Resolves | Statement |
@@ -1485,6 +1485,14 @@ export const kvDriver = defineDriver({
         for (const row of hit) rows.set(key(row), { ...row, ...patch });
         return hit.length;
       },
+      // Optional, and what keeps a judged update honest under a concurrent writer: no await
+      // between the comparison and the set, so nothing lands between them.
+      updateChecked: async (filter, expected, patch) => {
+        const hit = matched(filter);
+        if (!Bun.deepEquals(hit, expected)) return false;
+        for (const row of hit) rows.set(key(row), { ...row, ...patch });
+        return true;
+      },
       delete: async (filter) => {
         const hit = matched(filter);
         for (const row of hit) rows.delete(key(row));
@@ -1507,6 +1515,25 @@ Capabilities (`DRIVER_CAPABILITIES`): `transactions`, `lock`, `series`, `upsert`
 `aggregate:countBy`, `aggregate:sum`, `aggregate:avg`, `aggregate:min`, `aggregate:max`,
 `aggregate:approximateCount`. A duplicate key is `entityUniqueViolation(entity, constraint)` —
 `X_DB_UNIQUE_VIOLATION`, the code Postgres' `23505` becomes, with no faked SQLSTATE.
+
+**A judged update is a compare-and-set only when the store implements `updateChecked`.** An
+update of an entity with an invariant or a same-tenant reference (and no `version`) reads the
+matching rows, judges every merged row, then writes. `updateChecked(filter, expected, patch,
+advance?)` is optional and detected by presence (no capability to declare): atomically, when the
+rows `filter` matches are exactly `expected` — the rows `select` answered, every value equal — it
+sets `patch` on each and answers `true`; otherwise it writes nothing and answers `false`. The kit
+then re-reads, re-judges (a row that left the filter is skipped, one the newer value breaks is
+`X_INVARIANT_VIOLATED`) and retries, `MAX_CHECKED_RETRIES` (16) times, then refuses
+`X_DB_SERIALIZATION_FAILURE` — retryable, the code Postgres' `40001` becomes. **Without it the
+write is today's unconditional `update`**: a writer landing between the judge and the write can
+leave a row the invariant refuses (#1379). The first judged table a driver opens without it logs
+`entity.driver.update_unchecked` once (`code: 'X_DRIVER_UNSUPPORTED'`, `capability:
+'updateChecked'`). A versioned entity needs neither: its writes compare-and-set on the version.
+`updateMany`'s rollback (one store write per row, so a refusal part way writes the moved rows
+back) goes through it too: a row is restored only while it still holds what the batch wrote. A row
+another writer changed first is kept as that writer left it, and the call refuses
+`X_DB_SERIALIZATION_FAILURE` naming it, rather than the original error; a plain store restores
+unconditionally.
 
 **A custom store owns its own schema, uniqueness and foreign keys.** Migrations, drift and every
 `x db` command describe Postgres only; `x verify`'s drift step skips (and says why) when no SQL

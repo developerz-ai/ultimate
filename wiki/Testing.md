@@ -1387,6 +1387,39 @@ export const exercise = defineExercise(
 );
 ```
 
+### A plan budget, and a race
+
+`As of 2026-11`. `expectPlanWithin(sql\`…\`, { maxCost, maxSortRows }, { client?, entities? })` plans one
+statement with its real parameters (`explain (format json)` in a read-only transaction; never
+`analyze`, so nothing runs) and refuses a root `Total Cost` or a `Sort` over more estimated rows
+than the budget. Both numbers are required: a budget is a measurement of your schema, not a
+default. Over budget it throws `X_QUERY_PLAN_OVER_BUDGET` (meta `totalCost`, `sortRows`, `node`,
+`table`); given `entities`, the fix names the `indexes:` entry the plan sweep would, else `analyze`.
+
+```ts
+import { sql } from '@ultimat3/db';
+import { entity, text, uuid } from '@ultimat3/entity';
+import { expectPlanWithin } from '@ultimat3/testing';
+
+const posts = entity('posts', { columns: { id: uuid().primaryKey(), orgId: uuid(), title: text({ max: 80 }) } });
+const org = '0b9f6c1e-0000-4000-8000-000000000000';
+
+await expectPlanWithin(
+  sql`select * from posts where org_id = ${org} order by title limit 20`,
+  { maxCost: 60, maxSortRows: 0 },
+  { entities: [posts] },
+);
+```
+
+Analyze after seeding, and keep one budget per engine: PGlite and Postgres cost the same plan
+differently, and a table never analyzed is costed as a guess.
+
+`raceActions(calls, { rounds })` fires `calls` (functions returning promises) together, `rounds`
+times, and returns `{ settled, serializationFailures }`: every `40P01` or `40001` is listed as
+`X_DB_SERIALIZATION_FAILURE` with its round and call; assert the list is empty. A call's own
+failure is never thrown, it is in `settled`. `expectPartial(await decide(rows), { allowed, denied:
+[{ row, code?, reason? }] })` states a `decide()` answer; a failure is a bun `expect` diff.
+
 ### The statement ceiling
 
 `As of 31.16.0`. The scale sweep judges growth; this judges the count. One call of an action, query

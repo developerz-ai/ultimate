@@ -7,6 +7,7 @@ import {
   declarationsOf,
   loadWorld,
 } from './advisory-floors';
+import type { AcknowledgedAdvisory } from './lib/advisory-acknowledged';
 import type { Declaration } from './lib/advisory-floors';
 
 // The shell around `lib/advisory-floors.ts`: which declarations it audits, what it asks the two
@@ -211,5 +212,133 @@ describe('loadWorld, against the advisory API', () => {
     // Two requests per package: its packument and its advisories, asked together.
     expect(peak).toBeLessThanOrEqual(ADVISORY_FETCH_WIDTH * 2);
     expect(peak).toBeGreaterThan(1);
+  });
+});
+
+describe('acknowledged advisories', () => {
+  const sass: Declaration = {
+    manifest: 'packages/render/package.json',
+    field: 'dependencies',
+    name: 'sass',
+    range: '1.106.1',
+  };
+  const row: AcknowledgedAdvisory = {
+    manifest: 'packages/render/package.json',
+    dependency: 'sass',
+    advisories: ['GHSA-xvcm-6775-5m9r', 'GHSA-68fv-2mgg-jv7q'],
+    via: ['immutable', 'source-map-js'],
+    reason: 'sass declares the ranges; no sass release raises them',
+    appFix: 'bun update immutable source-map-js',
+    expires: '2027-02-25',
+  };
+  // The clock is an argument: a test that read the wall clock would turn red on 2027-02-26.
+  // The ledger as written: the row's `dependency:` is line 4, the line a fix sends the reader to.
+  const source = [
+    '[',
+    '  {',
+    "    manifest: 'packages/render/package.json',",
+    "    dependency: 'sass',",
+    '  },',
+    ']',
+  ].join('\n');
+  const on = (today: string, rows: readonly AcknowledgedAdvisory[] = [row]) => ({
+    rows,
+    today,
+    source,
+  });
+  const audit = async (ack: ReturnType<typeof on>, declarations: Declaration[] = [sass]) =>
+    advisoryFloorsResult(declarations, await loadWorld(declarations, fetcher, undefined), ack);
+
+  test('an unfloorable range every exposure of which a live row covers is green', async () => {
+    const result = await audit(on('2027-02-25'));
+    expect(result.findings).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.summary).toContain('1 acknowledged');
+  });
+
+  test('an exposure no row names keeps the range unfloorable', async () => {
+    const partial = { ...row, advisories: ['GHSA-xvcm-6775-5m9r'] };
+    const result = await audit(on('2026-11-27', [partial]));
+    expect(result.findings?.map((f) => f.code)).toEqual(['X_ADVISORY_UNFLOORABLE']);
+  });
+
+  test('a row for another manifest acknowledges nothing here', async () => {
+    const other = { ...row, manifest: 'packages/ui/package.json' };
+    const result = await audit(on('2026-11-27', [other]));
+    expect(result.findings?.map((f) => f.code)).toEqual([
+      'X_ADVISORY_UNFLOORABLE',
+      'X_ADVISORY_ACK_STALE',
+    ]);
+  });
+
+  test('the day after a row expires it is a finding naming the row and the app fix', async () => {
+    const result = await audit(on('2027-02-26'));
+    expect(result.ok).toBe(false);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings?.[0]).toMatchObject({
+      code: 'X_ADVISORY_ACK_EXPIRED',
+      at: 'packages/render/package.json dependencies.sass',
+    });
+    expect(result.findings?.[0]?.cause).toContain('2027-02-25');
+    // An edit at the row's own line: the guard's shape, and the place the reader re-dates.
+    expect(result.findings?.[0]?.fix).toMatch(
+      /^edit scripts\/lib\/advisory-acknowledged\.ts:4 — re-date the sass row/,
+    );
+  });
+
+  test('a row dated exactly 90 days out acknowledges; 91 days out acknowledges nothing', async () => {
+    expect((await audit(on('2026-11-27'))).ok).toBe(true);
+    const result = await audit(on('2026-11-26'));
+    expect(result.findings?.map((f) => f.code)).toEqual(['X_ADVISORY_ACK_EXPIRED']);
+    expect(result.findings?.[0]?.cause).toContain('91 days after 2026-11-26');
+  });
+
+  test('a far-future expiry never silences an advisory', async () => {
+    const forever = { ...row, expires: '2099-01-01' };
+    const result = await audit(on('2026-11-27', [forever]));
+    expect(result.ok).toBe(false);
+    expect(result.findings?.map((f) => f.code)).toEqual(['X_ADVISORY_ACK_EXPIRED']);
+    expect(result.findings?.[0]?.cause).toContain('more than 90 days');
+  });
+
+  test('an expiry that is not a calendar day is never live', async () => {
+    for (const expires of ['2027-2-25', '2027-02-30', 'soon']) {
+      const result = await audit(on('2026-11-27', [{ ...row, expires }]));
+      expect(result.findings?.map((f) => f.code)).toEqual(['X_ADVISORY_ACK_EXPIRED']);
+    }
+  });
+
+  test('a row whose advisory the range no longer admits is stale', async () => {
+    const extra = { ...row, advisories: [...row.advisories, 'GHSA-0000-0000-0000'] };
+    const result = await audit(on('2026-11-27', [extra]));
+    expect(result.findings?.map((f) => f.code)).toEqual(['X_ADVISORY_ACK_STALE']);
+    expect(result.findings?.[0]?.cause).toContain('GHSA-0000-0000-0000');
+    expect(result.findings?.[0]?.fix).toBe(
+      'edit scripts/lib/advisory-acknowledged.ts:4 — remove GHSA-0000-0000-0000 from the sass row (packages/render/package.json)',
+    );
+  });
+
+  test('a row for a range a floor can close is stale: the raise is the fix, never the ledger', async () => {
+    const solid = {
+      ...row,
+      manifest: solidPeer.manifest,
+      dependency: 'solid-js',
+      advisories: ['GHSA-f86p-h4j2-7qgj'],
+      via: ['seroval'],
+    };
+    const result = await audit(on('2026-11-27', [solid]), [solidPeer]);
+    expect(result.findings?.map((f) => f.code)).toEqual([
+      'X_ADVISORY_RANGE_OPEN',
+      'X_ADVISORY_ACK_STALE',
+    ]);
+  });
+
+  test('a range that could not be judged never reads its row as stale', async () => {
+    const down: AdvisoryFetch = async () => new Response('', { status: 503 });
+    const result = advisoryFloorsResult([sass], await loadWorld([sass], down, undefined), {
+      rows: [row],
+      today: '2026-11-27',
+    });
+    expect(result.findings?.map((f) => f.code)).toEqual(['X_ADVISORY_UNREACHABLE']);
   });
 });

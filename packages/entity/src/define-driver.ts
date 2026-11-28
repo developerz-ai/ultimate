@@ -9,6 +9,7 @@ import type { Driver } from './database';
 import { refuseCounters } from './driver-counters';
 import { driverCapabilityMissing, driverUnsupported } from './driver-errors';
 import type { DriverCapability, DriverDefinition, DriverRepo } from './driver-kit-types';
+import { noteUncheckedUpdates } from './driver-kit-unchecked-warning';
 import { noteDriverStore } from './driver-registry';
 import { driverReads } from './driver-repo-reads';
 import { driverWrites } from './driver-repo-writes';
@@ -78,6 +79,7 @@ const driverRepo = <Row>(
   const scope = driverScope(definition, entity, rawFor);
   assertImplemented(definition, scope.raw as DriverRepo<unknown>);
   const { raw } = scope;
+  noteUncheckedUpdates(definition, entity, raw);
   // Absent unless declared, so the typed handle answers the shipped `X_LOCK_UNSUPPORTED`.
   const locks = (): Pick<Repo<Row>, 'lock' | 'lockKey' | 'lockKeys'> => {
     const { lock, lockKey } = raw;

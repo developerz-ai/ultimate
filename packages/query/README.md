@@ -246,6 +246,7 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `http.ts` | the route projection — `GET /_x/query/<kebab>`, the URL the client derives |
 | `page-controls.ts` | `_first` / `_after` — the two search-string keys that page the route, split out and judged at the wire against `MAX_WIRE_PAGE_SIZE` (500) or the read's `maxPage`; `assertMaxPage` |
 | `validate.ts` | the input parse: `X_INPUT_INVALID` carrying `issues` (by path) and `issuesTruncated` — action's `validate.ts` twin |
+| `validate-unknown-keys.ts` | after a caller's parse, a key the schema does not declare (`?limt=1`) is logged once as `X_INPUT_UNKNOWN_KEY` with the nearest declared name, and put on the span every call; the answer is unchanged (#1281, refusal waits for `next`). Never for `parsedQueryInput`, an `unenforced` build, or the route's own `_first`/`_after`/`_token` |
 | `openapi.ts` | the read half of `openapi.json` — one `GET` path item per registered query, publishing a declared `rows:` |
 | `openapi-errors.ts` | a read operation's `responses` with its declared `errors:` in them |
 | `declared-errors.ts` / `declared-errors-contract.ts` | `errors:` judged around `sql` and `execute`; `.contract()`'s scan of `sql`'s source |

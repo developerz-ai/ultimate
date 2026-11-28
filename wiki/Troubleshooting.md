@@ -15,7 +15,7 @@ Run these first, in this order. All support `--json`.
 | `x doctor --json` | environment, versions, drift, ports, PWA prerequisites — each with a fix |
 | `x dev` then `/_x` | the live panels: routes, timeline, jobs, db, mail, cache, policy, manifest |
 | `x logs tail --json` | the last lines of `.x/dev.log`, or one role's with `--role` (its `.x/logs/<role>.log`, else its lines of the dev log) — the file the `logs.tail` MCP tool reads (since 31.17.0) |
-| `x status --json` | the build each live worker runs, and what each `--url` origin's `/readyz` answers (`As of 2026-11-15`, [CLI reference](CLI-Reference#x-status)) |
+| `x status --json` | the build each live worker runs, and what each `--url` origin's `/readyz` answers (`As of 2026-11-15`, [CLI reference](CLI-Reference-Ship#x-status)) |
 
 The `--json` form is the same content as the terminal form. Paste the JSON into a bug report; do not paraphrase the terminal.
 

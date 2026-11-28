@@ -61,6 +61,7 @@ import { redisSettleDebt } from './driver-redis-settle';
 import { redisStepStore, stepsOf } from './driver-redis-steps';
 import { JobDuplicateError } from './errors';
 import { MAX_ERROR_STACK_LENGTH } from './introspection';
+import { redisTenantJobs } from './job-status-redis';
 
 /** The slice of Bun's Redis client this driver uses — `redisClient()` and `new Bun.RedisClient()`. */
 export interface RedisSender {
@@ -209,6 +210,7 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
   return {
     name: 'redis',
     steps: redisStepStore({ ns, run, client }),
+    tenantJobs: redisTenantJobs({ run, stamp, endedTtlMs: deadTtlMs }),
     settleDebt: redisSettleDebt({
       run,
       ...(injected === undefined ? {} : { clock: injected }),

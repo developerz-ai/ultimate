@@ -123,7 +123,7 @@ export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
     why: 'the sentence teaches that boundaries is a step of `x verify`: "`bunx x boundaries` exits `X_CLI_UNKNOWN_COMMAND`"',
   },
   {
-    path: 'wiki/CLI-Reference.md',
+    path: 'wiki/CLI-Reference-Ship.md',
     cites: 'x serve',
     kind: 'absent',
     why: 'the section is titled "Serving in production" and its first sentence is "There is no `x serve` command"',

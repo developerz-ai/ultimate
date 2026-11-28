@@ -17,6 +17,9 @@ const cursor = {
   lsn: '0000000000000009',
   ids: ['p1', 'p2'],
   at: 1_700_000_000_000,
+  // Additive: the node's signature, in the shape `keyedFingerprint` mints. It rides in BOTH
+  // directions — down on a snapshot, back up on the `subscribe` that resumes from it.
+  sig: 'h1:0a1b2c3d:00112233445566778899aabbccddeeff',
 };
 
 const fixtures: Record<FrameKind, Frame> = {
@@ -52,6 +55,8 @@ const fixtures: Record<FrameKind, Frame> = {
     patches: [{ op: 'update', id: 'p1', row: { likes: 3 }, lsn: '000000000000000a' }],
     lsn: '000000000000000a',
     writes: ['d'.repeat(32)],
+    // Additive: the signature of the cursor these patches leave the subscriber on.
+    sig: 'h1:0a1b2c3d:ffeeddccbbaa99887766554433221100',
   },
   ack: {
     type: 'ack',
@@ -282,6 +287,7 @@ describe('sync-protocol', () => {
       'ids',
       'lsn',
       'qid',
+      'sig',
     ]);
   });
 

@@ -6,26 +6,17 @@ import type { Migration } from '@ultimat3/db';
 import { db, dbClientInstalled, isLedgerMissing, readLedger } from '@ultimat3/db';
 import { AppMigrationsUnappliedError } from './app-migrations-verdict';
 import { type AppliedRow, refuseEdited } from './db-applied-edits';
-import { devCanMigrate, MIGRATE_ALONE_FIX } from './dev-db-migrate';
 import { checkSourceDrift } from './drift';
 import { readMigrations } from './migrations';
 import type { Finding } from './output';
 import { findingFrom } from './output';
-import { resolveServices } from './runtime-bindings';
 
 /**
  * The migrate half too: `x dev` applies no migration unasked, so `x db gen` alone leaves the page
- * red. Beside this process `x db migrate` is applied BY it (`dev-db-migrate.ts`), embedded or not.
+ * red. Beside this process `x db migrate` is applied BY it (`dev-db-migrate.ts`), embedded or not,
+ * and with `database.rowSecurity` as `x_migrator` under a hold (`dev-db-migrator-hold.ts`).
  */
 export const SCHEMA_AHEAD_FIX = 'x db gen "describe the change" && x db migrate';
-
-/** Where this process cannot apply the pass itself: the embedded database, to the command alone. */
-export const SCHEMA_AHEAD_FIX_ALONE = `x db gen "describe the change" && ${MIGRATE_ALONE_FIX}`;
-
-/** Whether `x db migrate` works while this `x dev` runs: any external database, or a pass it takes. */
-export async function migratesBesideDev(root: string): Promise<boolean> {
-  return resolveServices(root, Bun.env).db.mode !== 'embedded' || (await devCanMigrate(root));
-}
 
 /** What `ledgerFindings` asks — the seam a test hands rows through. */
 export interface LedgerReads {
@@ -62,7 +53,6 @@ const READS: LedgerReads = {
  */
 export async function ledgerFindings(
   root: string,
-  beside: (root: string) => Promise<boolean> = migratesBesideDev,
   reads: LedgerReads = READS,
 ): Promise<readonly Finding[]> {
   const migrations = await reads.migrations(root);
@@ -72,10 +62,9 @@ export async function ledgerFindings(
   const missing = migrations.map((migration) => migration.id).filter((id) => !applied.has(id));
   const findings: Finding[] = [];
   if (missing.length > 0) {
-    const behind = findingFrom(
-      new AppMigrationsUnappliedError({ missing, ledger: ledger !== undefined }),
+    findings.push(
+      findingFrom(new AppMigrationsUnappliedError({ missing, ledger: ledger !== undefined })),
     );
-    findings.push((await beside(root)) ? behind : { ...behind, fix: MIGRATE_ALONE_FIX });
   }
   try {
     refuseEdited(ledger ?? [], migrations);
@@ -109,23 +98,17 @@ function marked(findings: readonly Finding[]): readonly Finding[] {
 export async function schemaAheadFindings(
   root: string,
   check: (root: string) => Promise<readonly Finding[]> = checkSourceDrift,
-  beside: (root: string) => Promise<boolean> = migratesBesideDev,
-  ledger: (
-    root: string,
-    beside: (root: string) => Promise<boolean>,
-  ) => Promise<readonly Finding[]> = ledgerFindings,
+  ledger: (root: string) => Promise<readonly Finding[]> = ledgerFindings,
 ): Promise<readonly Finding[]> {
   try {
     const drifted = await check(root);
-    const fix =
-      drifted.length === 0 || (await beside(root)) ? SCHEMA_AHEAD_FIX : SCHEMA_AHEAD_FIX_ALONE;
     return marked([
       ...drifted.map((finding) => ({
         ...finding,
         cause: `entities are ahead of the migrations: ${finding.cause}`,
-        fix,
+        fix: SCHEMA_AHEAD_FIX,
       })),
-      ...(await ledger(root, beside)),
+      ...(await ledger(root)),
     ]);
   } catch (error) {
     return marked([findingFrom(error)]);

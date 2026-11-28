@@ -271,6 +271,23 @@ configureSchemaProvider({ vendor: 'arktype', t: arkNamespace, introspect: arkToN
 swap. `introspect()` is what OpenAPI/MCP generation needs; a provider without it throws
 `X_SCHEMA_UNSUPPORTED` with the exact fix rather than emitting an empty request body.
 
+## Unknown keys — what the parse dropped
+
+```ts
+import { t, unknownKeys } from '@ultimat3/schema';
+
+const page = t.object({ limit: t.number });
+unknownKeys(page.node, { limt: 1 });
+// [{ path: 'limt', key: 'limt', declared: ['limit'] }]
+```
+
+An object parse drops a key it does not declare; `unknownKeys(node, value)` names them, without
+changing the parse. Objects and array items are walked; `t.record`, `t.json()` and `t.money` are
+skipped (their keys are the caller's or the kind's). A `discriminatedUnion` walks only the arm its
+tag selects, so a key borrowed from a sibling arm is unknown; a plain `t.union` reports a key only
+when no arm declares it. Bounded at `MAX_ISSUES`. `@ultimat3/action` and `@ultimat3/query` run it on
+every parsed input and log `X_INPUT_UNKNOWN_KEY` (#1281); an output or a row is never walked.
+
 ## JSON Schema and coercion
 
 ```ts

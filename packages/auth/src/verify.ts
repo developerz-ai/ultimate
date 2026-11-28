@@ -4,7 +4,7 @@
 // tier 4 and auth is tier 2, so the app wires mail's `send` in and auth imports nothing upward.
 
 import type { Clock } from '@ultimat3/core';
-import { renderFixLiteral, timingSafeEqual } from '@ultimat3/core';
+import { renderCauseValue, renderFixLiteral, timingSafeEqual } from '@ultimat3/core';
 import type { AuthVerification, VerificationStore } from './adapter';
 import { normaliseEmail } from './email';
 import { AuthError } from './errors';
@@ -58,6 +58,8 @@ export interface IssueVerificationInput {
   readonly purpose: VerificationPurpose;
   /** The email address. Also the store key — one live token per purpose per address. */
   readonly identifier: string;
+  /** Only on a purpose declared `recipient: 'explicit'`; refused on any other. Never normalised. */
+  readonly to?: string | undefined;
   readonly locale: string;
   readonly ttlMs?: number | undefined;
   /** Builds the URL that carries the token. Defaults to the token alone. */
@@ -98,6 +100,13 @@ export async function issueVerification(
   // the case, and each one of them is a password. It is also the address the mail is sent to, so
   // the link goes to the inbox the account is keyed by rather than to whatever a form posted.
   const identifier = purpose.identifier(input.identifier);
+  // Refused above the write, like the TTL: a blank recipient would leave a live row nobody can read.
+  // `to` is a door only a purpose that declared `recipient: 'explicit'` opens: a reset or sign-in
+  // link must reach the inbox the account is keyed by, even when an app spreads a request body in.
+  const explicit = purpose.recipient === 'explicit';
+  if (!explicit && input.to !== undefined) throw recipientRefused(purpose.name, 'undeclared');
+  const to = explicit ? (input.to ?? '') : identifier;
+  if (to.trim() === '') throw recipientRefused(purpose.name, 'blank');
   await runtime.store.putVerification({
     id: randomToken(12),
     purpose: purpose.name,
@@ -109,7 +118,7 @@ export async function issueVerification(
   });
   await runtime.mail.send(
     purpose.template,
-    identifier,
+    to,
     {
       ...(input.data ?? {}),
       link: input.link?.(token) ?? token,
@@ -119,6 +128,20 @@ export async function issueVerification(
   );
   return { token, expiresAt };
 }
+
+const recipientRefused = (purpose: string, why: 'blank' | 'undeclared'): AuthError =>
+  new AuthError({
+    code: 'X_CONFIG_INVALID',
+    cause:
+      why === 'blank'
+        ? `the ${renderCauseValue(purpose)} purpose mails to an explicit \`to\`, and it is blank or absent, so the credential has nowhere to go`
+        : `issueVerification({ to }) on the ${renderCauseValue(purpose)} purpose, which mails to the address it is keyed by; a \`to\` there could send the link to another inbox`,
+    fix:
+      why === 'blank'
+        ? `await issueVerification(runtime, { purpose: ${renderFixLiteral(purpose, "'<purpose>'")}, identifier: key, to: 'ada@example.com', locale })   // name the address`
+        : "defineVerificationPurpose({ name, template, ttlMs, recipient: 'explicit' })   // or drop `to`: the identifier is the address",
+    meta: { option: 'verification.to' },
+  });
 
 /**
  * One error for "no such token", "already used", "expired" and "wrong token". Distinguishing
@@ -195,6 +218,12 @@ export interface DefineVerificationPurposeInput {
    * an email-change or account-deletion link proves the same inbox but was mailed to do one job.
    */
   readonly signIn?: boolean | undefined;
+  /**
+   * `'explicit'`: the mail goes to the `to` each issue names, because the identifier is a store key
+   * and not an address (a member invite's tenant + address). Required then, never normalised.
+   * Absent: `issue` refuses a `to`, so a reset link cannot be redirected by a caller's input.
+   */
+  readonly recipient?: 'explicit' | undefined;
 }
 
 export interface VerificationPurposeHandle {
@@ -229,6 +258,7 @@ export function defineVerificationPurpose(
     ttlMs,
     identifier: input.identifier ?? normaliseEmail,
     signIn: input.signIn === true,
+    ...(input.recipient === 'explicit' ? { recipient: 'explicit' as const } : {}),
   });
   const name = input.name;
   return {

@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "2750faf0a7bde231",
+  "buildId": "721cb349d33190ac",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -495,7 +495,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "214.4kb"
+        "js": "214.7kb"
       }
     },
     {
@@ -578,7 +578,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "247.1kb"
+        "js": "247.3kb"
       }
     },
     {
@@ -1844,6 +1844,68 @@
       "mcp": {
         "expose": false
       }
+    },
+    {
+      "name": "cancelPostsExport",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "jobId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "jobId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "delayed",
+              "running",
+              "suspended",
+              "done",
+              "failed",
+              "dead",
+              "cancelled"
+            ]
+          }
+        },
+        "required": [
+          "jobId",
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:export",
+      "permissions": [
+        "post:export"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Cancel a posts export of the actor’s org that has not finished"
+      },
+      "errors": [
+        "X_POSTS_EXPORT_NOT_FOUND"
+      ]
     },
     {
       "name": "cancelRun",
@@ -4076,11 +4138,16 @@
           "prefix": {
             "type": "string",
             "minLength": 1
+          },
+          "jobId": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
           "exportId",
-          "prefix"
+          "prefix",
+          "jobId"
         ],
         "additionalProperties": false
       },
@@ -6062,6 +6129,34 @@
           "status"
         ]
       }
+    },
+    {
+      "name": "postsExportStatus",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "jobId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "jobId"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:export",
+      "permissions": [
+        "post:export"
+      ],
+      "live": false,
+      "cacheTags": []
     },
     {
       "name": "publicPost",
@@ -9252,12 +9347,14 @@
       "permission": "post:export",
       "enforcedIn": [
         "action:abortPostsImport",
+        "action:cancelPostsExport",
         "action:completePostsImport",
         "action:grantPostsImport",
         "action:listPostsImportParts",
         "action:printPost",
         "action:requestPostsExport",
-        "action:signPostsImportPart"
+        "action:signPostsImportPart",
+        "query:postsExportStatus"
       ]
     },
     {
@@ -9580,6 +9677,14 @@
     },
     {
       "code": "X_ORG_NOT_FOUND",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_POSTS_EXPORT_NOT_FOUND",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_POSTS_EXPORT_QUEUE_UNAVAILABLE",
       "package": "apps/web"
     },
     {

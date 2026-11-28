@@ -369,12 +369,16 @@ describe('the boot line says where the bus is', () => {
   );
 
   test.skipIf(natsUrl === undefined)(
-    'nats(up): with a server there, the dial landed before the line and was announced',
+    'nats(up): with a server there, the dial lands and is announced',
     async () => {
       const app = await bootWeb(natsUrl ?? '');
       try {
-        expect(lineWith(app.started, 'ultimate started')).toContain('"bus":"nats(up)"');
-        const announced = lineWith(app.logs(), 'ultimate bus');
+        // A web role dials in the background (`runtime-bus.ts`), so the boot line may beat the
+        // dial on a loaded machine: it says one of the two, and `ultimate bus` says it landed.
+        expect(lineWith(app.started, 'ultimate started')).toMatch(
+          /"bus":"nats\((?:up|connecting)\)"/,
+        );
+        const announced = lineWith(await waitFor(app.logs, '"msg":"ultimate bus"'), 'ultimate bus');
         expect(announced).toContain('"bus":"nats(up)"');
         expect(announced).toContain('"use":"publish"');
         allowHost(`127.0.0.1:${app.port}`);

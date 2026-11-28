@@ -108,6 +108,20 @@ Proof, `As of 2026-11-09`: `packages/cli/src/otlp-export.live.test.ts` sends one
 
 **Span cost.** An unsampled span costs 3.3 µs (root) / 2.0 µs (child), against a 1 µs target (`scripts/bench/results/span-overhead.json`, `As of 2026-11-09`): ids and clock reads are still paid before the sampling decision is known. Known gap, pinned by `scripts/bench/span-overhead.bench.test.ts`.
 
+### The service identity
+
+Every span, log record, metric collection, `target_info` line and Sentry event carries one resource. The container boot names it (`serve-boot-telemetry.ts`), env first — before `app.config.ts` loads, so a span the config's own import opens already carries what the deploy said. `As of 2026-11`.
+
+| Attribute | First that is set wins |
+|---|---|
+| `service.name` | `OTEL_SERVICE_NAME` · `service.name` in `OTEL_RESOURCE_ATTRIBUTES` · `name` in `app.config.ts` |
+| `service.version` | `service.version` in `OTEL_RESOURCE_ATTRIBUTES` · the build id (`BUILD_ID`, or the manifest hash an unstamped image computes — the `x-ultimate-build` value) · `APP_VERSION` (`dev` unset) |
+
+- Empty is unset. `OTEL_RESOURCE_ATTRIBUTES` is `key=value,key=value`, values percent-decoded; one malformed pair discards the whole variable with one warn line (the OTel SDK rule), the value never echoed.
+- Before the config loads, only the env can answer: a span opened then carries the env's name (or `unknown_service`) and the stamped `BUILD_ID` (else `APP_VERSION`).
+- Unbooted — a script, a test — the resource is OTel's own `unknown_service` at `dev`. `configureTelemetry({ serviceName, serviceVersion })` returns its release; `resetTelemetry()` forgets the identity too.
+- `x dev` keeps its own recorder and does not name the service.
+
 ## Instruments
 
 ```ts
@@ -279,7 +293,7 @@ CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle socket
 
 ## The database, on demand
 
-`x db diagnostics --json` (`As of 2026-11`) answers what the series cannot: who blocks whom (`data.blockers.rows[].blockedBy`), what each session is doing, the slowest statements (`pg_stat_statements`, when an operator installed it), unused and invalid indexes, `NOT VALID` constraints, dead tuples and the last autovacuum. Facts only, exit 0; `/readyz` stays the one-`select 1` probe. Read-only, 2 s per statement, no user table read, literals printed as `?`; whoever runs it sees the redacted SQL of every session on the app's database role → [CLI reference](CLI-Reference#x-db). The same report is `dbDiagnostics()` from `@ultimat3/db`.
+`x db diagnostics --json` (`As of 2026-11`) answers what the series cannot: who blocks whom (`data.blockers.rows[].blockedBy`), what each session is doing, the slowest statements (`pg_stat_statements`, when an operator installed it), unused and invalid indexes, `NOT VALID` constraints, dead tuples and the last autovacuum. Facts only, exit 0; `/readyz` stays the one-`select 1` probe. Read-only, 2 s per statement, no user table read, literals printed as `?`; whoever runs it sees the redacted SQL of every session on the app's database role → [CLI reference](CLI-Reference-Data#x-db). The same report is `dbDiagnostics()` from `@ultimat3/db`.
 
 ## Spans and logs, in detail
 

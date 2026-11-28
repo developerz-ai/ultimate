@@ -182,7 +182,7 @@ reappearing there is a failing test.
 | `policy.ts` | `can`/`allow`/`deny`/`and`/`or`/`not` + decision recording, and `policyPermissions` |
 | `scope.ts` | `scoped(policy, scope)` / `policyScope` — the rule's SQL projection: a `ScopeNode` tree (condition, `or`, `and`, `via`) in entity's `PredicateNode` shape restated structurally (same tier), frozen at every depth. Not tenancy; combinators carry none |
 | `policy-anonymous.ts` | `admitsAnonymous` — the one question a SURFACE asks of a built tree, apart from the file that builds them |
-| `evaluate.ts` | the single entry point; builds the trace, emits the one decision event |
+| `evaluate.ts` | the single entry point; builds the trace, emits the one decision event. `evaluateEach` is it once per row — no batch shortcut |
 | `decisions.ts` | the `policy.decision` bus event — built only while subscribed, one call site, never PII. No slot (`X_INSTRUMENT_SLOT_FORBIDDEN`) |
 | `surfaces.ts` | http/live/job/mcp adapters — the "one system" proof |
 | `guard-primitive.ts` | `guardPrimitive` — the one gate `action` and `query` run, and the per-primitive surface table |

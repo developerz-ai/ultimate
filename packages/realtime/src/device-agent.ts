@@ -3,7 +3,14 @@
 // jittered backoff — or at the slot a draining node's `reconnect` frame assigns.
 
 import { reportError } from '@ultimat3/core';
-import { bytesOverLimit, type DeviceInbound, decodeNodeFrame } from './device-wire';
+import { CLOSE } from './close-codes';
+import { DeviceWireVersionError } from './device-errors';
+import {
+  bytesOverLimit,
+  DEVICE_WIRE_VERSION,
+  type DeviceInbound,
+  decodeNodeFrame,
+} from './device-wire';
 import type { JsonValue } from './json';
 import {
   defaultBackoff,
@@ -109,8 +116,20 @@ export function deviceAgent(options: DeviceAgentOptions): DeviceAgent {
     if (current !== socket || typeof data !== 'string') return;
     const frame = decodeNodeFrame(data);
     if (frame === undefined) return;
-    if (frame.type === 'hello') beat(frame.heartbeatMs);
-    else if (frame.type === 'request') void answer(frame.id, frame.frame);
+    if (frame.type === 'hello') {
+      if (frame.v > DEVICE_WIRE_VERSION) {
+        // A newer node's frames are read by guessing: close instead, and let the backoff redial —
+        // a rolling deploy may land the next dial on a node that still speaks this version.
+        reportError(new DeviceWireVersionError({ spoken: DEVICE_WIRE_VERSION, node: frame.v }), {
+          source: 'realtime',
+          scope: { operation: 'device.agent_wire_version' },
+        });
+        current.close(CLOSE.versionSkew, 'X_DEVICE_WIRE_VERSION');
+        return;
+      }
+      attempt = 0;
+      beat(frame.heartbeatMs);
+    } else if (frame.type === 'request') void answer(frame.id, frame.frame);
     else if (frame.type === 'frame') options.onFrame?.(frame.frame);
     else if (frame.type === 'reconnect') {
       // The node's slot, not the backoff: the spread is what keeps a fleet restart off one node.
@@ -118,7 +137,7 @@ export function deviceAgent(options: DeviceAgentOptions): DeviceAgent {
       cancelRedial?.();
       cancelRedial = null;
       redialIn(frame.afterMs);
-      current.close(4002, 'reconnect');
+      current.close(CLOSE.drain, 'reconnect');
     }
   };
 
@@ -140,8 +159,9 @@ export function deviceAgent(options: DeviceAgentOptions): DeviceAgent {
     socket = current;
     current.onopen = () => {
       if (current !== socket) return;
+      // Not `attempt = 0`: an open socket is not a healthy one. A node that answers with a wire this
+      // agent cannot read closes it at once, and only an accepted `hello` earns a fresh backoff.
       open = true;
-      attempt = 0;
     };
     current.onmessage = (event) => receive(current, event.data);
     current.onclose = () => {

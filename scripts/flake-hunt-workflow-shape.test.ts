@@ -1,5 +1,5 @@
 // The shape of `.github/workflows/flake-hunt.yml` that keeps the nightly hunt honest: off the gate,
-// both suites shuffled three times, a red round's exit kept (`pipefail`) and its document uploaded,
+// both suites shuffled twice, a red round's exit kept (`pipefail`) and its document uploaded,
 // and `issues: write` held by the filing job alone. Reads the REAL workflow.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
@@ -42,9 +42,12 @@ describe('unit · flake-hunt.yml is nightly and never a gate', () => {
     expect(Object.keys(workflow.on ?? {}).sort()).toEqual(['schedule', 'workflow_dispatch']);
   });
 
-  test('both suites, three rounds each', () => {
+  // Two, since 2026-11-27: a third `unit` round was ~20 of the night's ~83 billed minutes, and each
+  // round shuffles under a fresh seed, so a night's coverage is rounds × nights — the seven-night
+  // `tests-deterministic` row (`scripts/finished-github.ts`) still reads fourteen orders a suite.
+  test('both suites, two rounds each', () => {
     expect(round?.strategy?.matrix?.['suite']).toEqual(['unit', 'live']);
-    expect(round?.strategy?.matrix?.['round']).toEqual([1, 2, 3]);
+    expect(round?.strategy?.matrix?.['round']).toEqual([1, 2]);
   });
 });
 

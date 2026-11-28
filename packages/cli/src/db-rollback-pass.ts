@@ -2,6 +2,7 @@
 // beside a live `x dev` holding the embedded database — that process, asked over `/_x`
 // (`dev-db-rollback.ts`). The rule `db-migrate-pass.ts` states: PGlite takes one opener.
 
+import type { DbClient } from '@ultimat3/db';
 import { rollback } from '@ultimat3/db';
 import { t } from '@ultimat3/schema';
 import { DEV_ROLLBACK_PATH } from './db-dev-wire';
@@ -19,17 +20,19 @@ const REVERTED = t.object({ reverted: t.array(t.string) });
 /**
  * `rollback()` over the ambient client, with this command's two questions asked under the lock.
  * Shared by the command and the dev route, so the holder cannot reverse what the command refuses.
+ * `on` is the dev route's held session (`dev-db-migrator-hold.ts`): its client, and no second lock.
  */
 export async function reverseApplied(
   root: string,
   env: Env,
   steps: number,
+  on: { readonly client?: DbClient; readonly lock?: boolean } = {},
 ): Promise<readonly string[]> {
   const migrations = await readMigrations(root);
   // The binding, so a database on another machine needs the names whatever the environment says.
   const database = resolveServices(root, env).db;
   const confirm = rollbackConfirm(await withoutDown(root, migrations), env, steps, database);
-  return rollback({ migrations, steps, confirm });
+  return rollback({ migrations, steps, confirm, client: on.client, lock: on.lock });
 }
 
 /** The ids reversed, most recently applied first. */

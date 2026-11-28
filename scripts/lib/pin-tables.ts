@@ -89,6 +89,41 @@ export function reasonSectionLine(source: string, row: string): number {
   return at === -1 ? 0 : at + 1;
 }
 
+/** The row key of one acknowledged advisory: a re-dated row is a new key, so a new raise. */
+export const acknowledgedKey = (manifest: unknown, dependency: unknown, expires: unknown): string =>
+  `ADVISORY_ACKNOWLEDGED.${String(manifest)} ${String(dependency)} until ${String(expires)}`;
+
+/** `ADVISORY_ACKNOWLEDGED.<manifest> <dependency> until <expires>` → how many advisories it waives. */
+export function acknowledgedRows(value: unknown): ReadonlyMap<string, number> {
+  const rows = new Map<string, number>();
+  if (!Array.isArray(value)) return rows;
+  for (const row of value as readonly unknown[]) {
+    if (typeof row !== 'object' || row === null) continue;
+    const advisories: unknown = Reflect.get(row, 'advisories');
+    const key = acknowledgedKey(
+      Reflect.get(row, 'manifest'),
+      Reflect.get(row, 'dependency'),
+      Reflect.get(row, 'expires'),
+    );
+    rows.set(key, Array.isArray(advisories) ? advisories.length : 1);
+  }
+  return rows;
+}
+
+/** The `dependency:` line under the row whose `manifest:` the key names. */
+export function acknowledgedLine(source: string, row: string): number {
+  const match = /^ADVISORY_ACKNOWLEDGED\.(\S+) (\S+) until /.exec(row);
+  if (match === null) return 0;
+  const [, manifest = '', dependency = ''] = match;
+  const lines = source.split('\n');
+  const from = lines.findIndex((line) => line.includes(`manifest: '${manifest}'`));
+  if (from === -1) return 0;
+  const at = lines.findIndex(
+    (line, index) => index >= from && line.includes(`dependency: '${dependency}'`),
+  );
+  return at === -1 ? 0 : at + 1;
+}
+
 /**
  * The tables whose headers say they may only shrink but which live outside `PIN_GLOB` — each was a
  * row an author could raise beside the debt it excused with no guard reading the number.
@@ -127,6 +162,12 @@ export const SCRIPT_PIN_TABLES: readonly ScriptPinTable[] = [
   },
   { path: 'scripts/wiki-fences-backlog.ts', table: 'WIKI_FENCE_BACKLOG' },
   { path: 'scripts/package-front.ts', table: 'README_SHAPE_PINS' },
+  {
+    path: 'scripts/lib/advisory-acknowledged.ts',
+    table: 'ADVISORY_ACKNOWLEDGED',
+    rows: acknowledgedRows,
+    line: acknowledgedLine,
+  },
 ];
 
 /** Every file `pin-raises` reads: the glob, then each script holding one table. */

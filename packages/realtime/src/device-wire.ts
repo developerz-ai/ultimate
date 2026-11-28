@@ -13,6 +13,14 @@ import type { ReconnectFrame } from './sync-protocol';
  */
 export const DEVICE_FRAME_MAX_BYTES = 256 * 1024;
 
+/**
+ * The device wire's version, spoken in the node's `hello` (`v`). A node newer than an agent says so
+ * there, and the agent refuses with `X_DEVICE_WIRE_VERSION` instead of misreading a frame. An
+ * additive optional field never bumps it; a changed or removed one does. A hello with no `v` is a
+ * node from before the field existed and reads as 1.
+ */
+export const DEVICE_WIRE_VERSION = 1;
+
 /** What a device sends: a beat, a frame for `onFrame`, or the answer to a `request` by its id. */
 export type DeviceInbound =
   | { readonly type: 'beat' }
@@ -21,7 +29,12 @@ export type DeviceInbound =
 
 /** What a node sends a device. `reconnect` is the sync protocol's own frame, unchanged. */
 export type DeviceOutbound =
-  | { readonly type: 'hello'; readonly heartbeatMs: number; readonly maxFrameBytes: number }
+  | {
+      readonly type: 'hello';
+      readonly v: number;
+      readonly heartbeatMs: number;
+      readonly maxFrameBytes: number;
+    }
   | { readonly type: 'request'; readonly id: string; readonly frame: JsonValue }
   | { readonly type: 'frame'; readonly frame: JsonValue }
   | { readonly type: 'error'; readonly code: string }
@@ -73,7 +86,9 @@ export function decodeNodeFrame(text: string): DeviceOutbound | undefined {
     case 'hello': {
       const { heartbeatMs, maxFrameBytes } = raw;
       if (typeof heartbeatMs !== 'number' || typeof maxFrameBytes !== 'number') return undefined;
-      return { type: 'hello', heartbeatMs, maxFrameBytes };
+      const v = Object.hasOwn(raw, 'v') ? raw['v'] : 1;
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) return undefined;
+      return { type: 'hello', v, heartbeatMs, maxFrameBytes };
     }
     case 'request':
       return isId(raw['id']) && Object.hasOwn(raw, 'frame')

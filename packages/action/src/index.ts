@@ -42,6 +42,12 @@ export type {
 export { action, describeAction, isAction } from './action';
 export type { ActionAnswer, ActionAnswerIssue } from './action-answer';
 export { ACTION_ANSWER_COOKIE, useActionAnswer } from './action-answer';
+export type { ActionDecide, ActionDecision, ActionRowDenial } from './action-decide';
+export type {
+  ActionDecideArgs,
+  DecidingActionDef,
+  DecidingStreamActionDef,
+} from './action-decide-def';
 export { chunksRead } from './action-stream';
 /**
  * The app's API as a whole — `defineApi({ http: { pathStyle, mounts }, openapi })` — read back by

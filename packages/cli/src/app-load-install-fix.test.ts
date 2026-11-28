@@ -238,7 +238,7 @@ describe('the printed install', () => {
       expect(await load()).toEqual([]);
     } finally {
       registry.stop(true);
-      rmSync(join(root, 'node_modules/linked-pkg'));
+      rmSync(join(root, 'node_modules/linked-pkg'), { force: true });
       for (const path of [dir, checkout]) rmSync(path, { recursive: true, force: true });
     }
   }, 30_000);
@@ -278,6 +278,7 @@ describe('the printed install', () => {
       await Bun.write(join(checkout, 'package.json'), JSON.stringify(manifest));
       const source = "export { x } from 'hurt-pkg';\nexport { y, z } from 'outer-pkg';\n";
       await Bun.write(join(checkout, 'index.js'), source);
+      mkdirSync(join(root, 'node_modules'), { recursive: true });
       symlinkSync(checkout, join(root, 'node_modules/nest-pkg'));
       await Bun.write(join(dir, 'a.ts'), "export { x, y, z } from 'nest-pkg';\n");
       const at = quoteArg(checkout);
@@ -302,7 +303,7 @@ describe('the printed install', () => {
       expect(await Bun.file(appManifest).text()).toBe(before);
     } finally {
       registry.stop(true);
-      rmSync(join(root, 'node_modules/nest-pkg'));
+      rmSync(join(root, 'node_modules/nest-pkg'), { force: true });
       for (const path of [dir, checkout]) rmSync(path, { recursive: true, force: true });
     }
   }, 30_000);

@@ -1,5 +1,6 @@
 // The `changes` job's shape: it asks `scripts/ci-changes.ts` over a diff that lists both halves of a
-// move, and only the jobs no prose can reach read its answer — never the gate or its verdict.
+// move, and only the jobs no prose can reach read its answer — never the gate, its verdict or an app
+// gate — and `scaffold-smoke` reads its rows from it.
 
 import { describe, expect, test } from 'bun:test';
 import { expr, type Job, jobOf, readWorkflow, text } from './lib/ci-workflow-read';
@@ -15,10 +16,23 @@ describe('unit · ci.yml · a prose-only diff skips the heavy jobs, never the ve
     expect(changes.needs).toBeUndefined();
     expect(changes.if).toBeUndefined();
     const outputs: unknown = (changes as Readonly<Record<string, unknown>>)['outputs'];
-    expect(outputs).toEqual({ heavy: expr('steps.classify.outputs.heavy') });
+    expect(outputs).toEqual({
+      heavy: expr('steps.classify.outputs.heavy'),
+      scaffold: expr('steps.classify.outputs.scaffold'),
+    });
     const classify = steps.find((step) => step.id === 'classify');
     expect(text(classify?.run)).toContain('bun run scripts/ci-changes.ts');
+    expect(text(classify?.run)).toContain('--event "$EVENT"');
+    expect(classify?.env?.['EVENT']).toBe(expr('github.event_name'));
     expect(text(classify?.run)).toContain('.data.heavy');
+    expect(text(classify?.run)).toContain('.data.scaffold.matrix');
+  });
+
+  // The rows are `scripts/lib/ci/scaffold-matrix.ts`'s, sampled on a pull request only: a static
+  // list here would be a second copy of them (`scaffold-matrix.test.ts` holds it to NEW_SHAPES).
+  test('scaffold-smoke`s matrix is the one changes hands it', () => {
+    const matrix: unknown = job('scaffold-smoke').strategy?.matrix;
+    expect(matrix).toBe(expr('fromJSON(needs.changes.outputs.scaffold)'));
   });
 
   // A rename listed by its new name alone hides the code it moved out of `packages/`.
@@ -32,9 +46,10 @@ describe('unit · ci.yml · a prose-only diff skips the heavy jobs, never the ve
   });
 
   // `x verify merge` is red for a step no part reported, and the doc guards read exactly the files
-  // `changes` skips for: the gate, its verdict, `packages` and the app gates never hear the answer.
+  // `changes` skips for: the gate, its verdict and the app gates never hear the answer. `packages`
+  // does (ci.yml, above `changes`): every suite of it that reads a page is a gate `unit` file too.
   test('the verdict and the jobs that read prose never wait on changes', () => {
-    for (const name of ['gate', 'verify', 'packages', 'reference-app-verify', 'deploy-proof']) {
+    for (const name of ['gate', 'verify', 'reference-app-verify', 'deploy-proof']) {
       const target = job(name);
       expect({ [name]: JSON.stringify([target.needs, target.if]).includes('changes') }).toEqual({
         [name]: false,
@@ -47,7 +62,7 @@ describe('unit · ci.yml · a prose-only diff skips the heavy jobs, never the ve
     const readers = Object.entries(ci.jobs ?? {})
       .map(([name, target]) => [name, text(target.if)] as const)
       .filter(([, condition]) => condition.includes('needs.changes'));
-    expect(readers.length).toBe(6);
+    expect(readers.length).toBe(8);
     for (const [name, condition] of readers) {
       expect({ [name]: condition.includes("needs.changes.outputs.heavy != 'false'") }).toEqual({
         [name]: true,
