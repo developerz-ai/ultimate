@@ -88,9 +88,15 @@ describe('network seal · every entry, 1,000 frames, no request', () => {
     test(name, async () => {
       const before = hits.length;
       const unmount = mountEntry(component, props, { webgl2: webgl2 ?? true });
-      // A lazy preset or mount resolves on a microtask: let it land before the frames run.
-      await Bun.sleep(0);
-      let ran = 0;
+      // A lazy preset or mount may resolve on a later event-loop turn, and a microtask tick alone
+      // leaves no frame loop registered on some Bun builds. Drive a frame per turn until one lands,
+      // bounded so a mount that never registers still fails the `ran > 0` seed below.
+      let ready = 0;
+      for (let turn = 0; turn < 20 && ready === 0; turn++) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 1));
+        ready += page?.frame() ?? 0;
+      }
+      let ran = ready;
       for (let frame = 0; frame < FRAMES; frame++) ran += page?.frame() ?? 0;
       unmount();
       expect(hits.slice(before)).toEqual([]);
