@@ -103,7 +103,9 @@ describe('unit · x upgrade, codemods', () => {
     expect(asked).toEqual([
       ['upgrade', 'codemods', '--from', '31.19.0', '--to', '31.28.0', '--json'],
     ]);
-    expect(spawned.indexOf('x upgrade')).toBe(spawned.indexOf('x manifest') - 1);
+    const at = spawned.indexOf('x upgrade');
+    // The installed kit follows the span at once, then the manifest (`upgrade-gate.ts`).
+    expect(spawned.slice(at, at + 3)).toEqual(['x upgrade', 'x kit', 'x manifest']);
     expect(output.data?.codemods).toEqual({
       from: '31.19.0',
       to: '31.28.0',
@@ -190,13 +192,13 @@ describe('unit · x upgrade, a codemod that moves a manifest', () => {
     { from: '31.19.0', to: '31.28.0' },
   );
 
-  test('the hop installs again right after the codemods, before the manifest', async () => {
+  test('the hop installs again right after the codemods, before the kit and the manifest', async () => {
     const dir = await pinned();
     const { runner, spawned } = withCodemods({ codemods: moved, codemodsWrite: RAISED });
     const { code, output } = await run(dir, runner);
     expect(code).toBe(0);
     const at = spawned.indexOf('x upgrade');
-    expect(spawned.slice(at, at + 3)).toEqual(['x upgrade', 'install', 'x manifest']);
+    expect(spawned.slice(at, at + 4)).toEqual(['x upgrade', 'install', 'x kit', 'x manifest']);
     expect(output.data?.codemods).toMatchObject({ reinstalled: true });
   });
 

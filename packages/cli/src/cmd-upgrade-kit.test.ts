@@ -17,11 +17,14 @@ describe('unit · x upgrade, the agent kit a hop brings', () => {
     const { runner, spawned } = recording({ kit: kitDocument(WRITTEN) });
     const { code, output, lines } = await run(dir, runner, [], { json: false });
     expect(code).toBe(0);
+    expect(spawned).toContain('x manifest');
     expect(spawned.slice(spawned.indexOf('x upgrade'), spawned.indexOf('x manifest') + 1)).toEqual([
       'x upgrade',
       'x kit',
       'x manifest',
     ]);
+    expect(spawned).toContain('x kit');
+    expect(spawned).toContain('x doctor');
     expect(spawned.indexOf('x kit')).toBeLessThan(spawned.indexOf('x doctor'));
     expect(Object.keys(output)).toEqual([]);
     const text = lines.join('\n');
